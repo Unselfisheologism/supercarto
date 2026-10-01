@@ -1,0 +1,75 @@
+{
+  "name": "supercarto",
+  "version": "0.3.0",
+  "description": "LLM-native spatial middleware. Give an AI agent a map of any location on earth as a token-budgeted topological graph, with indoor floors, weather, and traffic, that it can reason over directly.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "supercarto": "./dist/cli/main.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "examples"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supercarto/supercarto.git"
+  },
+  "bugs": {
+    "url": "https://github.com/supercarto/supercarto/issues"
+  },
+  "homepage": "https://github.com/supercarto/supercarto#readme",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run --exclude test/mcp.e2e.test.ts --exclude test/live.test.ts",
+    "cli": "tsx src/cli/main.ts",
+    "bench": "tsx src/cli/main.ts bench examples/synthetic-dense.geojson",
+    "bench:tasks": "tsx src/cli/main.ts bench:tasks",
+    "fixture": "tsx src/cli/gen-fixture.ts",
+    "capture:overpass": "tsx scripts/capture-overpass-fixtures.ts",
+    "mutate": "tsx scripts/mutate.ts",
+    "prepublishOnly": "npm run typecheck && npm run test:unit && npm run build"
+  },
+  "keywords": [
+    "llm",
+    "agents",
+    "mcp",
+    "mcp-server",
+    "geospatial",
+    "gis",
+    "openstreetmap",
+    "topology",
+    "token-efficiency",
+    "indoor-maps",
+    "routing",
+    "weather",
+    "traffic",
+    "map"
+  ],
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@types/node": "^22.19.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2",
+    "zod": "^4.6.5"
+  }
+}

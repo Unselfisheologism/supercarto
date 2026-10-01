@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "supercarto"
+version = "0.3.0"
+description = "LLM-native spatial middleware. Give an AI agent a map of any location on earth as a token-budgeted topological graph, with indoor floors, weather, and traffic."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "supercarto contributors" }]
+keywords = [
+    "llm",
+    "agents",
+    "mcp",
+    "geospatial",
+    "gis",
+    "openstreetmap",
+    "topology",
+    "token-efficiency",
+    "indoor-maps",
+    "routing",
+    "weather",
+    "traffic",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Libraries",
+]
+
+# Intentionally zero runtime dependencies.
+#
+# The Python package is a client for the Node MCP server over stdio. It speaks
+# JSON-RPC itself rather than importing the `mcp` SDK, because that SDK pulls in
+# httpx, pydantic, and their transitive trees, and an agent framework that
+# already depends on any of them should not get a second copy.
+#
+# The consequence is that `pip install supercarto` does not require Node. Calling
+# anything raises a clear error telling you to install it. That is a deliberate
+# trade: one subprocess the agent already knows how to spawn, in exchange for an
+# install that cannot conflict with anything.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "mypy>=1.11", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/supercarto/supercarto"
+Repository = "https://github.com/supercarto/supercarto"
+Issues = "https://github.com/supercarto/supercarto/issues"
+"Benchmark" = "https://github.com/supercarto/supercarto/blob/main/docs/benchmark.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/supercarto"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/supercarto", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true

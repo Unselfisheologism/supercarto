@@ -1,0 +1,124 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 1001,
+      "properties": { "highway": "primary", "name": "Mission Street", "layer": "road" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4194, 37.7749], [-122.4170, 37.7749], [-122.4145, 37.7749],
+          [-122.4120, 37.7749], [-122.4095, 37.7749]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 1002,
+      "properties": { "highway": "primary", "name": "5th Street", "layer": "road" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4120, 37.7790], [-122.4120, 37.7770], [-122.4120, 37.7749],
+          [-122.4120, 37.7720], [-122.4120, 37.7700]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 1003,
+      "properties": { "highway": "secondary", "name": "Oak Street", "layer": "road" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4095, 37.7749], [-122.4095, 37.7715], [-122.4095, 37.7680]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 1004,
+      "properties": { "highway": "footway", "crossing": "crosswalk", "layer": "road" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[-122.4120, 37.7749], [-122.4120, 37.7715]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 2001,
+      "properties": { "amenity": "cafe", "name": "Blue Bottle Coffee", "opening_hours": "07:00-18:00" },
+      "geometry": { "type": "Point", "coordinates": [-122.4169, 37.7751] }
+    },
+    {
+      "type": "Feature",
+      "id": 2002,
+      "properties": { "shop": "supermarket", "name": "Bi-Rite Market", "brand": "Bi-Rite" },
+      "geometry": { "type": "Point", "coordinates": [-122.4144, 37.7750] }
+    },
+    {
+      "type": "Feature",
+      "id": 2003,
+      "properties": { "railway": "subway_entrance", "name": "Powell St Station" },
+      "geometry": { "type": "Point", "coordinates": [-122.4121, 37.7750] }
+    },
+    {
+      "type": "Feature",
+      "id": 2004,
+      "properties": { "amenity": "pharmacy", "name": "CVS Pharmacy" },
+      "geometry": { "type": "Point", "coordinates": [-122.4131, 37.7740] }
+    },
+    {
+      "type": "Feature",
+      "id": 2005,
+      "properties": { "amenity": "restaurant", "name": "Burma Superstar" },
+      "geometry": { "type": "Point", "coordinates": [-122.4103, 37.7760] }
+    },
+    {
+      "type": "Feature",
+      "id": 3001,
+      "properties": { "building": "yes", "name": "24 Market St", "height": 18, "layer": "building" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-122.4165, 37.7755], [-122.4155, 37.7755],
+          [-122.4155, 37.7748], [-122.4165, 37.7748], [-122.4165, 37.7755]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 3002,
+      "properties": { "building": "yes", "name": "Yerba Buena Tower", "height": 108, "layer": "building" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-122.4135, 37.7775], [-122.4125, 37.7775],
+          [-122.4125, 37.7765], [-122.4135, 37.7765], [-122.4135, 37.7775]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 3003,
+      "properties": { "building": "yes", "height": 24, "layer": "building" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-122.4115, 37.7735], [-122.4105, 37.7735],
+          [-122.4105, 37.7728], [-122.4115, 37.7728], [-122.4115, 37.7735]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 4001,
+      "properties": { "highway": "construction", "layer": "road" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[-122.4170, 37.7735], [-122.4145, 37.7735]]
+      }
+    }
+  ]
+}

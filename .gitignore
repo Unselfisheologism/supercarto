@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.vitest/
+coverage/
+tmp/
+test-dist/
+smoke/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+python/build/
+python/dist/
+.venv/
+venv/
