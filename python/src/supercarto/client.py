@@ -110,6 +110,35 @@ class TrafficResult:
     unavailable: str | None = None
 
 
+@dataclass
+class DaylightResult:
+    """Sun position and daylight state.
+
+    ``twilight`` is one of ``day``, ``civil``, ``nautical``, or ``night`` rather
+    than a boolean, because the states lead to different decisions: walking is
+    ordinary at civil twilight and unwise at nautical.
+    """
+
+    elevation_deg: float
+    azimuth_deg: float
+    twilight: str
+    needs_light: bool
+    sunrise: str | None = None
+    """None inside the polar circles, where the sun does not rise that day."""
+    sunset: str | None = None
+    polar: str | None = None
+    """``day`` or ``night``, set instead of sunrise/sunset in the polar cases."""
+
+
+@dataclass
+class TerrainResult:
+    """Ground elevation sampled around a point."""
+
+    min_m: float
+    max_m: float
+    range_m: float
+
+
 def default_server_command() -> list[str]:
     """How to launch the server when the caller does not say.
 
@@ -306,6 +335,37 @@ class SuperCarto:
             {"fromLat": from_lat, "fromLon": from_lon, "toLat": to_lat, "toLon": to_lon},
         )
         return _parse_traffic(text)
+
+    async def daylight(
+        self, lat: float, lon: float, at: str | None = None
+    ) -> DaylightResult:
+        """Sun position, sunrise, sunset, and whether a light is needed.
+
+        Always available: solar geometry is arithmetic, needing no source and no
+        credential. ``at`` is an ISO 8601 instant in UTC and defaults to now.
+
+        Inside the polar circles ``sunrise`` and ``sunset`` are ``None`` and
+        ``polar`` is set instead, because there is no honest time to report.
+        """
+        args: dict[str, Any] = {"lat": lat, "lon": lon}
+        if at:
+            args["at"] = at
+        text = await self._call("get_daylight", args)
+        return _parse_daylight(text)
+
+    async def terrain(
+        self, lat: float, lon: float, radius_m: int = 1000, samples: int = 16
+    ) -> TerrainResult:
+        """Ground elevation range around a point.
+
+        Raises :class:`ToolError` unless the deployment has an elevation source
+        configured.
+        """
+        text = await self._call(
+            "get_terrain",
+            {"lat": lat, "lon": lon, "radiusM": radius_m, "samples": samples},
+        )
+        return _parse_terrain(text)
 
     async def _call(self, name: str, args: dict[str, Any]) -> str:
         result = await self._request(_TOOLS_CALL, {"name": name, "arguments": args})
@@ -521,6 +581,69 @@ def _parse_weather(text: str) -> WeatherResult:
         wind_kmh=wind,
         advisory=advisory,
     )
+
+
+def _parse_daylight(text: str) -> DaylightResult:
+    elevation = 0.0
+    azimuth = 0.0
+    twilight = "night"
+    needs_light = True
+    sunrise: str | None = None
+    sunset: str | None = None
+    polar: str | None = None
+
+    for line in text.splitlines():
+        # Values keep their unit ("43.4deg"), which the number pattern skips.
+        if line.startswith("elevation: "):
+            value = _first_float(line.removeprefix("elevation: "))
+            if value is not None:
+                elevation = value
+        elif line.startswith("azimuth: "):
+            value = _first_float(line.removeprefix("azimuth: "))
+            if value is not None:
+                azimuth = value
+        elif line.startswith("state: "):
+            twilight = line.removeprefix("state: ").strip()
+        elif line.startswith("needs light: "):
+            needs_light = line.removeprefix("needs light: ").strip() == "yes"
+        elif line.startswith("sunrise: "):
+            sunrise = line.removeprefix("sunrise: ").strip()
+        elif line.startswith("sunset: "):
+            sunset = line.removeprefix("sunset: ").strip()
+        elif line.startswith("polar day"):
+            polar = "day"
+        elif line.startswith("polar night"):
+            polar = "night"
+
+    return DaylightResult(
+        elevation_deg=elevation,
+        azimuth_deg=azimuth,
+        twilight=twilight,
+        needs_light=needs_light,
+        sunrise=sunrise,
+        sunset=sunset,
+        polar=polar,
+    )
+
+
+def _parse_terrain(text: str) -> TerrainResult:
+    minimum = 0.0
+    maximum = 0.0
+    span = 0.0
+    for line in text.splitlines():
+        if line.startswith("min: "):
+            value = _first_float(line.removeprefix("min: "))
+            if value is not None:
+                minimum = value
+        elif line.startswith("max: "):
+            value = _first_float(line.removeprefix("max: "))
+            if value is not None:
+                maximum = value
+        elif line.startswith("range: "):
+            value = _first_float(line.removeprefix("range: "))
+            if value is not None:
+                span = value
+    return TerrainResult(min_m=minimum, max_m=maximum, range_m=span)
 
 
 def _parse_traffic(text: str) -> TrafficResult:

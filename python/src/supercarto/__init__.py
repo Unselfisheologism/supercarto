@@ -25,22 +25,26 @@ act on.
 
 from .client import (
     ConnectionError as SuperCartoConnectionError,
+    DaylightResult,
     MapletResult,
     RouteResult,
     SuperCarto,
+    TerrainResult,
     ToolError,
     TrafficResult,
     WeatherResult,
     default_server_command,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
+    "DaylightResult",
     "MapletResult",
     "RouteResult",
     "SuperCarto",
     "SuperCartoConnectionError",
+    "TerrainResult",
     "ToolError",
     "TrafficResult",
     "WeatherResult",

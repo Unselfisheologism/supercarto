@@ -290,10 +290,40 @@ SUPERCARTO_NO_WEATHER   disable weather
 }
 ```
 
-Six tools: `get_maplet`, `route`, `search_places`, `expand_feature`,
-`get_terrain`, `get_weather`, plus `get_traffic` when a key is present. Each maplet
-lists exactly the tools that deployment can answer, so an agent never calls one
-that cannot work.
+Seven tools: `get_maplet`, `route`, `search_places`, `expand_feature`,
+`get_daylight`, `get_terrain`, `get_weather`, plus `get_traffic` when a key is
+present. Each maplet lists exactly the tools that deployment can answer, so an
+agent never calls one that cannot work. `get_daylight` is always available: sun
+position is arithmetic, needing no source and no credential.
+
+### What a maplet says about a place
+
+Beyond topology and distance, a node can carry the facts that decide whether a
+trip is worth making:
+
+```yaml
+n3: {type: poi, name: Blue Bottle, tags: [cafe], hours: 07:00-18:00, brand: Blue Bottle}
+n4: {type: poi, name: Central Rx, tags: [pharmacy], hours: 09:00-17:00}
+map:
+  sun: up, elevation: 43.4deg, twilight: day, azimuth: 22deg, sunrise: "..."
+```
+
+Both shops above are open at 12:00 local. At 04:00 the same two read
+`hours: closed`, because their hours are known and they are shut. A bench with
+no recorded hours emits no `hours` field at all.
+
+`hours` is evaluated against an instant and evaluated in the **map's** timezone,
+not the server's. Three states, never two: a time range, `closed`, or absent
+because nobody recorded it. Absent is deliberately not `closed` — those lead to
+opposite advice, one means go and find out, the other means go elsewhere.
+
+`twilight` is `day`, `civil`, `nautical`, or `night` rather than a boolean,
+because the three lead to different decisions: walking is fine at civil
+twilight and unwise at nautical. Above the Arctic circles in summer and winter
+the map reports `polar: day` or `polar: night` instead of inventing a sunrise.
+
+Pass `compile.utcOffsetMinutes` and `compile.now` to fix both to a known place
+and instant, which is what the tests do.
 
 ### Python
 

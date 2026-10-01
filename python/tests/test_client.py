@@ -21,6 +21,8 @@ from supercarto.client import (  # noqa: E402
     ToolError,
     _parse_maplet,
     _parse_route,
+    _parse_daylight,
+    _parse_terrain,
     _parse_traffic,
     _parse_weather,
     default_server_command,
@@ -158,6 +160,84 @@ class TestTrafficParsing:
         assert t.worst_level == "severe"
         assert t.duration_s == 1500
         assert t.delay_s == 900
+
+
+class TestDaylightParsing:
+    def test_reads_position_and_state(self) -> None:
+        text = "\n".join(
+            [
+                "sun at 37.7700,-122.4200 on 2026-10-07T19:00:00.000Z",
+                "elevation: 43.4deg",
+                "azimuth: 22deg (clockwise from north)",
+                "state: day",
+                "needs light: no",
+                "sunrise: 2026-10-07T14:18:00Z",
+                "sunset: 2026-10-08T01:47:00Z",
+            ]
+        )
+        d = _parse_daylight(text)
+        assert d.elevation_deg == 43.4
+        assert d.azimuth_deg == 22.0
+        assert d.twilight == "day"
+        assert d.needs_light is False
+        assert d.sunrise == "2026-10-07T14:18:00Z"
+        assert d.polar is None
+
+    def test_reports_polar_night_without_inventing_times(self) -> None:
+        # There is no honest sunrise to give here, and a fabricated one would be
+        # worse than None: a caller checking `if d.sunrise` would treat an invented
+        # time as real.
+        text = "\n".join(
+            [
+                "sun at 78.2000,15.6000 on 2026-12-21T11:00:00.000Z",
+                "elevation: -11.6deg",
+                "azimuth: 0deg (clockwise from north)",
+                "state: nautical",
+                "needs light: yes",
+                "polar night: the sun does not rise on this date at this latitude",
+            ]
+        )
+        d = _parse_daylight(text)
+        assert d.polar == "night"
+        assert d.sunrise is None
+        assert d.sunset is None
+        assert d.needs_light is True
+        # Not day, not night: the state a boolean would have lost.
+        assert d.twilight == "nautical"
+
+    def test_negative_elevation_is_not_swallowed(self) -> None:
+        text = "\n".join(
+            [
+                "sun at 0.0000,0.0000 on 2026-03-20T00:00:00.000Z",
+                "elevation: -48.7deg",
+                "azimuth: 271deg (clockwise from north)",
+                "state: night",
+                "needs light: yes",
+            ]
+        )
+        assert _parse_daylight(text).elevation_deg == -48.7
+
+
+class TestTerrainParsing:
+    def test_reads_the_range(self) -> None:
+        text = "\n".join(
+            [
+                "elevation over 1000m around 37.7700,-122.4200",
+                "min: 12.0m",
+                "max: 340.5m",
+                "range: 328.5m",
+            ]
+        )
+        t = _parse_terrain(text)
+        assert (t.min_m, t.max_m, t.range_m) == (12.0, 340.5, 328.5)
+
+    def test_handles_a_range_below_zero(self) -> None:
+        # A trench or a basin. A parser that tests truthiness would read 0.0
+        # and lose the sign, which is the interesting part of the sample.
+        text = "min: -40.0m\nmax: -5.0m\nrange: 35.0m"
+        t = _parse_terrain(text)
+        assert t.min_m == -40.0
+        assert t.max_m == -5.0
 
 
 class TestConnectionErrors:
