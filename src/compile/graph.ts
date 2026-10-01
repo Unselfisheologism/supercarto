@@ -31,6 +31,16 @@ export interface GraphNode {
   tags?: string[];
   /** Metres, for buildings. */
   heightM?: number;
+  /**
+   * Opening hours as a short phrase, e.g. `09:00-17:00` or `closed`.
+   *
+   * Present because it is ingested anyway and an agent asked whether a place is
+   * open will otherwise guess. Absent means no hours were recorded, which is
+   * not the same as closed.
+   */
+  hours?: string;
+  /** Chain or brand, e.g. `Blue Bottle`. Distinct from the local name. */
+  brand?: string;
   /** WGS84, only on anchor nodes, so the agent can report a position. */
   lat?: number;
   lon?: number;
@@ -87,6 +97,28 @@ export interface GraphMeta {
   /** Semantic zoom band, e.g. `z17-addr`. */
   lod?: string;
   source?: string;
+  /**
+   * Light conditions at the map centre, so the agent does not have to call out
+   * to find out whether it is dark.
+   *
+   * Three states rather than two: `day`, `civil` twilight, and `night`. A
+   * person can walk at 6am in June, and an agent that only knew "not daylight"
+   * would wrongly warn them.
+   */
+  sun?: SunSummary;
+}
+
+/** What the emitter needs from the sun, and no more. */
+export interface SunSummary {
+  elevationDeg: number;
+  daylight: boolean;
+  twilight: 'day' | 'civil' | 'nautical' | 'night';
+  /** Compass bearing. Useful for "the sun will be behind that building". */
+  azimuthDeg: number;
+  sunrise?: string;
+  sunset?: string;
+  /** Set when the sun does not rise or set today: polar day or polar night. */
+  polar?: 'day' | 'night';
 }
 
 export interface SpatialGraph {

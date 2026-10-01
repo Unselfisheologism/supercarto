@@ -217,4 +217,56 @@ describe.skipIf(!built)('MCP server over a real pipe', () => {
     expect(res.result.content[0].text).toMatch(/lat/);
     h.child.kill();
   });
+
+  it('answers get_daylight without any source configured', async () => {
+    // Daylight is arithmetic, not a lookup, so it must work on a deployment
+    // with no elevation, weather, or traffic source. This is the test that
+    // would fail if the tool were accidentally gated behind a capability.
+    h = harness();
+    await h.send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+    const res = await h.send({
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: {
+        name: 'get_daylight',
+        arguments: { lat: 37.77, lon: -122.42, at: '2026-06-21T20:00:00Z' },
+      },
+    });
+    expect(res.result.isError).toBeFalsy();
+    const text = res.result.content[0].text as string;
+    expect(text).toMatch(/elevation:/);
+    // Three states, and the answer is in words rather than a bare boolean.
+    expect(text).toMatch(/state: (day|civil|nautical|night)/);
+    expect(text).toMatch(/needs light: (yes|no)/);
+    // Solar noon in San Francisco in June, so both times are real.
+    expect(text).toMatch(/sunrise: 2026-06-21T/);
+    expect(text).toMatch(/sunset: 2026-06-2\dT/);
+    h.child.kill();
+  });
+
+  it('reports polar night rather than inventing a sunrise', async () => {
+    h = harness();
+    await h.send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+    const res = await h.send({
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: {
+        name: 'get_daylight',
+        arguments: { lat: 78.2, lon: 15.6, at: '2026-12-21T11:00:00Z' },
+      },
+    });
+    const text = res.result.content[0].text as string;
+    expect(text).toMatch(/polar night/);
+    expect(text).not.toMatch(/sunrise:/);
+    h.child.kill();
+  });
+
+  it('rejects an unparseable instant instead of guessing one', async () => {
+    h = harness();
+    await h.send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+    const res = await h.send({
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'get_daylight', arguments: { lat: 0, lon: 0, at: 'next tuesday' } },
+    });
+    expect(res.result.isError).toBe(true);
+    h.child.kill();
+  });
 });

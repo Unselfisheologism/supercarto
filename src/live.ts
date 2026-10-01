@@ -35,6 +35,17 @@ import type { Capabilities } from './toolcatalog.js';
 import type { GeoJsonFeature } from './ingest/geojson.js';
 import { encodeDocument } from './wire/encode.js';
 import { gridToLonLat } from './geo/project.js';
+import { gridScaleFor } from './geo/scale.js';
+import type { CompileOptions } from './compile/compiler.js';
+
+/**
+ * Samples per axis for the slope grid.
+ *
+ * Coarser than the elevation grid used by `get_terrain`, because slope is a
+ * smooth surface: doubling the resolution would double a network call to sharpen
+ * a gradient nobody will query cell by cell.
+ */
+const SLOPE_HEAT_RES = 16;
 import type { Envelope, Feature, ScrDocument } from './wire/types.js';
 
 /**
@@ -93,6 +104,14 @@ export interface MapletRequestLive {
   layers?: string[];
   budget?: number;
   signal?: AbortSignal;
+  /**
+   * Compile-time overrides, chiefly the instant opening hours are judged
+   * against and the map area's UTC offset.
+   *
+   * Without an offset the evaluator falls back to the host's timezone, so a
+   * server outside the map's region would report local shops on its own clock.
+   */
+  compile?: CompileOptions;
 }
 
 export interface LiveResult extends MapletResult {
@@ -162,14 +181,20 @@ export class SuperCarto {
     // the returned copy rather than the cached one: two requests for the same
     // area at different zoom or layer settings would otherwise contaminate each
     // other's heat.
-    const doc = this.withHeat(fetched.doc, radiusM);
+    const doc = await this.withHeat(fetched.doc, bbox, req.signal);
 
+    // The derived document is passed through directly rather than converted
+    // back to GeoJSON. Heat layers live on the document, not on any feature, so
+    // a round trip through features would discard every layer just added -
+    // which is what silently reduced this to a topology-only maplet.
     const result = toMaplet(
-      { type: 'FeatureCollection', features: featuresFromDocument(doc) },
+      { type: 'FeatureCollection', features: [] },
       {
+        doc,
         bbox,
         layers: req.layers,
         budget,
+        ...(req.compile ? { compile: req.compile } : {}),
         radiusLabel: formatRadius(radiusM),
         // So the maplet advertises only the tools this instance can answer.
         capabilities: this.capabilities,
@@ -232,8 +257,15 @@ export class SuperCarto {
    * Copy-on-write, so the cached document is never mutated. Two requests for the
    * same envelope with different layer filters would otherwise leave the first
    * one's heat describing the second one's data.
+   *
+   * Async because slope heat needs an elevation fetch, which is a network call.
+   * Density is derived from data already in hand and costs nothing.
    */
-  private withHeat(doc: ScrDocument, radiusM: number): ScrDocument {
+  private async withHeat(
+    doc: ScrDocument,
+    bbox: BboxQuery,
+    signal?: AbortSignal,
+  ): Promise<ScrDocument> {
     if (!this.deriveHeat) return doc;
 
     const heat = [...doc.heat];
@@ -250,6 +282,30 @@ export class SuperCarto {
     if (points.length >= 3) {
       const density = densityToHeat(points, doc.envelope, { name: 'poi_density' });
       if (density) heat.push(density);
+    }
+
+    // Slope, from elevation. This is the layer that answers "can I wheel a
+    // pram or push a bike up this", which a road name cannot. It needs the
+    // terrain source, and it is best-effort: a terrain fetch that fails leaves
+    // the maplet without a slope layer rather than failing the whole request,
+    // because the topology the agent actually asked for is already in hand.
+    if (this.elevation) {
+      try {
+        const grid = await this.elevationFor(bbox, SLOPE_HEAT_RES, signal);
+        const scale = gridScaleFor(doc);
+        if (grid && scale) {
+          // The grid axes need not be square, so each gets its own scale. Using
+          // one number for both overstates slope on whichever axis is longer,
+          // which would flag a gentle east-west street as steep.
+          const slope = slopeToHeat(grid.values, grid.width, grid.height, {
+            name: 'slope',
+            metresPerUnit: (scale.x + scale.y) / 2,
+          });
+          if (slope) heat.push(slope);
+        }
+      } catch {
+        // Terrain unavailable. The rest of the maplet stands on its own.
+      }
     }
 
     return heat.length === doc.heat.length ? doc : { ...doc, heat };

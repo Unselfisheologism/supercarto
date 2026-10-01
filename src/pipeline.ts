@@ -34,6 +34,17 @@ export interface MapletRequest {
   readonly compile?: CompileOptions;
   readonly emit?: EmitOptions;
   readonly budgetOpts?: Omit<BudgetOptions, 'budget'>;
+  /**
+   * Compile this document instead of ingesting `input`.
+   *
+   * For callers that already hold an `ScrDocument` and have enriched it - the
+   * live path attaches derived heat layers to the fetched document. Feeding
+   * that back in as GeoJSON would silently drop them, because heat lives on the
+   * document and not on any feature: the round trip through features rebuilds a
+   * document with an empty heat list. Passing the document through is the only
+   * way to keep what was derived.
+   */
+  readonly doc?: ScrDocument;
 }
 
 export interface MapletResult {
@@ -75,7 +86,9 @@ export function toMaplet(
       ? ({ type: 'bbox', ...req.bbox } satisfies Envelope)
       : undefined);
 
-  let doc = fromGeoJson(input, { ...req.ingest, ...(envelope ? { envelope } : {}) });
+  let doc =
+    req.doc ??
+    fromGeoJson(input, { ...req.ingest, ...(envelope ? { envelope } : {}) });
 
   if (req.layers && req.layers.length > 0) {
     doc = filterLayers(doc, new Set(req.layers));

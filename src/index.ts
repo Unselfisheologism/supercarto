@@ -183,6 +183,18 @@ export { decodeMvt } from './source/mvt.js';
 export type { MvtTile, MvtLayer, MvtFeature } from './source/mvt.js';
 export { densityToHeat, slopeToHeat } from './source/heat.js';
 
+export {
+  evaluateOpeningHours,
+  openingPhrase,
+  type OpenState,
+} from './source/hours.js';
+
+export {
+  sunPosition,
+  needsLight,
+  type SunState,
+} from './source/sun.js';
+
 // --- Binary transport -------------------------------------------------------
 export {
   encodeBinary,

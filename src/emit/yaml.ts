@@ -32,6 +32,19 @@ export function yamlString(value: string): string {
   return needsQuote ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
+/**
+ * A value that contains a `#`.
+ *
+ * YAML reads `09:00-17:00` as a plain scalar, so the generic rule would quote
+ * it. Quoting is not wrong, but an opening-hours range is not a colour and
+ * never needs it, and the quotes cost a token on every shop in the map. Only
+ * a genuine comment - `#` at the start of the value or after whitespace - needs
+ * escaping.
+ */
+function valueWithHash(value: string): string {
+  return /^\s*#| #/.test(value) ? yamlString(value) : value;
+}
+
 export interface EmitOptions {
   /**
    * Per-axis metres per grid unit, from `gridScaleFor(doc)`. This is what turns
@@ -72,6 +85,24 @@ export function emitGraph(graph: SpatialGraph, opts: EmitOptions = {}): EmitResu
   if (graph.meta.radius) out.push(`  radius: ${yamlString(graph.meta.radius)}`);
   if (graph.meta.lod) out.push(`  lod: ${yamlString(graph.meta.lod)}`);
   if (graph.meta.source) out.push(`  source: ${yamlString(graph.meta.source)}`);
+  if (graph.meta.sun) {
+    const s = graph.meta.sun;
+    // Three states, not two. `twilight` is what separates "you can walk" from
+    // "you cannot see", and an agent that only knew daylight/night would warn
+    // someone about a 6am June walk that is perfectly fine.
+    const parts = [
+      `sun: ${s.daylight ? 'up' : 'down'}`,
+      `elevation: ${s.elevationDeg}deg`,
+      `twilight: ${s.twilight}`,
+      `azimuth: ${s.azimuthDeg}deg`,
+    ];
+    if (s.polar) parts.push(`polar: ${s.polar}`);
+    else {
+      if (s.sunrise) parts.push(`sunrise: ${yamlString(s.sunrise)}`);
+      if (s.sunset) parts.push(`sunset: ${yamlString(s.sunset)}`);
+    }
+    out.push(`  ${parts.join(', ')}`);
+  }
   if (graph.meta.note) out.push(`  note: ${yamlString(graph.meta.note)}`);
 
   out.push('nodes:');
@@ -190,6 +221,10 @@ function nodeBody(n: GraphNode): string {
     parts.push(`tags: [${n.tags.map(yamlString).join(', ')}]`);
   }
   if (n.heightM !== undefined) parts.push(`height: ${n.heightM}m`);
+  // Only emitted when present. An absent `hours` means nobody recorded them,
+  // which the agent must not read as "closed".
+  if (n.hours) parts.push(`hours: ${valueWithHash(n.hours)}`);
+  if (n.brand) parts.push(`brand: ${yamlString(n.brand)}`);
   if (n.lat !== undefined && n.lon !== undefined) {
     parts.push(`at: "${n.lat},${n.lon}"`);
   }

@@ -28,6 +28,8 @@ import {
   type ElevationSource,
 } from '../src/index.js';
 import type { GeoJsonFeature } from '../src/ingest/geojson.js';
+import type { ElevationGrid } from '../src/source/terrain.js';
+import type { BboxQuery } from '../src/source/types.js';
 import {
   TOOL_CATALOG,
   advertisedTools,
@@ -87,6 +89,36 @@ class FailingSource implements MapSource {
 
 function stubCarto(features?: GeoJsonFeature[]): SuperCarto {
   return new SuperCarto({ sources: [new StubSource(features)] });
+}
+
+/**
+ * A terrain source whose ground rises eastward.
+ *
+ * A constant-elevation grid would produce zero gradient everywhere, which is the
+ * one input `slopeToHeat` cannot turn into a layer - so a test using it would
+ * pass whether or not the wiring existed.
+ */
+class StubElevation implements ElevationSource {
+  readonly name = 'stub-terrain';
+  async fetch(_bbox: BboxQuery, res: number): Promise<ElevationGrid> {
+    const width = res;
+    const height = res;
+    const values = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // Rises about 100m across the box: a real hill, not noise.
+        values[y * width + x] = x * 100;
+      }
+    }
+    return {
+      bbox: { west: -122.43, south: 37.76, east: -122.40, north: 37.79 },
+      width,
+      height,
+      values,
+      min: 0,
+      max: (width - 1) * 100,
+    };
+  }
 }
 
 // --- geo helpers ------------------------------------------------------------
@@ -1055,6 +1087,40 @@ describe('SuperCarto.maplet', () => {
   it('names the source it used', async () => {
     const res = await stubCarto().maplet({ lat: 37.7749, lon: -122.4194 });
     expect(res.fetchedFrom).toBe('stub');
+  });
+
+  it('derives a slope layer when a terrain source is configured', async () => {
+    // The option's docstring promised slope heat and the code only ever derived
+    // density. This is the test that would have caught that, and it needs a
+    // terrain grid with a real gradient: a flat one yields no slope layer and
+    // the assertion would pass or fail for the wrong reason.
+    const carto = new SuperCarto({
+      sources: [new StubSource()],
+      elevation: new StubElevation(),
+    });
+    const res = await carto.maplet({
+      lat: 37.7749, lon: -122.4194, radiusM: 400, budget: 3000,
+    });
+    expect(res.graph.heat.map((h) => h.name)).toContain('slope');
+    expect(res.yaml).toContain('slope');
+  });
+  it('still returns a maplet when the terrain fetch fails', async () => {
+    // Terrain is an enrichment. Losing it must not cost the agent the topology
+    // it actually asked for.
+    const brokenTerrain: ElevationSource = {
+      name: 'broken',
+      fetch: async () => { throw new Error('terrain down'); },
+    };
+    const carto = new SuperCarto({ sources: [new StubSource()], elevation: brokenTerrain });
+    const res = await carto.maplet({ lat: 37.7749, lon: -122.4194, budget: 800 });
+    expect(res.graph.nodes.length).toBeGreaterThan(0);
+    expect(res.graph.heat.map((h) => h.name)).not.toContain('slope');
+  });
+
+  it('derives no slope layer without a terrain source', async () => {
+    // The capability must not be advertised from nowhere.
+    const res = await stubCarto().maplet({ lat: 37.7749, lon: -122.4194, budget: 3000 });
+    expect(res.graph.heat.map((h) => h.name)).not.toContain('slope');
   });
 
   it('caches repeat requests for the same area', async () => {

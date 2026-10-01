@@ -24,6 +24,8 @@ import {
   type IndoorFeature,
   type IndoorGraph,
 } from './indoor.js';
+import { sunPosition } from '../source/sun.js';
+import { openingPhrase } from '../source/hours.js';
 import { tileBounds } from '../geo/project.js';
 import { advertisedTools, type Capabilities } from '../toolcatalog.js';
 
@@ -73,6 +75,24 @@ export interface CompileOptions {
   readonly maxIndoorNodesPerLevel?: number;
   /** Cap on storeys in the indoor graph. Default 8. */
   readonly maxIndoorLevels?: number;
+  /** Compute sun position for the map metadata. Default true. */
+  readonly sun?: boolean;
+  /**
+   * Instant to evaluate opening hours and sun position against. Defaults to now.
+   *
+   * Passing an explicit value makes both reproducible, which is what allows
+   * them to be asserted in a test rather than merely exercised.
+   */
+  readonly now?: Date;
+  /**
+   * UTC offset of the map area in minutes, e.g. `-420` for Pacific Daylight
+   * Time. Used to evaluate opening hours.
+   *
+   * Opening hours are local to the place. Without this the evaluator falls back
+   * to the host's timezone, so a server in one country would report a shop in
+   * another as shut at noon.
+   */
+  readonly utcOffsetMinutes?: number;
 }
 
 const DEFAULT_WELD = 2;
@@ -149,6 +169,16 @@ interface Builder {
   nextId: number;
   /** Nodes referenced by an edge, in insertion order. */
   used: Set<string>;
+  /**
+   * Instant opening hours are evaluated against.
+   *
+   * Stored on the builder rather than read from the clock at each use, so a
+   * single compile cannot produce nodes where one says open and another closed
+   * because a minute passed mid-run.
+   */
+  now: Date;
+  /** UTC offset of the map area in minutes, for opening hours. */
+  utcOffsetMinutes: number | undefined;
 }
 
 export function compile(doc: ScrDocument, opts: CompileOptions = {}): SpatialGraph {
@@ -170,6 +200,8 @@ export function compile(doc: ScrDocument, opts: CompileOptions = {}): SpatialGra
     pinned: new Set(),
     nextId: 1,
     used: new Set(),
+    now: opts.now ?? new Date(),
+    utcOffsetMinutes: opts.utcOffsetMinutes,
   };
 
   const className = (id: number) => doc.classes.get(id)?.name ?? '';
@@ -456,6 +488,25 @@ function propToken(doc: ScrDocument, props: Prop[], key: string): string | undef
   return undefined;
 }
 
+/**
+ * Opening hours as a short phrase, evaluated against the build's instant.
+ *
+ * Returns undefined when the feature carries no `opening_hours`, which is not
+ * the same as being closed. Leaving the field off is what keeps "we do not know"
+ * distinguishable from "shut", because those lead to opposite advice.
+ */
+function hoursOf(
+  doc: ScrDocument,
+  props: Prop[],
+  now: Date,
+  utcOffsetMinutes: number | undefined,
+): string | undefined {
+  const raw = propString(doc, props, 'opening_hours');
+  if (raw === undefined) return undefined;
+  const phrase = openingPhrase(raw, now, utcOffsetMinutes);
+  return phrase === undefined ? undefined : phrase;
+}
+
 function wheelchairOf(doc: ScrDocument, props: Prop[]): boolean | undefined {
   const v = propToken(doc, props, 'wheelchair');
   if (v === 'yes' || v === 'true') return true;
@@ -652,6 +703,12 @@ function compilePoint(b: Builder, f: Feature, className: string): void {
   // place sits on the network rather than floating beside it.
   const snapped = b.junctionIndex.get(key);
 
+  // Opening hours and brand, resolved once. Both were being ingested into the
+  // wire document and then dropped here, which meant an agent asking whether a
+  // place was open had nothing to go on and would guess. It usually guesses open.
+  const hours = hoursOf(b.doc, props, b.now, b.utcOffsetMinutes);
+  const brand = stringProp(b.doc, props, 'brand');
+
   if (snapped !== undefined) {
     const n = nodeById(b, snapped)!;
     if (!n.features.includes(f.id)) n.features.push(f.id);
@@ -667,6 +724,10 @@ function compilePoint(b: Builder, f: Feature, className: string): void {
       const h = numProp(b.doc, props, 'height_m', 'height', 'building:levels');
       if (h !== undefined) n.heightM = h;
     }
+    // Only fill a gap, never overwrite. Two POIs welding onto one junction
+    // should not fight over which one's hours to publish.
+    if (!n.hours && hours) n.hours = hours;
+    if (!n.brand && brand) n.brand = brand;
     b.featureIndex.set(f.id, snapped);
     return;
   }
@@ -674,6 +735,8 @@ function compilePoint(b: Builder, f: Feature, className: string): void {
   const partial: Omit<GraphNode, 'id'> = { kind, features: [f.id] };
   if (name) partial.name = name;
   if (tags.length > 0) partial.tags = tags;
+  if (hours) partial.hours = hours;
+  if (brand) partial.brand = brand;
   const h = numProp(b.doc, props, 'height_m', 'height', 'building:levels');
   if (h !== undefined) partial.heightM = h;
 
@@ -748,6 +811,22 @@ function buildMeta(doc: ScrDocument, opts: CompileOptions): SpatialGraph['meta']
   if (opts.radiusLabel) meta.radius = opts.radiusLabel;
   if (doc.meta.lod) meta.lod = doc.meta.lod;
   if (doc.meta.source) meta.source = doc.meta.source;
+
+  // Sun position, computed rather than fetched. It needs no key and no network,
+  // and "will it be dark when I get there" is a question an agent cannot answer
+  // without it.
+  if (opts.sun !== false) {
+    const sun = sunPosition(c.lat, c.lon, opts.now);
+    meta.sun = {
+      elevationDeg: sun.elevationDeg,
+      daylight: sun.daylight,
+      twilight: sun.twilight,
+      azimuthDeg: sun.azimuthDeg,
+      ...(sun.sunrise ? { sunrise: sun.sunrise } : {}),
+      ...(sun.sunset ? { sunset: sun.sunset } : {}),
+      ...(sun.polar ? { polar: sun.polar } : {}),
+    };
+  }
 
   const omittedTotal = doc.omissions.reduce((a, o) => a + o.count, 0);
   // "expand_node" was never a tool; it was a stale guess in a hand-written

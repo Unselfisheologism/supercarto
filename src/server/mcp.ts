@@ -1,6 +1,7 @@
 import { SuperCarto, type MapletRequestLive } from '../live.js';
 import { bboxAround, normalizeBbox } from '../source/types.js';
 import { describeCode } from '../source/weather.js';
+import { sunPosition, needsLight } from '../source/sun.js';
 import { straightLineRoute, type TravelMode } from '../source/routing.js';
 import { estimateTokens } from '../emit/yaml.js';
 import { fromScr } from '../pipeline.js';
@@ -235,6 +236,8 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
   if (carto.hasElevation) tools.push(getTerrainTool(carto));
   if (carto.hasWeather) tools.push(getWeatherTool(carto));
   if (carto.hasTraffic) tools.push(getTrafficTool(carto));
+  // Daylight needs no source and no credential, so it is unconditional.
+  tools.push(getDaylightTool());
   // A maplet advertises its tools from the same catalogue, so a tool served
   // here but missing from the catalogue would be invisible to every agent.
   assertToolsMatchCatalog(tools, carto);
@@ -335,6 +338,73 @@ function getTerrainTool(carto: SuperCarto): McpTool {
           'Note: elevation is relative to sea level, and the source may be coarse at this radius.',
         ].join('\n'),
       );
+    },
+  };
+}
+
+/**
+ * Sun position and daylight.
+ *
+ * Offers a three-state answer rather than a single "is it dark" flag, because
+ * the three lead to different advice: full daylight, twilight where a light is
+ * wanted but walking is fine, and night. Collapsing them to a boolean makes an
+ * agent warn someone about a 6am walk in June, or send them out unlit at dusk.
+ *
+ * Needs no credentials and no network, so it is always available.
+ */
+function getDaylightTool(): McpTool {
+  return {
+    name: 'get_daylight',
+    description:
+      'Sun position, sunrise, sunset, and twilight state for a coordinate. ' +
+      'Twilight is reported as day, civil, nautical, or night rather than a ' +
+      'boolean, because "needs a torch" and "cannot see" are different states.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lat: { type: 'number' },
+        lon: { type: 'number' },
+        at: {
+          type: 'string',
+          description: 'ISO 8601 instant. Defaults to now. Times are UTC.',
+        },
+      },
+      required: ['lat', 'lon'],
+    },
+    handler: async (args) => {
+      const lat = requireNumber(args, 'lat');
+      const lon = requireNumber(args, 'lon');
+
+      const atArg = args?.at;
+      let at = new Date();
+      if (typeof atArg === 'string' && atArg.length > 0) {
+        at = new Date(atArg);
+        if (Number.isNaN(at.getTime())) {
+          return error(`could not read "${atArg}" as an ISO 8601 instant`);
+        }
+      }
+
+      const sun = sunPosition(lat, lon, at);
+
+      const lines = [
+        `sun at ${lat.toFixed(4)},${lon.toFixed(4)} on ${at.toISOString()}`,
+        `elevation: ${sun.elevationDeg.toFixed(1)}deg`,
+        `azimuth: ${sun.azimuthDeg.toFixed(0)}deg (clockwise from north)`,
+        `state: ${sun.twilight}`,
+        `needs light: ${needsLight(sun) ? 'yes' : 'no'}`,
+      ];
+
+      if (sun.polar === 'night') {
+        // No sunrise or sunset to report, and saying so is the whole answer.
+        lines.push('polar night: the sun does not rise on this date at this latitude');
+      } else if (sun.polar === 'day') {
+        lines.push('polar day: the sun does not set on this date at this latitude');
+      } else {
+        lines.push(`sunrise: ${sun.sunrise ?? 'unknown'}`);
+        lines.push(`sunset: ${sun.sunset ?? 'unknown'}`);
+      }
+
+      return text(lines.join('\n'));
     },
   };
 }

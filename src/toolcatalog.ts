@@ -94,6 +94,14 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresWeather: false,
     requiresTraffic: true,
   },
+  {
+    name: 'get_daylight',
+    signature: 'get_daylight(lat,lon,at)',
+    use: 'sun position, sunrise, sunset, and whether a light is needed',
+    requiresElevation: false,
+    requiresWeather: false,
+    requiresTraffic: false,
+  },
 ];
 
 /** Names of every tool, regardless of whether this deployment offers it. */
