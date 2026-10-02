@@ -108,18 +108,28 @@ export async function fetchModelCatalog(): Promise<Map<string, string>> {
 /**
  * The browser script for one call.
  *
- * Emitted as a string because it runs in Aside's REPL rather than in this
- * process. The REPL evaluates top-level statements and prints only what
- * `console.log` emits: a returned value, or a `return` from inside an IIFE, is
- * discarded. So the script is a flat sequence of top-level statements ending in
- * a single `console.log`, with no wrapper function.
+ * The prompt is NOT interpolated here. It arrives on stdin instead, because a
+ * maplet prompt is around 17,000 characters and embedding it twice - once to
+ * fill the box and once to compare against the echo - pushes the command line
+ * past Windows' 32,767-character limit. Every call then failed with
+ * `spawn ENAMETOOLONG`, which the per-call error handler recorded as a model
+ * failure: twelve rows blaming the model for a bug in the harness.
  *
- * Every DOM selector has a fallback and every failure logs a diagnosable value
- * rather than throwing, because the page is a third party and its markup can
- * change without warning.
+ * The script is a flat sequence of top-level statements because the REPL
+ * evaluates top-level statements and prints only what `console.log` emits; a
+ * returned value, or a return from an IIFE, is discarded.
  */
-function callScript(url: string, prompt: string, timeoutMs: number): string {
+function callScript(url: string): string {
   return `
+const __cfg = JSON.parse(await new Promise((res, rej) => {
+  let b = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (c) => { b += c; });
+  process.stdin.on('end', () => res(b));
+  process.stdin.on('error', rej);
+}));
+const __prompt = __cfg.prompt;
+const __mine = __cfg.mine;
 const __out = { ok: false, text: '', error: '', captcha: false };
 const __t0 = Date.now();
 try {
@@ -127,24 +137,17 @@ try {
   await new Promise(r => setTimeout(r, 6000));
 
   const __box = __page.locator('textarea').last();
-  await __box.fill(${JSON.stringify(prompt)});
+  await __box.fill(__prompt);
   await __box.press('Enter');
 
   // Poll rather than sleep a fixed amount: a fast model finishes in a few
   // seconds and a fixed wait would spend minutes idle.
-  //
-  // Arena intermittently renders only the prompt bubble with no reply at all -
-  // observed on consecutive calls to the same model seconds apart, and for both
-  // a trivial prompt and a full maplet, so it is not prompt-dependent. It looks
-  // like a dropped turn. The caller retries rather than treating it as an answer
-  // or as a model failure, because both would be wrong.
-  const __deadline = Date.now() + ${timeoutMs};
+  const __deadline = Date.now() + __cfg.timeoutMs;
   while (Date.now() < __deadline) {
     await new Promise(r => setTimeout(r, 1500));
     // \`mine\` is passed in rather than closed over. A callback handed to
     // page.evaluate is serialised and run in the page, where the surrounding
-    // scope does not exist, so a bare reference to the prompt would throw
-    // inside the browser and the poll would never return an answer.
+    // scope does not exist, so a bare reference would throw inside the browser.
     const __s = await __page.evaluate((mine) => {
       const body = document.body.innerText || '';
       const captcha = /captcha|are you human|verify you are|cloudflare|unusual traffic/i.test(body);
@@ -174,7 +177,7 @@ try {
       const answer = seen.find(t => t !== mine) || '';
       const echoed = !answer && seen.length > 0 && seen.every(t => t === mine);
       return { captcha, limited: false, answer, n: bubbles.length, echoed };
-    }, ${JSON.stringify(normText(prompt))});
+    }, __mine);
     if (__s.captcha) {
       __out.captcha = true;
       __out.error = 'captcha presented';
@@ -201,7 +204,7 @@ try {
         .map(e => norm(e.innerText))
         .filter(t => t && !/^(direct|battle mode|agent mode|side by side)\\b/i.test(t))
         .find(t => t !== mine) || '';
-    }, ${JSON.stringify(normText(prompt))});
+    }, __mine);
     __out.text = __late;
   }
   __out.ok = __out.text.length > 0;
@@ -296,7 +299,7 @@ async submit(prompt: string, timeoutMs = 90_000, attempts = 3): Promise<ArenaRes
 
 private async attempt(prompt: string, timeoutMs: number): Promise<ArenaResult> {
   const url = `${DIRECT}?model_a=${encodeURIComponent(this.model)}`;
-  const stdout = await runAside(callScript(url, prompt, timeoutMs));
+  const stdout = await runAside(callScript(url), { prompt, timeoutMs });
 
   const marked = stdout.split('\n').find((l) => l.includes(MARKER));
   if (!marked) {
@@ -324,35 +327,42 @@ private async attempt(prompt: string, timeoutMs: number): Promise<ArenaResult> {
 }
 }
 
-/** Invoke the Aside REPL and return stdout. */
-function runAside(script: string): Promise<string> {
+/**
+ * Invoke the Aside REPL, passing the prompt on stdin.
+ *
+ * No `shell: true`: the script would otherwise let a prompt containing a quote
+ * or semicolon become command syntax. More importantly the prompt does not go
+ * through argv at all, because a maplet prompt is large enough to exceed the
+ * operating system's command-line limit once encoded - and every call then
+ * fails with ENAMETOOLONG before the browser is ever reached.
+ */
+function runAside(script: string, cfg: { prompt: string; timeoutMs: number }): Promise<string> {
   return new Promise((resolve, reject) => {
-    // No `shell: true`. The script embeds the benchmark prompt verbatim, and
-    // shell interpretation would let a prompt containing a quote or a semicolon
-    // become command syntax. argv passes it as one argument untouched.
-    const child = spawn('aside', ['repl', script], { shell: false, windowsHide: true });
+    const child = spawn('aside', ['repl', script], {
+      shell: false,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => (stdout += String(d)));
     child.stderr.on('data', (d) => (stderr += String(d)));
-    // Generous: the inner script already bounds itself, so this only catches a
-    // wedged Aside process rather than a slow model.
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error('aside repl timed out'));
-    }, 240_000);
     child.on('error', (e) => {
-      clearTimeout(timer);
       reject(new Error(`could not launch the aside CLI: ${e.message}. Is it on PATH?`));
     });
     child.on('close', () => {
-      clearTimeout(timer);
       if (/isn't running on this machine/i.test(stderr + stdout)) {
         reject(new Error('Aside Browser is not running. Start it, then retry.'));
         return;
       }
       resolve(stdout);
     });
+    // The script reads one JSON object from stdin and then sees EOF.
+    child.stdin.on('error', () => {
+      // A closed pipe after the script exited is not itself a failure; the exit
+      // code and stdout carry the real outcome.
+    });
+    child.stdin.end(JSON.stringify({ prompt: cfg.prompt, mine: normText(cfg.prompt), timeoutMs: cfg.timeoutMs }));
   });
 }
 
