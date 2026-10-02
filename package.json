@@ -1,6 +1,6 @@
 {
   "name": "supercarto",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "LLM-native spatial middleware. Give an AI agent a map of any location on earth as a token-budgeted topological graph, with indoor floors, weather, and traffic, that it can reason over directly.",
   "type": "module",
   "license": "Apache-2.0",

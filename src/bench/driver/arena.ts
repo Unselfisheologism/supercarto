@@ -21,6 +21,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ModelClient } from '../models.js';
 import type { ModelRequest } from '../types.js';
 
@@ -108,12 +111,15 @@ export async function fetchModelCatalog(): Promise<Map<string, string>> {
 /**
  * The browser script for one call.
  *
- * The prompt is NOT interpolated here. It arrives on stdin instead, because a
- * maplet prompt is around 17,000 characters and embedding it twice - once to
- * fill the box and once to compare against the echo - pushes the command line
- * past Windows' 32,767-character limit. Every call then failed with
- * `spawn ENAMETOOLONG`, which the per-call error handler recorded as a model
+ * The prompt is NOT interpolated here. A maplet prompt is around 17,000
+ * characters and embedding it twice - once to fill the text box and once to
+ * compare against the echo - takes the command line past Windows' 32,767
+ * character limit. Every call then failed with `spawn ENAMETOOLONG` before the
+ * browser was reached, and the per-call error handler recorded it as a model
  * failure: twelve rows blaming the model for a bug in the harness.
+ *
+ * It arrives as a temp file instead. The REPL sandbox has no `process`, so
+ * stdin is not an option, but it does expose `fs`.
  *
  * The script is a flat sequence of top-level statements because the REPL
  * evaluates top-level statements and prints only what `console.log` emits; a
@@ -121,21 +127,29 @@ export async function fetchModelCatalog(): Promise<Map<string, string>> {
  */
 function callScript(url: string): string {
   return `
-const __cfg = JSON.parse(await new Promise((res, rej) => {
-  let b = '';
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (c) => { b += c; });
-  process.stdin.on('end', () => res(b));
-  process.stdin.on('error', rej);
-}));
+// \`fs.readFile\` here returns an already-parsed object for a .json path rather
+// than a string, so it is used directly instead of through JSON.parse.
+const __cfg = fs.readFile(__PAYLOAD_PATH__);
 const __prompt = __cfg.prompt;
 const __mine = __cfg.mine;
 const __out = { ok: false, text: '', error: '', captcha: false };
 const __t0 = Date.now();
 try {
   const __page = await openTab(${JSON.stringify(url)});
-  await new Promise(r => setTimeout(r, 6000));
 
+  // Wait for the composer rather than sleeping a fixed interval. Arena is a
+  // client-side app: a fixed wait is sometimes enough and sometimes not, and
+  // acting before the textarea exists fails with "selector not found" - which
+  // reads as a model failure rather than a page that had not loaded.
+  const __ready = await __page
+    .waitForSelector('textarea', { timeout: 30000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!__ready) {
+    __out.error = 'composer did not load within 30s';
+    __out.elapsedMs = Date.now() - __t0;
+    console.log('SUPERCARTO_JSON:' + JSON.stringify(__out));
+  } else {
   const __box = __page.locator('textarea').last();
   await __box.fill(__prompt);
   await __box.press('Enter');
@@ -209,6 +223,7 @@ try {
   }
   __out.ok = __out.text.length > 0;
   if (!__out.ok && !__out.error) __out.error = 'no response within timeout';
+  }
 } catch (e) {
   __out.error = (e && e.message) ? e.message : String(e);
 }
@@ -328,41 +343,45 @@ private async attempt(prompt: string, timeoutMs: number): Promise<ArenaResult> {
 }
 
 /**
- * Invoke the Aside REPL, passing the prompt on stdin.
+ * Invoke the Aside REPL, passing the prompt through a temp file.
  *
- * No `shell: true`: the script would otherwise let a prompt containing a quote
- * or semicolon become command syntax. More importantly the prompt does not go
- * through argv at all, because a maplet prompt is large enough to exceed the
- * operating system's command-line limit once encoded - and every call then
- * fails with ENAMETOOLONG before the browser is ever reached.
+ * No `shell: true`: shell interpretation would let a prompt containing a quote
+ * or semicolon become command syntax. The prompt also does not go through argv,
+ * because a maplet prompt is large enough to exceed the operating system's
+ * command-line limit once encoded - and every call then fails with
+ * ENAMETOOLONG before the browser is ever reached.
+ *
+ * The file is removed after the call. It holds a full benchmark prompt, which is
+ * not secret but should not outlive the run.
  */
 function runAside(script: string, cfg: { prompt: string; timeoutMs: number }): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), 'supercarto-arena-'));
+  const payloadPath = join(dir, 'payload.json');
   return new Promise((resolve, reject) => {
-    const child = spawn('aside', ['repl', script], {
-      shell: false,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    writeFileSync(
+      payloadPath,
+      JSON.stringify({ prompt: cfg.prompt, mine: normText(cfg.prompt), timeoutMs: cfg.timeoutMs }),
+    );
+    // The script is built here rather than by the caller, so the temp path is
+    // known before the script that reads it is generated.
+    const body = script.replace('__PAYLOAD_PATH__', JSON.stringify(payloadPath));
+    const child = spawn('aside', ['repl', body], { shell: false, windowsHide: true });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => (stdout += String(d)));
     child.stderr.on('data', (d) => (stderr += String(d)));
     child.on('error', (e) => {
+      rmSync(dir, { recursive: true, force: true });
       reject(new Error(`could not launch the aside CLI: ${e.message}. Is it on PATH?`));
     });
     child.on('close', () => {
+      rmSync(dir, { recursive: true, force: true });
       if (/isn't running on this machine/i.test(stderr + stdout)) {
         reject(new Error('Aside Browser is not running. Start it, then retry.'));
         return;
       }
       resolve(stdout);
     });
-    // The script reads one JSON object from stdin and then sees EOF.
-    child.stdin.on('error', () => {
-      // A closed pipe after the script exited is not itself a failure; the exit
-      // code and stdout carry the real outcome.
-    });
-    child.stdin.end(JSON.stringify({ prompt: cfg.prompt, mine: normText(cfg.prompt), timeoutMs: cfg.timeoutMs }));
   });
 }
 
