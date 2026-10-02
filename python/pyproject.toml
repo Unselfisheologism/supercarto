@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "supercarto"
-version = "0.4.1"
+version = "0.4.2"
 description = "LLM-native spatial middleware. Give an AI agent a map of any location on earth as a token-budgeted topological graph, with indoor floors, weather, and traffic."
 readme = "README.md"
 requires-python = ">=3.10"

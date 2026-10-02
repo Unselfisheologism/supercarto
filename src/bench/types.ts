@@ -2,6 +2,8 @@
  * Benchmark types shared across the harness.
  */
 
+import type { SpatialGraph } from '../compile/graph.js';
+
 export interface LatLon {
   lat: number;
   lon: number;
@@ -31,6 +33,15 @@ export interface GroundTruth {
   durationS?: number;
   /** Street names on the route, in order. */
   streets?: string[];
+  /**
+   * The graph the model was shown, for self-consistent connectivity scoring.
+   *
+   * Carried rather than just a component count because judging connectivity
+   * needs the graph to judge against: "the map says two parts are separate" and
+   * "the real world has two parts" are different questions, and only the first
+   * is answerable here.
+   */
+  graph?: SpatialGraph;
   /** Named places present in the source data. */
   names?: string[];
   /** Weakly-connected component count in the emitted graph. */

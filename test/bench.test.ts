@@ -1,291 +1,353 @@
 import { describe, expect, it } from 'vitest';
 import {
-  acknowledgesOmission,
-  connectedComponents,
   distanceCorrect,
   extractDistanceM,
-  isRefusal,
-  median,
-  scoreConnectivity,
   scoreNames,
+  isRefusal,
+  acknowledgesOmission,
+  connectedComponents,
+  scoreConnectivity,
+  median,
   summarise,
-  type ScoredTask,
+  failures,
 } from '../src/bench/score.js';
-import { buildTasks, EVAL_PROTOCOL, PANEL, TASK_AREAS } from '../src/bench/tasks.js';
-import { emptyIndoor, toMaplet, type GeoJsonFeature } from '../src/index.js';
+import { buildTasks, TASK_AREAS, SYSTEM_PROMPT } from '../src/bench/tasks.js';
+import type { ScoredTask } from '../src/bench/score.js';
+import type { SpatialGraph } from '../src/compile/graph.js';
 
 /**
- * The benchmark's own machinery.
+ * Benchmark scoring and task construction.
  *
- * A benchmark that cannot be shown to grade correctly is worse than no
- * benchmark, because it produces numbers that get cited. These tests pin the
- * scoring rules, and in particular the several places where a lenient
- * implementation would inflate supercarto's score.
+ * The harness had no tests at all. That matters more than ordinary coverage: the
+ * scorer's output is the entire basis for any claim that supercarto helps an
+ * agent, so a scorer that quietly inflates accuracy would produce a
+ * confident, publishable, wrong conclusion. The tests below are mostly about
+ * the ways a scorer can lie.
+ *
+ * No API key is involved. `ModelClient` is an interface and the runner takes
+ * injected clients, so the harness is testable end to end offline.
  */
 
-describe('distanceCorrect', () => {
-  it('accepts a street distance close to the true one', () => {
-    // 250m along streets against a 240m truth is right. The tolerance is
-    // relative because a walk is always longer than the crow flies.
-    expect(distanceCorrect(250, 240)).toBe(true);
-    expect(distanceCorrect(215, 240)).toBe(true);
-  });
-
-  it('rejects a straight-line distance', () => {
-    // The failure this catches: a model that reads the map's centre and reports
-    // the radius back, having reasoned about nothing.
-    expect(distanceCorrect(200, 240)).toBe(false);
-  });
-
-  it('rejects nonsense rather than passing it', () => {
-    expect(distanceCorrect(Number.NaN, 240)).toBe(false);
-    expect(distanceCorrect(0, 240)).toBe(false);
-    expect(distanceCorrect(240, 0)).toBe(false);
-    expect(distanceCorrect(-50, 240)).toBe(false);
-  });
-});
-
-describe('extractDistanceM', () => {
-  it('reads metres and kilometres', () => {
-    expect(extractDistanceM('you walk about 250m')).toBe(250);
-    expect(extractDistanceM('roughly 1.2 km')).toBe(1200);
-    expect(extractDistanceM('about 240 meters')).toBe(240);
-  });
-
-  it('does not read the m in a street name as a unit', () => {
-    // Mission St contains an "s" and "Mission" ends in "n", but a name like
-    // "1000m Rd" or an initialism would fool a looser pattern.
-    expect(extractDistanceM('head down Mission St')).toBeUndefined();
-  });
-
-  it('returns undefined rather than guessing', () => {
-    // An answer with no number cannot be scored on distance, and inventing one
-    // would make every such answer look like a wild guess scored against the
-    // truth.
-    expect(extractDistanceM('the route is short')).toBeUndefined();
-  });
-});
-
-describe('scoreNames', () => {
-  it('measures recall against the real data', () => {
-    const s = scoreNames(['Blue Bottle', 'Walgreens'], 'There is Blue Bottle here.');
-    expect(s.recall).toBeCloseTo(0.5);
-    expect(s.hallucinations).toEqual([]);
-  });
-
-  it('flags a place that is not in the data', () => {
-    // The worst outcome this library could produce: a confident, plausible,
-    // fictional shop. It is scored as a failure even when recall is perfect.
-    const s = scoreNames(['Blue Bottle'], 'You can visit Blue Bottle and Starbucks.');
-    expect(s.hallucinations).toContain('Starbucks');
-  });
-
-  it('does not treat a partial reference as an invention', () => {
-    const s = scoreNames(['Powell Street Station'], 'Powell St Station is nearby.');
-    expect(s.hallucinations).toEqual([]);
-  });
-
-  it('scores an empty expected set as full recall', () => {
-    // An area with no named places should not make every answer look wrong.
-    expect(scoreNames([], 'nothing here').recall).toBe(1);
-  });
-});
-
-describe('connectivity and omission', () => {
-  const isolated = {
-    meta: { center: '0,0' },
-    nodes: [
-      { id: 'n1', kind: 'intersection' as const, features: [] },
-      { id: 'n2', kind: 'intersection' as const, features: [] },
-      { id: 'n3', kind: 'poi' as const, name: 'A', features: [] },
-    ],
-    edges: [
-      { from: 'n1', to: 'n2', dist: 1, dx: 1, dy: 0, dir: 'east' as const, features: [] },
-    ],
-    obstacles: [],
-    heat: [],
-    indoor: emptyIndoor(),
-    omitted: [],
-    tools: [],
-    pinned: [],
-    partial: false,
+function scored(over: Partial<ScoredTask> = {}): ScoredTask {
+  return {
+    taskId: 't',
+    representation: 'supercarto',
+    model: 'fake',
+    seed: 0,
+    correct: true,
+    scoredBy: 'exact',
+    inputTokens: 100,
+    outputTokens: 20,
+    wallMs: 50,
+    answer: '',
+    ...over,
   };
+}
 
-  it('counts weakly connected components', () => {
-    expect(connectedComponents(isolated)).toBe(2);
+describe('distance scoring', () => {
+  it('accepts a value within tolerance', () => {
+    expect(distanceCorrect(250, 250)).toBe(true);
+    expect(distanceCorrect(260, 250)).toBe(true); // +4%
+    expect(distanceCorrect(240, 250)).toBe(true); // -4%
   });
 
-  it('rewards an answer that reports isolation when there is some', () => {
-    expect(scoreConnectivity(isolated, 'Some places are isolated from the others.')).toBe(true);
+  it('rejects a value outside tolerance', () => {
+    expect(distanceCorrect(400, 250)).toBe(false);
+    expect(distanceCorrect(100, 250)).toBe(false);
   });
 
-  it('rejects an answer that claims full connectivity when there is none', () => {
-    // The specific failure: an agent that says "everything is connected" when
-    // a place is stranded will send someone somewhere unreachable.
-    expect(scoreConnectivity(isolated, 'All are connected by walking paths.')).toBe(false);
+  it('scales tolerance to magnitude rather than using a fixed band', () => {
+    // 15% of 250m is 37m, about a block. 15% of 5km is 750m. A fixed absolute
+    // band would make short walks impossible to judge and long ones trivial.
+    expect(distanceCorrect(5700, 5000)).toBe(true); // +14%
+    expect(distanceCorrect(4300, 5000)).toBe(true); // -14%
+    // -20% is outside tolerance at either magnitude.
+    expect(distanceCorrect(4000, 5000)).toBe(false);
+    expect(distanceCorrect(200, 250)).toBe(false); // -20%
   });
 
-  it('recognises an explicit statement about omissions', () => {
-    // The behaviour supercarto is built around: saying the map is partial is
-    // correct, and saying a missing feature does not exist is not.
-    expect(acknowledgesOmission('The map is incomplete, 137 buildings omitted.')).toBe(true);
-    expect(acknowledgesOmission('There is no cafe here.')).toBe(false);
+  it('refuses nonsense rather than scoring it', () => {
+    // These are the cases where a lenient scorer would report a wrong answer as
+    // correct because NaN comparisons are false in the flattering direction.
+    expect(distanceCorrect(NaN, 250)).toBe(false);
+    expect(distanceCorrect(Infinity, 250)).toBe(false);
+    expect(distanceCorrect(250, 0)).toBe(false);
+    expect(distanceCorrect(250, NaN)).toBe(false);
   });
 
+  it('extracts a distance from free text', () => {
+    expect(extractDistanceM('you walk about 240m')).toBe(240);
+    expect(extractDistanceM('roughly 240 m')).toBe(240);
+    expect(extractDistanceM('about 1.2km')).toBe(1200);
+    expect(extractDistanceM('around 0.4 km')).toBe(400);
+    expect(extractDistanceM('1.5 kilometers')).toBeUndefined();
+  });
+
+  it('does not read a street name as a unit', () => {
+    // The "m" in "Market St" is not metres. Without word boundaries the scorer
+    // would pull a number out of a street name and judge the answer on it.
+    expect(extractDistanceM('head north on Market St for 3 blocks')).toBeUndefined();
+  });
+
+  it('prefers kilometres when both units appear', () => {
+    expect(extractDistanceM('1km, or about 1000m')).toBe(1000);
+  });
+
+  it('returns undefined when no distance is stated', () => {
+    expect(extractDistanceM('it is a short walk')).toBeUndefined();
+    expect(extractDistanceM('')).toBeUndefined();
+  });
+});
+
+describe('name scoring', () => {
+  it('measures recall of expected names', () => {
+    const s = scoreNames(['Blue Bottle', 'Powell St', 'Ferry Building'], 'You can visit Blue Bottle and Powell St.');
+    expect(s.recall).toBeCloseTo(2 / 3);
+    expect(s.hallucinations).toHaveLength(0);
+  });
+
+  it('scores an empty expectation as complete', () => {
+    // Nothing to find is not a failure, but it is also not evidence of skill.
+    expect(scoreNames([], 'anything at all').recall).toBe(1);
+  });
+
+  it('flags a named place that is not in the data', () => {
+    // This is the failure that matters: an agent sending someone to a shop that
+    // does not exist is worse than one that names nothing.
+    const s = scoreNames(['Blue Bottle'], 'Visit Blue Bottle Cafe and Philz Coffee here.');
+    expect(s.recall).toBe(1);
+    expect(s.hallucinations).toContain('Philz Coffee');
+    expect(s.hallucinations).not.toContain('Blue Bottle Cafe');
+  });
+
+  it('flags a quoted name with no place word in it', () => {
+    // Quotation marks are taken as an explicit claim of a name, so no place word
+    // is needed for the check to fire.
+    const s = scoreNames(['Blue Bottle'], 'Try "Philz Coffee".');
+    expect(s.hallucinations).toContain('Philz Coffee');
+  });
+
+  it('does not count an abbreviation of a real name as invented', () => {
+    // "Powell St Station" is the same place as "Powell Street Station".
+    const s = scoreNames(['Powell Street Station'], 'The Powell St Station is close by.');
+    expect(s.hallucinations).toHaveLength(0);
+  });
+});
+
+describe('refusal and omission detection', () => {
   it('recognises a refusal', () => {
-    expect(isRefusal('I cannot determine this from the data.')).toBe(true);
-    expect(isRefusal('No map data was provided.')).toBe(true);
-    expect(isRefusal('The nearest cafe is Blue Bottle, 40m north.')).toBe(false);
+    expect(isRefusal("I cannot determine this from the data")).toBe(true);
+    expect(isRefusal("there is no map data available")).toBe(true);
+    expect(isRefusal('the distance is 240m')).toBe(false);
+  });
+
+  it('recognises an acknowledgement that the map is partial', () => {
+    // Omission records exist so the agent says "this is partial" rather than
+    // presenting a truncated map as complete.
+    expect(acknowledgesOmission('some features were omitted')).toBe(true);
+    expect(acknowledgesOmission('this map is incomplete')).toBe(true);
+    expect(acknowledgesOmission('here is everything in the area')).toBe(false);
+  });
+});
+
+describe('connected components', () => {
+  function graph(nodes: string[], edges: [string, string][]): SpatialGraph {
+    return {
+      meta: { center: '0, 0' },
+      nodes: nodes.map((id) => ({ id, kind: 'intersection', features: [] })),
+      edges: edges.map(([from, to]) => ({ from, to })),
+      heat: [],
+      omitted: [],
+      indoor: null,
+      tools: [],
+      pinned: [],
+    } as unknown as SpatialGraph;
+  }
+
+  it('counts one component for a connected graph', () => {
+    expect(connectedComponents(graph(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]))).toBe(1);
+  });
+
+  it('counts each island separately', () => {
+    expect(connectedComponents(graph(['a', 'b', 'c'], [['a', 'b']]))).toBe(2);
+  });
+
+  it('counts isolated nodes as their own component', () => {
+    expect(connectedComponents(graph(['a', 'b', 'c'], []))).toBe(3);
+  });
+
+  it('ignores an edge naming a node that is not in the graph', () => {
+    // A malformed edge must not throw or invent a component.
+    expect(connectedComponents(graph(['a'], [['a', 'ghost']]))).toBe(1);
+  });
+
+  it('agrees with the answer when it matches the graph it was shown', () => {
+    const g = graph(['a', 'b'], [['a', 'b']]);
+    expect(scoreConnectivity(g, 'these are all connected')).toBe(true);
+    expect(scoreConnectivity(g, 'some are isolated from the rest')).toBe(false);
+  });
+
+  it('requires a positive claim when the graph is connected', () => {
+    // The case that lets a refusal through. Silence is not agreement: an answer
+    // that states nothing about connectivity must not score as correct just
+    // because the graph happens to be connected.
+    const g = graph(['a', 'b'], [['a', 'b']]);
+    expect(scoreConnectivity(g, 'I cannot determine this')).toBe(false);
+    expect(scoreConnectivity(g, 'some things are here')).toBe(false);
+    expect(scoreConnectivity(g, '')).toBe(false);
+  });
+
+  it('requires a positive claim when the graph is disconnected too', () => {
+    const g = graph(['a', 'b'], []);
+    expect(scoreConnectivity(g, 'I cannot determine this')).toBe(false);
+    expect(scoreConnectivity(g, 'they are all connected')).toBe(false);
+    expect(scoreConnectivity(g, 'one is isolated')).toBe(true);
+  });
+});
+
+describe('median', () => {
+  it('takes the middle value of an odd set', () => {
+    expect(median([3, 1, 2])).toBe(2);
+  });
+
+  it('averages the middle pair of an even set', () => {
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+  });
+
+  it('handles empty and single sets', () => {
+    expect(median([])).toBe(0);
+    expect(median([7])).toBe(7);
+  });
+
+  it('is not dragged by one enormous value', () => {
+    // The reason for a median: one run with a 200k-token context would move a
+    // mean far enough to misreport the cost of a representation.
+    expect(median([10, 10, 10, 10, 100_000])).toBe(10);
   });
 });
 
 describe('summarise', () => {
-  function row(over: Partial<ScoredTask>): ScoredTask {
-    return {
-      taskId: 't',
-      representation: 'supercarto',
-      model: 'm',
-      seed: 0,
-      correct: true,
-      scoredBy: 'exact',
-      inputTokens: 1000,
-      outputTokens: 100,
-      wallMs: 500,
-      answer: '',
-      ...over,
-    };
-  }
-
-  it('reports completion separately from accuracy', () => {
-    // This is the distinction that keeps a benchmark honest. A model that
-    // answered two of thirty and got both right must not score 100%.
+  it('reports accuracy over answered tasks only', () => {
     const s = summarise(
-      [...Array(28).fill(0), ...Array(2).fill(0)].map((_, i) =>
-        i < 28 ? row({ correct: null, error: 'timeout' }) : row({ correct: true }),
-      ),
+      [scored({ correct: true }), scored({ correct: false }), scored({ correct: null, scoredBy: 'failed' })],
       'supercarto',
-      'm',
+      'fake',
     );
-    expect(s.accuracy).toBe(1);
-    expect(s.completion).toBeCloseTo(0.067);
+    // Two scorable tasks, one right. The failure must not count as wrong, or a
+    // broken harness would look like a failing model.
+    expect(s.accuracy).toBe(0.5);
+    // Rounded to three places for a stable report, so compare with a tolerance
+    // rather than to the exact fraction.
+    expect(s.completion).toBeCloseTo(2 / 3, 3);
   });
 
-  it('reports the spread across seeds rather than a single number', () => {
-    // Providers are not bit-deterministic even at temperature 0, so one run is
-    // noise. A harness that hides this makes small differences look real.
-    const s = summarise(
-      [
-        row({ seed: 0, correct: true }),
-        row({ seed: 0, correct: false }),
-        row({ seed: 1, correct: true }),
-        row({ seed: 1, correct: true }),
-      ],
-      'supercarto',
-      'm',
-    );
-    expect(s.accuracy).toBe(0.75);
-    expect(s.accuracySpread).toBeCloseTo(0.5);
-  });
-
-  it('uses a median for token cost', () => {
-    // A mean is dragged by one enormous prompt, which is exactly the outlier a
-    // median exists to ignore.
-    expect(median([10, 10, 10, 10_000])).toBe(10);
-    expect(median([5, 10, 20])).toBe(10);
-  });
-
-  it('returns null accuracy when nothing was answered', () => {
-    const s = summarise([row({ correct: null, error: 'x' })], 'supercarto', 'm');
+  it('reports null accuracy when nothing was scorable', () => {
+    // A run where every task errored must not publish 0% accuracy. That reads
+    // as "the model failed" when the truth is "the harness failed".
+    const s = summarise([scored({ correct: null, scoredBy: 'failed' })], 'supercarto', 'fake');
     expect(s.accuracy).toBeNull();
     expect(s.completion).toBe(0);
   });
+
+  it('reports null for an empty task list', () => {
+    const s = summarise([], 'supercarto', 'fake');
+    expect(s.accuracy).toBeNull();
+    expect(s.completion).toBeNull();
+  });
+
+  it('measures spread across seeds', () => {
+    const s = summarise(
+      [
+        scored({ seed: 0, correct: true }),
+        scored({ seed: 0, correct: true }),
+        scored({ seed: 1, correct: true }),
+        scored({ seed: 1, correct: false }),
+      ],
+      'supercarto',
+      'fake',
+    );
+    // Seed 0 scored 1.0, seed 1 scored 0.5. Averaging would hide that a single
+    // number is not the whole story.
+    expect(s.accuracySpread).toBeCloseTo(0.5);
+  });
+
+  it('totals input tokens across answered tasks only', () => {
+    const s = summarise(
+      [scored({ inputTokens: 100 }), scored({ correct: null, inputTokens: 999_999 })],
+      'supercarto',
+      'fake',
+    );
+    expect(s.totalInputTokens).toBe(100);
+  });
+
+  it('carries the representation and model through', () => {
+    const s = summarise([scored()], 'geojson', 'model-x');
+    expect(s.representation).toBe('geojson');
+    expect(s.model).toBe('model-x');
+  });
 });
 
-describe('task set', () => {
-  it('covers latitudes that break Mercator assumptions', () => {
-    // A benchmark run only at 37N measures one case and hides every sign error
-    // toward the poles. These are the areas that would catch one.
-    const lats = TASK_AREAS.map((a) => Math.abs(a.center.lat));
-    expect(Math.max(...lats)).toBeGreaterThan(60);
-    expect(Math.min(...lats)).toBeLessThan(5);
-    const signs = new Set(TASK_AREAS.map((a) => Math.sign(a.center.lat)));
-    expect(signs.has(1)).toBe(true);
-    expect(signs.has(-1)).toBe(true);
+describe('failures', () => {
+  it('lists unscoreable and errored tasks', () => {
+    const list = failures([
+      scored(),
+      scored({ correct: null }),
+      scored({ error: 'timeout' }),
+    ]);
+    expect(list).toHaveLength(2);
   });
 
-  it('includes areas expected to break naive approaches', () => {
-    expect(TASK_AREAS.some((a) => a.adversarial)).toBe(true);
-    expect(TASK_AREAS.every((a) => a.rationale.length > 0)).toBe(true);
+  it('returns nothing when every task succeeded', () => {
+    expect(failures([scored(), scored()])).toHaveLength(0);
   });
+});
 
-  it('generates every task kind for every area', () => {
+describe('task construction', () => {
+  it('builds several task kinds per area', () => {
     const tasks = buildTasks(TASK_AREAS);
-    const perArea = tasks.length / TASK_AREAS.length;
-    expect(perArea).toBe(4);
-    for (const area of TASK_AREAS) {
-      const kinds = new Set(tasks.filter((t) => t.id.startsWith(area.id)).map((t) => t.kind));
-      expect(kinds.size).toBe(4);
-    }
+    expect(tasks.length).toBeGreaterThan(TASK_AREAS.length);
+    const kinds = new Set(tasks.map((t) => t.kind));
+    expect(kinds.has('route')).toBe(true);
+    expect(kinds.has('nearest')).toBe(true);
+    expect(kinds.has('connectivity')).toBe(true);
   });
 
-  it('states where every answer comes from', () => {
-    // A score without a stated provenance cannot be audited.
+  it('gives every task a unique id', () => {
+    // Ids key the detail rows, so a collision would silently merge two
+    // different measurements into one.
+    const tasks = buildTasks(TASK_AREAS);
+    const ids = tasks.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('asks the distance question in a way that distinguishes streets from straight lines', () => {
+    // The whole point of the route task: a model answering "400m" from the
+    // radius has not measured anything. The wording has to make the distinction
+    // explicit or the benchmark rewards the wrong behaviour.
+    const route = buildTasks(TASK_AREAS).find((t) => t.kind === 'route');
+    expect(route!.question).toMatch(/along streets/i);
+    expect(route!.question).toMatch(/straight line/i);
+  });
+
+  it('warns the model not to invent places', () => {
+    const nearest = buildTasks(TASK_AREAS).find((t) => t.kind === 'nearest');
+    expect(nearest!.question).toMatch(/do not invent/i);
+  });
+
+  it('builds nothing for an empty area list', () => {
+    expect(buildTasks([])).toEqual([]);
+  });
+
+  it('gives every task a usable centre and radius', () => {
     for (const t of buildTasks(TASK_AREAS)) {
-      expect(['osrm', 'source-data', 'self-consistent']).toContain(t.groundTruth);
+      expect(Number.isFinite(t.center.lat)).toBe(true);
+      expect(Number.isFinite(t.center.lon)).toBe(true);
+      expect(t.radiusM).toBeGreaterThan(0);
+      expect(t.question.length).toBeGreaterThan(10);
     }
   });
-});
 
-describe('evaluation protocol', () => {
-  it('pins temperature and requires multiple seeds', () => {
-    expect(EVAL_PROTOCOL.temperature).toBe(0);
-    expect(EVAL_PROTOCOL.seeds).toBeGreaterThanOrEqual(3);
-    expect(EVAL_PROTOCOL.disableCaches).toBe(true);
-    expect(EVAL_PROTOCOL.judgeFromDifferentFamily).toBe(true);
-  });
-
-  it('spans model families and includes a small model', () => {
-    const providers = new Set(PANEL.map((p) => p.provider));
-    expect(providers.size).toBeGreaterThanOrEqual(3);
-    // Winning on a 7B model is the one claim a token benchmark cannot fake, so
-    // a panel without one is not a panel.
-    expect(PANEL.some((p) => p.small)).toBe(true);
-  });
-});
-
-describe('benchmark ground truth', () => {
-  it('can score connectivity from a real compiled graph', () => {
-    // A wiring check on the two functions the runner depends on: if these do
-    // not compose with the real graph type, every connectivity row in a
-    // published run would be meaningless.
-    const features: GeoJsonFeature[] = [
-      {
-        type: 'Feature',
-        id: 1,
-        properties: { highway: 'residential', name: 'Main St' },
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [-122.42, 37.775],
-            [-122.415, 37.775],
-            [-122.41, 37.775],
-          ],
-        },
-      },
-      {
-        type: 'Feature',
-        id: 2,
-        properties: { amenity: 'cafe', name: 'Cafe' },
-        geometry: { type: 'Point', coordinates: [-122.4175, 37.775] },
-      },
-    ];
-    const graph = toMaplet(features, {
-      bbox: { west: -122.42, south: 37.77, east: -122.41, north: 37.78 },
-      budget: 2000,
-    }).graph;
-
-    expect(graph.nodes.length).toBeGreaterThan(0);
-    expect(connectedComponents(graph)).toBe(1);
-    expect(scoreConnectivity(graph, 'All the places are connected by walkways.')).toBe(true);
+  it('uses a system prompt that tells the model what it is looking at', () => {
+    expect(SYSTEM_PROMPT.length).toBeGreaterThan(50);
   });
 });

@@ -256,7 +256,13 @@ export function scoreConnectivity(graph: SpatialGraph, answer: string): boolean 
   );
 
   if (isolated) return claimsIsolated && !claimsAllConnected;
-  return !claimsIsolated;
+
+  // Answering "yes, they are all connected" is required, not merely the absence
+  // of a contrary claim. Defaulting to correct when the answer says neither is
+  // how a refusal, an empty answer, or an unrelated sentence scores as a pass:
+  // the text "I cannot determine this" makes no connectivity claim at all, and
+  // an unstated position is not agreement.
+  return claimsAllConnected && !claimsIsolated;
 }
 
 /** Weakly-connected component count over the emitted graph. */
@@ -286,7 +292,10 @@ export function median(xs: number[]): number {
   if (xs.length === 0) return 0;
   const s = [...xs].sort((a, b) => a - b);
   const mid = s.length >> 1;
-  return s.length % 2 === 0 ? Math.round((s[mid - 1]! + s[mid]!) / 2) : s[mid]!;
+  // The even case averages the two middle values and must not round. Rounding
+  // turned a median of 2.5 into 3, which is a 20% error on the token-cost figure
+  // - the number the whole cost comparison rests on.
+  return s.length % 2 === 0 ? (s[mid - 1]! + s[mid]!) / 2 : s[mid]!;
 }
 
 /**

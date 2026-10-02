@@ -1,4 +1,5 @@
 import { SuperCarto, OsrmRouter, estimateTokens, type GeoJsonFeatureCollection } from '../index.js';
+import type { RoutingSource } from '../source/routing.js';
 import { buildTasks, SYSTEM_PROMPT, EVAL_PROTOCOL, TASK_AREAS, type BenchmarkTask, type TaskArea } from './tasks.js';
 import {
   acknowledgesOmission,
@@ -35,11 +36,26 @@ export interface RunnerOptions {
   /** Token budgets to sweep for supercarto. */
   budgets?: number[];
   models?: ModelClient[];
-  /** Skip live fetching and use these features instead. Used by the tests. */
+  /**
+   * Skip live fetching and use these features instead, keyed by area id.
+   *
+   * Without this the runner reaches Overpass and OSRM, which makes it
+   * impossible to exercise offline and turns every run into a network
+   * benchmark. A benchmark whose harness cannot be tested is a benchmark whose
+   * scoring can be quietly wrong.
+   */
   fixtures?: Record<string, GeoJsonFeatureCollection>;
   seeds?: number;
   /** Progress callback. */
   onProgress?: (msg: string) => void;
+  /**
+   * Supply the map and routing clients instead of the live ones.
+   *
+   * This is the seam that lets a test drive the whole runner without a network.
+   * Production callers leave it unset and get Overpass and OSRM.
+   */
+  carto?: SuperCarto;
+  router?: RoutingSource;
 }
 
 export interface RunReport {
@@ -64,6 +80,17 @@ function destination(center: LatLon, radiusM: number): LatLon {
   return { lat: center.lat + radiusM / 110574, lon: center.lon };
 }
 
+/**
+ * Area id for a task.
+ *
+ * Task ids are `<area-id>/<kind>`, so the prefix identifies which area a task
+ * belongs to. That is the key `fixtures` is indexed by.
+ */
+function areaIdOf(task: BenchmarkTask): string {
+  const slash = task.id.indexOf('/');
+  return slash === -1 ? task.id : task.id.slice(0, slash);
+}
+
 export async function runBenchmark(opts: RunnerOptions = {}): Promise<RunReport> {
   const areas = opts.areas ?? TASK_AREAS;
   const budgets = opts.budgets ?? [512, 1024, 2048];
@@ -73,8 +100,10 @@ export async function runBenchmark(opts: RunnerOptions = {}): Promise<RunReport>
   const detail: ScoredTask[] = [];
   const log = opts.onProgress ?? (() => {});
 
-  const carto = new SuperCarto();
-  const router = new OsrmRouter();
+  // Overridable so a test can supply a fixture-backed client. Hardcoding these
+  // made every run a live network call.
+  const carto = opts.carto ?? new SuperCarto();
+  const router = opts.router ?? new OsrmRouter();
 
   // Context sizes are collected per representation so the report can state the
   // cost side by side. This is the number that makes the accuracy numbers mean
@@ -211,13 +240,12 @@ async function buildContext(
  */
 async function groundTruth(
   task: BenchmarkTask,
-  router: OsrmRouter,
+  router: RoutingSource,
   carto: SuperCarto,
   fixtures: RunnerOptions['fixtures'],
   representation: Representation,
   budget: number,
 ): Promise<GroundTruth> {
-  void fixtures;
   void representation;
   void budget;
 
@@ -237,6 +265,17 @@ async function groundTruth(
     }
 
     if (task.kind === 'nearest') {
+      // Prefer the fixture's own names when one is supplied, so the expected
+      // answer describes the data the model was actually shown. Reading the
+      // expected list from a live fetch while showing the model a fixture would
+      // score the model against places it never saw.
+      const fixture = fixtures?.[areaIdOf(task)];
+      if (fixture) {
+        const names = fixture.features
+          .map((f) => (f.properties as Record<string, unknown> | null)?.name)
+          .filter((n): n is string => typeof n === 'string' && n.length > 0);
+        if (names.length > 0) return { names: [...new Set(names)] };
+      }
       const m = await carto.maplet({
         lat: task.center.lat,
         lon: task.center.lon,
@@ -253,7 +292,7 @@ async function groundTruth(
         radiusM: task.radiusM,
         budget: 4000,
       });
-      return { components: connectedComponents(m.graph) };
+      return { components: connectedComponents(m.graph), graph: m.graph };
     }
   } catch {
     // A task whose ground truth cannot be established is dropped rather than
@@ -381,13 +420,14 @@ function scoreAnswer(
 
     case 'connectivity': {
       if (truth.components === undefined) return { correct: null, by: 'failed' };
-      // Uses the answer's own claim against the graph it was shown. Imported
-      // lazily to avoid a cycle with the runner's own graph construction.
-      const said = /\b(isolated|not connected|no path|separate)\b/i.test(answer);
-      const allConnected = /\b(all (are )?connected|fully connected)\b/i.test(answer);
-      const expected = truth.components > 1 ? said && !allConnected : !said;
+      // Delegates to the shared scorer rather than repeating the pattern here.
+      // The copy that used to live here had drifted: it treated the absence of
+      // an "isolated" claim as agreement, so a refusal or an empty answer scored
+      // as correct on a connected graph. Two implementations of one rule will
+      // eventually disagree, and only one of them gets tested.
+      const correct = scoreConnectivity(truth.graph!, answer);
       return {
-        correct: expected,
+        correct,
         by: 'exact',
         rationale: `${truth.components} component(s) in graph`,
       };
