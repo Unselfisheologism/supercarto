@@ -57,6 +57,25 @@ export interface ArenaResult {
   error?: string;
   /** True when the page showed a human-verification prompt. */
   captcha: boolean;
+  /**
+   * True when the only bubble found was the prompt echoed back.
+   *
+   * Recorded rather than treated as an answer: a model that parrots the question
+   * has not answered it, and scoring that as a reply would quietly inflate the
+   * completion rate.
+   */
+  echoed?: boolean;
+  /**
+   * True when arena refused to generate because of a usage limit.
+   *
+   * Distinct from a model failure and from an empty answer. Free arena access is
+   * metered, and once the limit is hit every subsequent prompt is accepted and
+   * silently dropped, so a run that does not check this reports every remaining
+   * row as the model failing when the model was never called.
+   */
+  rateLimited?: boolean;
+  /** How many submissions it took to get a reply, including the first. */
+  attempts?: number;
   elapsedMs: number;
 }
 
@@ -89,57 +108,123 @@ export async function fetchModelCatalog(): Promise<Map<string, string>> {
 /**
  * The browser script for one call.
  *
- * Emitted as a string rather than compiled into the binary because it runs in
- * Aside's REPL, which is a Playwright-style JS sandbox with `page` available.
- * Kept deliberately small and defensive: the page is a third party and its DOM
- * can change without warning, so every selector has a fallback and every failure
- * returns a diagnosable value rather than throwing.
+ * Emitted as a string because it runs in Aside's REPL rather than in this
+ * process. The REPL evaluates top-level statements and prints only what
+ * `console.log` emits: a returned value, or a `return` from inside an IIFE, is
+ * discarded. So the script is a flat sequence of top-level statements ending in
+ * a single `console.log`, with no wrapper function.
+ *
+ * Every DOM selector has a fallback and every failure logs a diagnosable value
+ * rather than throwing, because the page is a third party and its markup can
+ * change without warning.
  */
 function callScript(url: string, prompt: string, timeoutMs: number): string {
   return `
-(async () => {
-  const out = { ok: false, text: '', error: '', captcha: false };
-  const t0 = Date.now();
-  try {
-    const page = await openTab(${JSON.stringify(url)});
-    await new Promise(r => setTimeout(r, 6000));
+const __out = { ok: false, text: '', error: '', captcha: false };
+const __t0 = Date.now();
+try {
+  const __page = await openTab(${JSON.stringify(url)});
+  await new Promise(r => setTimeout(r, 6000));
 
-    // Confirm the model actually took. If arena silently falls back to Auto, the
-    // response is not from the model under test and the row must not be trusted.
-    const shown = await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].map(x => (x.innerText||'').trim());
-      return b.find(t => t && t.length < 60 && /^(max|[a-z0-9.\\-]{6,60})$/i.test(t)) || '';
-    });
+  const __box = __page.locator('textarea').last();
+  await __box.fill(${JSON.stringify(prompt)});
+  await __box.press('Enter');
 
-    const box = page.locator('textarea').last();
-    await box.fill(${JSON.stringify(prompt)});
-    await box.press('Enter');
+  // Poll rather than sleep a fixed amount: a fast model finishes in a few
+  // seconds and a fixed wait would spend minutes idle.
+  //
+  // Arena intermittently renders only the prompt bubble with no reply at all -
+  // observed on consecutive calls to the same model seconds apart, and for both
+  // a trivial prompt and a full maplet, so it is not prompt-dependent. It looks
+  // like a dropped turn. The caller retries rather than treating it as an answer
+  // or as a model failure, because both would be wrong.
+  const __deadline = Date.now() + ${timeoutMs};
+  while (Date.now() < __deadline) {
+    await new Promise(r => setTimeout(r, 1500));
+    // \`mine\` is passed in rather than closed over. A callback handed to
+    // page.evaluate is serialised and run in the page, where the surrounding
+    // scope does not exist, so a bare reference to the prompt would throw
+    // inside the browser and the poll would never return an answer.
+    const __s = await __page.evaluate((mine) => {
+      const body = document.body.innerText || '';
+      const captcha = /captcha|are you human|verify you are|cloudflare|unusual traffic/i.test(body);
 
-    // Poll rather than sleep a fixed amount: fast models finish in a few
-    // seconds and a fixed wait would spend minutes idle.
-    const deadline = Date.now() + ${timeoutMs};
-    let text = '';
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 1500));
-      const s = await page.evaluate(() => {
-        const body = document.body.innerText || '';
-        const captcha = /captcha|are you human|verify you are|cloudflare|unusual traffic/i.test(body);
-        const nodes = [...document.querySelectorAll('.prose')].map(e => (e.innerText||'').trim()).filter(Boolean);
-        return { captcha, last: nodes[nodes.length-1] || '', n: nodes.length };
-      });
-      if (s.captcha) { out.captcha = true; out.error = 'captcha presented'; break; }
-      if (s.n > 0 && s.last && s.last !== prompt.slice(0,80)) { text = s.last; if (text.length > 1) break; }
+      // Arena rate-limits free usage, and when it does the page still accepts the
+      // prompt and renders it back with no reply. Read as an empty turn it looks
+      // exactly like a slow model or a dropped request, and a run then burns its
+      // whole timeout budget and reports every row as a model failure. Detected
+      // explicitly so the run stops and says why.
+      const limited = /rate limit|too many requests|try again in a moment|you have reached/i.test(body);
+      if (limited) {
+        return { captcha, limited: true, answer: '', n: 0, echoed: false };
+      }
+
+      // Every message bubble, in DOM order. Arena renders the assistant turn
+      // first and the user's own prompt after it, so the answer is not the last
+      // element - reading it that way returns the prompt back.
+      const bubbles = [...document.querySelectorAll('.prose')]
+        .map(e => (e.innerText || '').trim())
+        .filter(t => t.length > 0 && !/^(direct|battle mode|agent mode|side by side)\\b/i.test(t));
+
+      const norm = (s) => s.replace(/\\s+/g, ' ').trim();
+      const seen = bubbles.map(norm);
+      // The answer is any bubble that is not the prompt itself. A bubble that
+      // merely quotes the prompt is a real answer, so only an exact match is
+      // excluded.
+      const answer = seen.find(t => t !== mine) || '';
+      const echoed = !answer && seen.length > 0 && seen.every(t => t === mine);
+      return { captcha, limited: false, answer, n: bubbles.length, echoed };
+    }, ${JSON.stringify(normText(prompt))});
+    if (__s.captcha) {
+      __out.captcha = true;
+      __out.error = 'captcha presented';
+      break;
     }
-    out.text = text;
-    out.ok = text.length > 0;
-    if (!out.ok && !out.error) out.error = 'no response within timeout';
-  } catch (e) {
-    out.error = (e && e.message) ? e.message : String(e);
+    if (__s.limited) {
+      // Not retried: retrying through a rate limit only deepens it, and a run
+      // that keeps going would report every remaining row as a model failure.
+      __out.rateLimited = true;
+      __out.error = 'arena rate limit reached; wait before continuing';
+      break;
+    }
+    if (__s.answer) {
+      __out.text = __s.answer;
+      break;
+    }
   }
-  out.elapsedMs = Date.now() - t0;
-  return JSON.stringify(out);
-})()
+  if (!__out.text && !__out.captcha) {
+    // Give a slow model one more chance before declaring the turn lost.
+    await new Promise(r => setTimeout(r, 4000));
+    const __late = await __page.evaluate((mine) => {
+      const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+      return [...document.querySelectorAll('.prose')]
+        .map(e => norm(e.innerText))
+        .filter(t => t && !/^(direct|battle mode|agent mode|side by side)\\b/i.test(t))
+        .find(t => t !== mine) || '';
+    }, ${JSON.stringify(normText(prompt))});
+    __out.text = __late;
+  }
+  __out.ok = __out.text.length > 0;
+  if (!__out.ok && !__out.error) __out.error = 'no response within timeout';
+} catch (e) {
+  __out.error = (e && e.message) ? e.message : String(e);
+}
+__out.elapsedMs = Date.now() - __t0;
+console.log('SUPERCARTO_JSON:' + JSON.stringify(__out));
 `;
+}
+
+/** Marker prefixed to the result so it survives arena's own console noise. */
+const MARKER = 'SUPERCARTO_JSON:';
+
+/**
+ * Whitespace-normalised prompt, for comparing against arena's echo of it.
+ *
+ * Computed here rather than inside the page because a callback passed to
+ * `evaluate` runs in the browser with no access to this scope.
+ */
+function normText(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
 }
 
 /** Runs one prompt per fresh chat, archiving the result as it lands. */
@@ -173,31 +258,70 @@ export class ArenaDriver implements ModelClient {
     };
   }
 
-  /** One submission, for the case where the caller is not the benchmark. */
-  async submit(prompt: string, timeoutMs = 90_000): Promise<ArenaResult> {
-    const url = `${DIRECT}?model_a=${encodeURIComponent(this.model)}`;
-    const stdout = await runAside(callScript(url, prompt, timeoutMs));
-    let parsed: ArenaResult;
-    try {
-      const line = stdout
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.startsWith('{') && l.endsWith('}'))
-        .pop();
-      parsed = line ? (JSON.parse(line) as ArenaResult) : { ok: false, text: '', error: 'no result line', captcha: false, elapsedMs: 0 };
-    } catch (err) {
-      parsed = {
-        ok: false,
-        text: '',
-        error: `unparseable aside output: ${err instanceof Error ? err.message : String(err)}`,
-        captcha: false,
-        elapsedMs: 0,
-      };
+/**
+ * One submission, retried on a dropped turn.
+ *
+ * Arena intermittently renders the prompt with no reply. It was observed
+ * repeatedly on the same model seconds apart, for both a one-word prompt and a
+ * full maplet, so it is arena losing the turn rather than a model refusing.
+ * Retrying is the only correct response: scoring it as a refusal would charge
+ * the model for arena's fault, and scoring it as an answer would put the prompt
+ * back in as the reply.
+ *
+ * Retries are recorded on the result so a run's failure count is visible rather
+ * than silently smoothed over.
+ */
+async submit(prompt: string, timeoutMs = 90_000, attempts = 3): Promise<ArenaResult> {
+  let last: ArenaResult = { ok: false, text: '', error: 'not attempted', captcha: false, elapsedMs: 0 };
+
+  for (let i = 1; i <= attempts; i++) {
+    const result = await this.attempt(prompt, timeoutMs);
+    last = { ...result, attempts: i };
+
+    if (result.ok) return last;
+    // A captcha is not a dropped turn. Retrying through it would look like
+    // evasion, so it is surfaced immediately for a human to look at.
+    if (result.captcha) return last;
+    // A rate limit is not a model failure either, and hammering it makes the
+    // limit longer. Stop and report so the run can be resumed later.
+    if (result.rateLimited) return last;
+    if (i < attempts) {
+      // A fresh chat each attempt, so a wedged conversation cannot poison the
+      // retry.
+      await new Promise((r) => setTimeout(r, 1500 * i));
     }
-    void this.archivePath;
-    void this.write;
-    return parsed;
   }
+  return last;
+}
+
+private async attempt(prompt: string, timeoutMs: number): Promise<ArenaResult> {
+  const url = `${DIRECT}?model_a=${encodeURIComponent(this.model)}`;
+  const stdout = await runAside(callScript(url, prompt, timeoutMs));
+
+  const marked = stdout.split('\n').find((l) => l.includes(MARKER));
+  if (!marked) {
+    return {
+      ok: false,
+      text: '',
+      error: stdout.trim() === '' ? 'aside produced no output' : `unrecognised aside output: ${stdout.trim().slice(0, 200)}`,
+      captcha: false,
+      elapsedMs: 0,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(marked.slice(marked.indexOf(MARKER) + MARKER.length)) as ArenaResult;
+    return { ...parsed, elapsedMs: parsed.elapsedMs ?? 0 };
+  } catch (err) {
+    return {
+      ok: false,
+      text: '',
+      error: `could not parse aside result: ${err instanceof Error ? err.message : String(err)}`,
+      captcha: false,
+      elapsedMs: 0,
+    };
+  }
+}
 }
 
 /** Invoke the Aside REPL and return stdout. */
