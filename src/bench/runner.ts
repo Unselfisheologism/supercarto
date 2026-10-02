@@ -33,6 +33,13 @@ import type { GroundTruth, LatLon, ModelRequest } from './types.js';
 
 export interface RunnerOptions {
   areas?: readonly TaskArea[];
+  /**
+   * Restrict to specific task ids.
+   *
+   * For a smoke test over a metered, rate-limited provider: a full ladder is
+   * around 140 calls, which a free tier will not serve in one sitting.
+   */
+  only?: readonly string[];
   /** Token budgets to sweep for supercarto. */
   budgets?: number[];
   models?: ModelClient[];
@@ -96,7 +103,19 @@ export async function runBenchmark(opts: RunnerOptions = {}): Promise<RunReport>
   const budgets = opts.budgets ?? [512, 1024, 2048];
   const seeds = opts.seeds ?? EVAL_PROTOCOL.seeds;
   const models = opts.models ?? [];
-  const tasks = buildTasks(areas);
+  const tasks = buildTasks(areas).filter(
+    (t) => !opts.only || opts.only.includes(t.id),
+  );
+  if (tasks.length === 0) {
+    // Refused rather than run: an empty task list produces a report that looks
+    // complete and measures nothing, which is the easiest way to publish an
+    // empty benchmark by accident.
+    throw new Error(
+      opts.only
+        ? `no tasks matched ${opts.only.join(', ')}; known tasks: ${buildTasks(areas).map((t) => t.id).join(', ')}`
+        : 'no areas supplied, so there are no tasks to run',
+    );
+  }
   const detail: ScoredTask[] = [];
   const log = opts.onProgress ?? (() => {});
 

@@ -19,3 +19,5 @@ python/build/
 python/dist/
 .venv/
 venv/
+# benchmark archives and reports
+.bench/

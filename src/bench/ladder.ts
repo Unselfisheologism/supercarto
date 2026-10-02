@@ -35,12 +35,20 @@ export interface LadderOptions {
   models?: readonly string[];
   /** Where the JSONL archives go. One file per model. */
   outDir?: string;
-  /** Restrict to one task id, for a smoke test. */
-  only?: string[];
+  /**
+   * Restrict to specific task ids, for a smoke test.
+   *
+   * Filters the built task list rather than replacing the area list. Passing
+   * `areas: []` instead would produce a run with no tasks at all and look like a
+   * successful run that happened to score nothing.
+   */
+  only?: readonly string[];
   budgets?: number[];
   seeds?: number;
   carto?: SuperCarto;
   dryRun?: boolean;
+  /** Stop the whole ladder at the first rate limit, rather than per model. */
+  stopOnRateLimit?: boolean;
   onProgress?: (msg: string) => void;
 }
 
@@ -54,6 +62,8 @@ export interface LadderResult {
   resumed: number;
   /** Calls that needed the browser. */
   fetched: number;
+  /** True when arena stopped serving before this model finished. */
+  rateLimited?: boolean;
 }
 
 export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[]> {
@@ -66,8 +76,17 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
   log(`catalog: ${catalog.size} models resolved to uuids`);
 
   const results: LadderResult[] = [];
+  let stopped = false;
 
   for (const model of models) {
+    // A rate limit is a property of the account, not of one model. Continuing to
+    // the next model after hitting it would produce rows that look like model
+    // failures when the models were never called, so the ladder halts instead.
+    if (stopped) {
+      log(`skipping ${model}: an earlier model hit the arena rate limit`);
+      break;
+    }
+
     const archive = join(outDir, `${model}.jsonl`);
     const already = ResponseArchive.keys(archive).size;
     log(`${model}: ${already} exchanges already archived`);
@@ -102,12 +121,20 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       models: [client],
       budgets: opts.budgets ?? [1024],
       seeds: opts.seeds ?? 3,
-      areas: opts.only ? [] : undefined,
+      ...(opts.only ? { only: opts.only } : {}),
       ...(opts.carto ? { carto: opts.carto } : {}),
       onProgress: (m) => log(`  ${model}: ${m}`),
     });
 
     client.close();
+
+    // Whether the limit was hit, from the archived rows rather than from a
+    // separate signal, so a resumed run sees it too.
+    const limited = report.detail.some((r) => /rate limit/i.test(r.error ?? ''));
+    if (limited) {
+      stopped = true;
+      log(`${model}: rate limited. Stopping; rerun this ladder later to continue.`);
+    }
 
     results.push({
       model,
@@ -117,6 +144,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       archive,
       resumed: already,
       fetched: client.resumed === 0 ? report.detail.length : report.detail.length - client.resumed,
+      rateLimited: limited,
     });
   }
 

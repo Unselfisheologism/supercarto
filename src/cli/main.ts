@@ -98,8 +98,11 @@ COMMANDS
   encode  <file.geojson>   Compile a local file to the SCR wire format.
   decode  <file.scr>       Inspect an SCR document (text or binary).
   bench   <file.geojson>   Report token cost across budgets.
-  bench:tasks             Run the task-level accuracy benchmark against
-                          GeoJSON and OSM baselines. See docs/benchmark.md.
+bench:tasks             Run the task-level accuracy benchmark against
+                           GeoJSON and OSM baselines. See docs/benchmark.md.
+  bench:arena             Run the benchmark through an Arena Browser session,
+                           metered by a call budget and resumable.
+                           --budget <n> [--model <slug>] [--seeds <n>] [--dry]
   serve                    Start the HTTP API server.
   mcp                      Start the MCP server on stdio, for agent clients.
   help                     Show this message.
@@ -294,10 +297,15 @@ async function main(): Promise<void> {
       return;
     }
 
-    case 'bench:tasks': {
+case 'bench:tasks': {
       const { mainBenchTasks } = await import('../bench/cli.js');
       process.exitCode = await mainBenchTasks(process.argv.slice(3));
-      return;
+      break;
+    }
+    case 'bench:arena': {
+      const { runBench } = await import('../bench/cli-run.js');
+      process.exitCode = await runBench(process.argv.slice(3));
+      break;
     }
 
     case 'serve': {
