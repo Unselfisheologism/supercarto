@@ -87,6 +87,18 @@ describe('distance scoring', () => {
     // The "m" in "Market St" is not metres. Without word boundaries the scorer
     // would pull a number out of a street name and judge the answer on it.
     expect(extractDistanceM('head north on Market St for 3 blocks')).toBeUndefined();
+    expect(extractDistanceM('the m in Market')).toBeUndefined();
+  });
+
+  it('reads a distance written without a word boundary', () => {
+    // A real defect, found by scoring an actual arena response: the answer
+    // "DISTANCE_IS_240m" was judged as having stated no distance at all, because
+    // the underscore before the number is a word character. Models emit glued
+    // units constantly, and scoring that as "no answer" penalises formatting
+    // rather than correctness.
+    expect(extractDistanceM('DISTANCE_IS_240m')).toBe(240);
+    expect(extractDistanceM('(240m)')).toBe(240);
+    expect(extractDistanceM('~240m')).toBe(240);
   });
 
   it('prefers kilometres when both units appear', () => {

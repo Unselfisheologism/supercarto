@@ -75,6 +75,20 @@ export function extractDistanceM(text: string): number | undefined {
   if (km) return Number(km[1]) * 1000;
   const m = /\b(\d+(?:\.\d+)?)\s*m(?:eters?|etres?)?\b/i.exec(text);
   if (m) return Number(m[1]);
+
+  // Fallback for digit-adjacent units, where no word boundary exists because
+  // the character before the number is itself a word character. Models emit
+  // these constantly: "240m" inside a token like "DISTANCE_IS_240m", or
+  // "(240m)", or "≈240m". Requiring a boundary alone means a confidently wrong
+  // "no distance stated" verdict on an answer that plainly stated one, which is
+  // the worst kind of scoring error: it penalises the model for its formatting.
+  //
+  // The guard against reading a street name as a unit still holds, because the
+  // looser pattern requires digits immediately before the "m".
+  const gluedKm = /(\d+(?:\.\d+)?)\s*km\b/i.exec(text);
+  if (gluedKm) return Number(gluedKm[1]) * 1000;
+  const gluedM = /(\d+(?:\.\d+)?)\s*m(?:eters?|etres?)?\b/i.exec(text);
+  if (gluedM) return Number(gluedM[1]);
   return undefined;
 }
 
