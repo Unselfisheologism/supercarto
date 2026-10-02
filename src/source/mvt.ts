@@ -158,24 +158,31 @@ function decodeLayer(buf: Uint8Array): MvtLayer {
     const wire = key & 0x7;
 
     switch (field) {
-      case 1: // version
-        r.varint();
+      // Field numbers are MVT 2.1. In 2.1 the TileLayer message was renumbered:
+      // name is 1, features 2, keys 3, values 4, extent 5, and version 15. The
+      // older layout - version 1, keys 15, values 16 - is what a decoder written
+      // against spec v1 uses, and against a real tile every field is read as the
+      // wrong type: name is consumed as a varint, and keys and values are never
+      // found, so the layer comes back nameless with no features and no
+      // properties. Every tile that exists in the wild is 2.1.
+      case 1: // name
+        layer.name = utf8(r.bytes());
         break;
       case 2: // features
         if (wire === WIRE_LEN) rawFeatures.push(decodeFeature(r.bytes()));
         else r.skip(wire);
         break;
-      case 3: // name
-        layer.name = utf8(r.bytes());
-        break;
-      case 4: // extent
-        layer.extent = r.varint();
-        break;
-      case 15: // keys
+      case 3: // keys
         keys.push(utf8(r.bytes()));
         break;
-      case 16: // values
+      case 4: // values
         values.push(decodeValue(r.bytes()));
+        break;
+      case 5: // extent
+        layer.extent = r.varint();
+        break;
+      case 15: // version
+        r.varint();
         break;
       default:
         r.skip(wire);
@@ -304,17 +311,25 @@ function readCommands(r: Reader): number[][][] {
     const id = header & 0x7;
     const count = header >> 3;
 
-    if (id === 1 || id === 2) {
+    if (id === 1) {
+      // MoveTo starts one or more new parts. The break belongs *before* the
+      // first point only: every additional point in a multi-point MoveTo
+      // continues the same part, as in a multipoint geometry. Breaking on each
+      // one turns a single 3-point line into three single-point rings, so the
+      // geometry reaches the compiler as disconnected stubs with no length.
+      if (ring.length > 0) {
+        rings.push(ring);
+        ring = [];
+      }
       for (let i = 0; i < count; i++) {
-        // Coordinates are delta-encoded from the previous point. svarint can
-        // return a non-integer only for malformed input, so the rounding is a
-        // guard on corrupt tiles rather than a normal conversion.
         x += Math.round(r.svarint());
         y += Math.round(r.svarint());
-        if (id === 1 && ring.length > 0) {
-          rings.push(ring);
-          ring = [];
-        }
+        ring.push([x, y]);
+      }
+    } else if (id === 2) {
+      for (let i = 0; i < count; i++) {
+        x += Math.round(r.svarint());
+        y += Math.round(r.svarint());
         ring.push([x, y]);
       }
     } else if (id === 7) {

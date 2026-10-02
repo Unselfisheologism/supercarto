@@ -1,6 +1,10 @@
 import type { GeoJsonFeature } from '../ingest/geojson.js';
 import type { BboxQuery, MapSource, SourceRequest, SourceResult } from './types.js';
 import { decodeMvt, type MvtLayer } from './mvt.js';
+// Imported rather than `require`d: this module is ESM, and a `require` here
+// throws ERR_AMBIGUOUS_MODULE_SYNTAX that the per-tile error handler swallowed,
+// so every compressed archive came back as zero features with no explanation.
+import { brotliDecompressSync, gunzipSync, zstdDecompressSync } from 'node:zlib';
 
 /**
  * PMTiles and Protomaps.
@@ -213,6 +217,23 @@ function findEntry(entries: TileEntry[], tileId: number): TileEntry | undefined 
   return undefined;
 }
 
+/**
+ * Decode a PMTiles v3 directory.
+ *
+ * The encoding is column-major, not interleaved per entry. Spec 4.2 writes, in
+ * this order:
+ *
+ *   1. the number of entries
+ *   2. every delta-encoded tile ID
+ *   3. every run length
+ *   4. every length
+ *   5. every offset
+ *
+ * then compresses the result. Reading it as repeated `id, runLength, offset,
+ * length` tuples treats the entry count as the first tile ID and shifts every
+ * subsequent field, which silently yields an archive that opens, reports a
+ * plausible directory, and returns no tiles.
+ */
 function decodeDirectory(buf: Uint8Array): TileEntry[] {
   const out: TileEntry[] = [];
   let pos = 0;
@@ -229,16 +250,39 @@ function decodeDirectory(buf: Uint8Array): TileEntry[] {
     return result;
   };
 
+  const count = varint();
+  // Guard against a corrupt or truncated directory asking for a huge allocation.
+  // The root directory cannot exceed 16257 compressed bytes, so the decoded
+  // entry count cannot plausibly exceed that either.
+  if (count <= 0 || count > 200_000) return out;
+
+  const ids: number[] = [];
   let lastId = 0;
-  let lastOffset = 0;
-  while (pos < buf.length) {
-    const idDelta = varint();
-    if (idDelta === 0 && out.length > 0) break;
-    lastId += idDelta;
-    const runLength = varint();
-    lastOffset += varint();
-    const length = varint();
-    out.push({ tileId: lastId, offset: lastOffset, length, runLength });
+  for (let i = 0; i < count; i++) {
+    lastId += varint();
+    ids.push(lastId);
+  }
+
+  const runLengths: number[] = [];
+  for (let i = 0; i < count; i++) runLengths.push(varint());
+
+  const lengths: number[] = [];
+  for (let i = 0; i < count; i++) lengths.push(varint());
+
+  for (let i = 0; i < count; i++) {
+    const value = varint();
+    let offset: number;
+    if (value === 0 && i > 0) {
+      // A zero offset means "directly after the previous blob", which is how
+      // clustered archives encode contiguous tiles without repeating the value.
+      const prev = out[i - 1]!;
+      offset = prev.offset + prev.length;
+    } else {
+      // Otherwise the stored value is offset + 1, so that zero stays free as
+      // the contiguity marker.
+      offset = value - 1;
+    }
+    out.push({ tileId: ids[i]!, offset, length: lengths[i]!, runLength: runLengths[i]! });
   }
   return out;
 }
@@ -260,15 +304,16 @@ function decompressTile(buf: Uint8Array, compression: number): Uint8Array {
  */
 function decompress(buf: Uint8Array, compression: number, what: string): Uint8Array {
   if (compression === 1 || compression === 0) return buf;
-  const zlib = require('node:zlib');
   switch (compression) {
     case 2:
-      return zlib.gunzipSync(buf);
+      return gunzipSync(buf);
     case 3:
-      return zlib.brotliDecompressSync(buf);
+      return brotliDecompressSync(buf);
     case 4:
-      if (typeof zlib.zstdDecompressSync === 'function') {
-        return zlib.zstdDecompressSync(buf);
+      // zstd arrived in Node 22.15. Absent, the caller gets an error naming the
+      // version rather than silently reading compressed bytes as vector data.
+      if (typeof zstdDecompressSync === 'function') {
+        return zstdDecompressSync(buf);
       }
       throw new Error(
         `PMTiles ${what} uses zstd, which needs Node 22.15 or later`,
@@ -324,18 +369,24 @@ export class ProtomapsSource implements MapSource {
     }
 
     const zoom = zoomFor(req.bbox, h.maxZoom, this.maxZoom);
-    const ids = tileIdsFor(req.bbox, zoom);
-    const capped = ids.slice(0, this.maxTiles);
-    if (capped.length < ids.length) {
+    const allTiles = tilesFor(req.bbox, zoom);
+    const capped = allTiles.slice(0, this.maxTiles);
+    if (capped.length < allTiles.length) {
       warnings.push(
-        `requested ${ids.length} tiles at z${zoom}, fetched ${capped.length}; the rest of this area is not shown`,
+        `requested ${allTiles.length} tiles at z${zoom}, fetched ${capped.length}; the rest of this area is not shown`,
       );
     }
 
     const features: GeoJsonFeature[] = [];
     const seen = new Set<number>();
 
-    for (const id of capped) {
+    // The tile's own x/y travels with the TileID. A TileID is a Hilbert index,
+    // which is deliberately not reversible, so recovering the tile's position
+    // from it by division lands the geometry in the wrong hemisphere. Every
+    // feature would then be discarded as out of area and the maplet comes back
+    // empty, while the decoder reports nothing wrong.
+
+    for (const { id, x, y } of capped) {
       const tile = await this.archive.vectorTile(id);
       if (!tile) continue;
       for (const layer of tile.layers) {
@@ -349,7 +400,7 @@ export class ProtomapsSource implements MapSource {
           if (fid !== 0 && seen.has(key)) continue;
           if (fid !== 0) seen.add(key);
 
-          const g = toGeoJson(f.geometry.rings, layer.extent, id, zoom);
+          const g = toGeoJson(f.geometry.rings, layer.extent, x, y, zoom);
           if (!g) continue;
           features.push({
             type: 'Feature',
@@ -380,7 +431,7 @@ export class ProtomapsSource implements MapSource {
     return {
       features,
       source: this.name,
-      truncated: capped.length < ids.length,
+      truncated: capped.length < allTiles.length,
       elapsedMs: Date.now() - started,
       warnings,
     };
@@ -424,15 +475,13 @@ function propertiesOf(props: Record<string, unknown>): Record<string, string | n
 function toGeoJson(
   rings: number[][][],
   extent: number,
-  tileId: number,
+  x0: number,
+  y0: number,
   zoom: number,
 ): GeoJsonFeature['geometry'] | undefined {
   if (rings.length === 0) return undefined;
 
-  const n = 2 ** zoom;
-  const x0 = tileId % n;
-  const y0 = Math.floor(tileId / n);
-  const size = 2 ** zoom === 0 ? 1 : 2 ** zoom;
+  const size = 2 ** zoom;
 
   const toLonLat = (c: number[]): [number, number] => {
     const u = c[0]! / extent;
@@ -477,14 +526,78 @@ function latFromTileY(y: number, size: number): number {
 
 /** Slippy tile ids covering a bbox, row-major. */
 function tileIdsFor(b: BboxQuery, z: number): number[] {
+  return tilesFor(b, z).map((t) => t.id);
+}
+
+/**
+ * Slippy tiles covering a bbox at a zoom, each with its TileID.
+ *
+ * The x/y are returned alongside the ID because a TileID is a position on the
+ * Hilbert curve and cannot be inverted back into a tile position, yet the
+ * geometry converter needs to know which tile it is inside.
+ */
+function tilesFor(b: BboxQuery, z: number): { id: number; x: number; y: number }[] {
   const n = 2 ** z;
   const w = Math.max(0, Math.min(n - 1, lonToX(b.west, n)));
   const e = Math.max(0, Math.min(n - 1, lonToX(b.east, n)));
   const s = Math.max(0, Math.min(n - 1, latToY(b.north, n)));
   const t = Math.max(0, Math.min(n - 1, latToY(b.south, n)));
-  const out: number[] = [];
-  for (let y = s; y <= t; y++) for (let x = w; x <= e; x++) out.push(y * n + x);
+  const out: { id: number; x: number; y: number }[] = [];
+  // TileIDs are Hilbert-curve positions, not row-major raster indices. Spec 4.1
+  // defines the ID as a cumulative position along the curve, which is what makes
+  // a directory sorted by ID also group nearby tiles together. Computing
+  // `y * n + x` instead produces IDs that match nothing the file is keyed by.
+  for (let y = s; y <= t; y++) {
+    for (let x = w; x <= e; x++) out.push({ id: hilbertTileId(z, x, y), x, y });
+  }
   return out;
+}
+
+/**
+ * Position on the Hilbert curve, as PMTiles defines a TileID.
+ *
+ * The offset is the part that is easy to get wrong. Spec 4.1 gives a worked
+ * table: z0 (0,0) is TileID 0, and z1 (0,0) is TileID **1**. A bare curve index
+ * gives 0 for both, so the count of tiles at lower zooms has to be added to
+ * reach the cumulative position the directory is keyed by. Forgetting that
+ * makes every lookup miss and a perfectly good archive return nothing.
+ *
+ *   sum of tiles below zoom z is sum over k of 4^k = (4^z - 1) / 3
+ */
+function hilbertTileId(z: number, x: number, y: number): number {
+  let rx: number, ry: number, d = 0;
+  for (let s = 1 << (z - 1); s > 0; s >>= 1) {
+    rx = (x & s) > 0 ? 1 : 0;
+    ry = (y & s) > 0 ? 1 : 0;
+    d += s * s * ((3 * rx) ^ ry);
+    if (ry === 0) {
+      if (rx === 1) {
+        x = s - 1 - x;
+        y = s - 1 - y;
+      }
+      const t = x;
+      x = y;
+      y = t;
+    }
+  }
+  return d + tileIdBase(z);
+}
+
+/** Cumulative count of tiles at every zoom below `z`. */
+function tileIdBase(z: number): number {
+  return ((4 ** z - 1) / 3) | 0;
+}
+
+/**
+ * PMTiles TileID for a slippy tile.
+ *
+ * Exported so it can be pinned against the specification's own worked table in
+ * section 4.1. That table is the only thing standing between a reader and a
+ * plausible-looking implementation that silently returns nothing, because every
+ * value it checks is off by a small amount rather than obviously broken.
+ */
+export function pmtilesTileId(z: number, x: number, y: number): number {
+  return hilbertTileId(z, x, y);
 }
 
 function lonToX(lon: number, n: number): number {
