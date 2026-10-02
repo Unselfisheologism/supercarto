@@ -319,6 +319,14 @@ async function runOne(
     model: model.model,
     temperature: EVAL_PROTOCOL.temperature,
     seed,
+    // Carried so an archiving driver can key its rows without reverse-engineering
+    // the task from the prompt text.
+    run: {
+      taskId: task.id,
+      representation,
+      budget,
+      seed,
+    },
   };
 
   const started = Date.now();

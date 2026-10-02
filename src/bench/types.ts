@@ -17,6 +17,23 @@ export interface ModelRequest {
   seed: number;
   /** Local model endpoint, for self-hosted evaluation. */
   baseUrl?: string;
+  /**
+   * What this call is, for archiving and resuming.
+   *
+   * Carried on the request because the runner is the only party that knows it.
+   * A driver that had to reconstruct the task from the prompt text would break
+   * the moment a question was reworded, and the failure would be silent: the
+   * archive would fill with rows that no longer join to anything.
+   */
+  run?: RunIdentity;
+}
+
+/** The configuration a single model call was made under. */
+export interface RunIdentity {
+  taskId: string;
+  representation: 'supercarto' | 'geojson' | 'none';
+  budget: number;
+  seed: number;
 }
 
 export interface ModelResponse {

@@ -8,18 +8,19 @@
 
 import { fingerprintPrompt, ResponseArchive, type Exchange } from './archive.js';
 import type { ModelClient } from './models.js';
-import type { ModelRequest } from './types.js';
+import type { ModelRequest, RunIdentity } from './types.js';
 
-/** Identity of the configuration a run was produced under. */
-export interface RunIdentity {
-  /** Task id from the harness, e.g. `sf-cbd/route-distance`. */
-  taskId: string;
-  /** Alias as displayed by the provider, e.g. `claude-haiku-4-5-20251001`. */
-  modelId?: string;
-  representation: 'supercarto' | 'geojson' | 'none';
-  budget: number;
-  seed: number;
-}
+/** Re-exported so callers need only one import for archiving and identity. */
+export type { RunIdentity };
+
+/**
+ * Provider's stable model id, recorded on every exchange.
+ *
+ * Kept off `RunIdentity` because it describes the model rather than the call,
+ * and the runner has no way to know it. The driver supplies it through
+ * `modelIdFor`.
+ */
+export type ModelIdFor = () => string | undefined;
 
 /**
  * Archive every call, and skip ones already recorded.
@@ -35,6 +36,7 @@ export class ArchivingClient implements ModelClient {
     private readonly archivePath: string,
     private readonly keyFor: (req: ModelRequest) => RunIdentity,
     private readonly archive: ResponseArchive = new ResponseArchive(archivePath),
+    private readonly modelIdFor: ModelIdFor = () => undefined,
   ) {
     this.archive.open();
   }
@@ -53,7 +55,10 @@ export class ArchivingClient implements ModelClient {
   }
 
   async call(req: ModelRequest): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-    const id = this.keyFor(req);
+    // Identity comes off the request when the runner supplied it, and falls back
+    // to the caller's resolver otherwise. A driver cannot work this out from the
+    // prompt text alone without breaking whenever a question is reworded.
+    const id: RunIdentity = req.run ?? this.keyFor(req);
     // Model first, then configuration, so a per-model archive holds one
     // comparable set of rows rather than interleaved models.
     const fullKey = `${this.model}|${id.taskId}|${id.representation}@${id.budget}|s${id.seed}`;
@@ -80,7 +85,7 @@ export class ArchivingClient implements ModelClient {
         budget: id.budget,
         seed: id.seed,
         model: this.model,
-        modelId: id.modelId,
+        modelId: this.modelIdFor(),
         system: req.system,
         user: req.user,
         promptHash,
@@ -101,7 +106,7 @@ export class ArchivingClient implements ModelClient {
         budget: id.budget,
         seed: id.seed,
         model: this.model,
-        modelId: id.modelId,
+        modelId: this.modelIdFor(),
         system: req.system,
         user: req.user,
         promptHash,
