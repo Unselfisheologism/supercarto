@@ -374,6 +374,82 @@ describe('runBenchmark offline', () => {
     }
   });
 
+  it('fetches each context once when a shared cache is supplied', async () => {
+    // The ladder runs one benchmark per model over identical map data. Without a
+    // shared cache an eight-model run refetches every maplet eight times, which
+    // is eight times the Overpass traffic and eight times the rate-limit pressure
+    // on whichever models happen to run last.
+    let fetches = 0;
+    class CountingSource extends StubMapSource {
+      override async fetch(req: SourceRequest): Promise<SourceResult> {
+        fetches++;
+        return super.fetch(req);
+      }
+    }
+    const counting = new SuperCarto({
+      sources: [new CountingSource()],
+      router: new StubRouter(),
+    });
+
+    // SuperCarto already caches source documents, but only for five minutes and
+    // at most 128 entries - neither of which holds across a ladder over eight
+    // models. The runner cache is what makes the context stable for the length
+    // of the run, so the property worth pinning is that a later model does no
+    // maplet work at all rather than relying on the TTL holding.
+    let mapletCalls = 0;
+    const base = counting as SuperCarto & { maplet: (q: unknown) => Promise<{ text: string }> };
+    const countingCarto = {
+      maplet: async (q: Parameters<SuperCarto['maplet']>[0]) => {
+        mapletCalls++;
+        return base.maplet(q);
+      },
+    } as unknown as SuperCarto;
+
+    const cache = new Map<string, { text: string }>();
+    const opts = {
+      areas: [AREA],
+      budgets: [1024],
+      seeds: 1,
+      carto: countingCarto,
+      router: new StubRouter(),
+      contextCache: cache,
+    };
+    const m2 = new ScriptedModel('m2', 'fake-m2', () => '480m');
+
+    await runBenchmark(opts);
+    const afterFirstModel = mapletCalls;
+    expect(afterFirstModel).toBeGreaterThan(0);
+
+    // Ground truth is deliberately outside the runner cache - it is derived from
+    // data at its own budget, not from the prompt - so a residual call is
+    // expected. What must not happen is the context being rebuilt.
+    await runBenchmark({ ...opts, models: [m2] });
+    expect(mapletCalls - afterFirstModel).toBeLessThan(afterFirstModel);
+    expect(fetches).toBeGreaterThan(0);
+  });
+
+  it('gives the same prompt to every model', async () => {
+    // The comparison is only valid if the models saw identical context. A cache
+    // bug that served one model's prompt to another would quietly turn the
+    // benchmark into a comparison of wording rather than of representations.
+    const cache = new Map<string, { text: string }>();
+    const first = new ScriptedModel('m1', 'fake-m1', () => '480m');
+    const second = new ScriptedModel('m2', 'fake-m2', () => '480m');
+    const opts = {
+      areas: [AREA],
+      budgets: [1024],
+      seeds: 1,
+      carto: stubCarto(),
+      router: new StubRouter(),
+      contextCache: cache,
+    };
+    await runBenchmark({ ...opts, models: [first] });
+    await runBenchmark({ ...opts, models: [second] });
+    expect(first.seen.length).toBeGreaterThan(0);
+    // ScriptedModel.seen records the prompt each model was actually shown.
+    expect(second.seen).toEqual(first.seen);
+  });
+
   it('reports progress without throwing when a callback is supplied', async () => {
     const lines: string[] = [];
     await runBenchmark({

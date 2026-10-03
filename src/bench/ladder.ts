@@ -93,6 +93,12 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
   const results: LadderResult[] = [];
   let stopped = false;
 
+  // One cache for the whole ladder, not one per model. Every model is shown the
+  // same maplet for the same task, so the fetch is identical work repeated once
+  // per model. This was eight times the Overpass traffic for eight models, which
+  // is also eight times the rate-limit pressure on the models later in the list.
+  const contextCache = new Map<string, { text: string }>();
+
   for (const model of models) {
     // A rate limit is a property of the account, not of one model. Continuing to
     // the next model after hitting it would produce rows that look like model
@@ -137,6 +143,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       models: [client],
       budgets: opts.budgets ?? [1024],
       seeds: opts.seeds ?? 3,
+      contextCache,
       ...(opts.only ? { only: opts.only } : {}),
       ...(opts.carto ? { carto: opts.carto } : {}),
       onProgress: (m) => log(`  ${model}: ${m}`),

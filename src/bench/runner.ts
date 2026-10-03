@@ -63,6 +63,21 @@ export interface RunnerOptions {
    */
   carto?: SuperCarto;
   router?: RoutingSource;
+  /**
+   * Shared maplet cache, created once and passed to every per-model run.
+   *
+   * The ladder calls this once per model, and the context for a task does not
+   * depend on which model is looking at it: the same maplet, budget, and
+   * representation produce the same prompt for all of them. Without a cache that
+   * is eight identical Overpass fetches per task, so an eight-model run pays
+   * eight times the network cost and takes eight times as long for data that
+   * never changes - and Overpass rate-limits, so the later models were being
+   * starved by the earlier ones.
+   *
+   * Keyed by task, representation, and budget, because those are exactly the
+   * inputs buildContext takes.
+   */
+  contextCache?: Map<string, { text: string }>;
 }
 
 export interface RunReport {
@@ -138,7 +153,7 @@ export async function runBenchmark(opts: RunnerOptions = {}): Promise<RunReport>
       const budgetsToUse = representation === 'supercarto' ? budgets : [budgets[budgets.length - 1]!];
 
       for (const budget of budgetsToUse) {
-        const context = await buildContext(task, representation, budget, carto, log);
+        const context = await buildContext(task, representation, budget, carto, log, opts.contextCache);
         contextSizes[representation].push(estimateTokens(context.text));
 
         const truth = await groundTruth(task, router, carto, opts.fixtures, representation, budget);
@@ -207,6 +222,7 @@ async function buildContext(
   budget: number,
   carto: SuperCarto,
   log: (m: string) => void,
+  cache?: Map<string, { text: string }>,
 ): Promise<{ text: string }> {
   const area = task.center;
 
@@ -217,6 +233,10 @@ async function buildContext(
         'No map data has been provided.',
     };
   }
+
+  const cacheKey = `${task.id}|${representation}|${budget}`;
+  const hit = cache?.get(cacheKey);
+  if (hit) return hit;
 
   log(`fetching ${task.id} for ${representation}`);
 
@@ -231,6 +251,7 @@ async function buildContext(
     budget,
   });
 
+  let built: { text: string };
   if (representation === 'geojson') {
     const raw = JSON.stringify({
       type: 'FeatureCollection',
@@ -243,10 +264,15 @@ async function buildContext(
             : null,
       })),
     });
-    return { text: `Map data:\n${raw}` };
+    built = { text: `Map data:\n${raw}` };
+  } else {
+    built = { text: `Map data:\n${result.yaml}` };
   }
 
-  return { text: `Map data:\n${result.yaml}` };
+  // Stored only on success. A failed fetch left behind by a throw would make
+  // every later model silently reuse a half-built prompt as though it were data.
+  cache?.set(cacheKey, built);
+  return built;
 }
 
 /**
