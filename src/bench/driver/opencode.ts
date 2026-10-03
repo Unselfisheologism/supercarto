@@ -82,7 +82,18 @@ interface RunEvent {
 }
 
 export class OpencodeDriver implements ModelClient {
-  readonly id = 'opencode';
+  /**
+   * The model id, not the word "opencode".
+   *
+   * The runner groups and labels every summary row by `client.id`. With a shared
+   * literal, all eight free models merged into one summary per representation:
+   * the report showed a single confident row that was actually the average of
+   * eight different models, and the per-model comparison the benchmark exists to
+   * make was impossible to read. The archive was never affected, because it keys
+   * on `this.model` - which is why the bug survived a run and only showed up on
+   * inspection of the summary code.
+   */
+  readonly id: string;
   readonly model: string;
   private readonly bin: string;
   private readonly timeoutMs: number;
@@ -90,6 +101,7 @@ export class OpencodeDriver implements ModelClient {
   private readonly args: string[] | undefined;
 
   constructor(opts: OpencodeDriverOptions) {
+    this.id = opts.model;
     this.model = opts.model;
     this.bin = opts.bin ?? resolveBin();
     this.timeoutMs = opts.timeoutMs ?? 180_000;
@@ -304,13 +316,20 @@ export function parseEvents(stdout: string): RunEvent[] {
 /**
  * Free models reachable through the opencode harness.
  *
- * `ling-3.0-flash-fin-free` is deliberately absent: it answers
- * `Cannot find any route matching [POST] /zen/v1/chat/completions`, so including
- * it would produce a run that fails on every task for reasons unrelated to the
- * maplet.
+ * Every `-free` model the installed CLI lists, minus the one that cannot be
+ * reached. `ling-3.0-flash-fin-free` answers `Cannot find any route matching
+ * [POST] /zen/v1/chat/completions`, so including it would produce a run failing
+ * on every task for reasons unrelated to the maplet. Its successor
+ * `ling-3.1-flash-free` is reachable and was missing from this list, which is why
+ * the list is now checked against `opencode models` in the test suite rather than
+ * maintained by hand.
+ *
+ * Reachability was confirmed by calling each model, not by reading its name: a
+ * listed model that cannot be called costs a full ladder of failures.
  */
 export const FREEMODELS = [
   'opencode/fledge-alpha-free',
+  'opencode/ling-3.1-flash-free',
   'opencode/longcat-2.5-preview-free',
   'opencode/mimo-v2.6-flash-free',
   'opencode/muse-spark-1.3-contributor-free',
@@ -318,3 +337,14 @@ export const FREEMODELS = [
   'opencode/nemotron-3.5-lightning-free',
   'opencode/space-bunny-free',
 ] as const;
+
+/**
+ * Models the CLI lists as free but which cannot serve a request.
+ *
+ * Kept as data so the exclusion is auditable rather than an omission. A reader
+ * comparing against `opencode models` sees the model is known, and why it is out.
+ */
+export const UNREACHABLE_FREEMODELS: Record<string, string> = {
+  'opencode/ling-3.0-flash-fin-free':
+    '404 Cannot find any route matching [POST] /zen/v1/chat/completions',
+};

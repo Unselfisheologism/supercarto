@@ -3,7 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FREEMODELS, OpencodeDriver, parseEvents } from '../src/bench/driver/opencode.js';
+import {
+  FREEMODELS,
+  UNREACHABLE_FREEMODELS,
+  OpencodeDriver,
+  parseEvents,
+  resolveBin,
+} from '../src/bench/driver/opencode.js';
 
 /**
  * The opencode driver.
@@ -211,27 +217,56 @@ describe('free model list', () => {
     // ling-3.0-flash-fin-free answers "Cannot find any route matching [POST]
     // /zen/v1/chat/completions", so every task would fail for reasons unrelated
     // to the maplet.
-    expect(FREEMODELS.join(' ')).not.toMatch(/ling/);
+    expect(FREEMODELS.join(' ')).not.toMatch(/ling-3\.0/);
+    expect(UNREACHABLE_FREEMODELS['opencode/ling-3.0-flash-fin-free']).toMatch(/route/i);
   });
 
   it('lists only free models', () => {
     for (const m of FREEMODELS) expect(m).toMatch(/-free$/);
   });
+
+  it('has no duplicates', () => {
+    expect(new Set(FREEMODELS).size).toBe(FREEMODELS.length);
+  });
+
+  it('gives each model a distinct client id', () => {
+    // The runner labels and groups every summary row by client.id. A shared
+    // literal merges all eight models into one averaged row, so the per-model
+    // comparison the benchmark exists to make becomes unreadable - while the
+    // archive still looks correct, because it keys on .model instead.
+    const ids = FREEMODELS.map((m) => new OpencodeDriver({ model: m }).id);
+    expect(new Set(ids).size).toBe(FREEMODELS.length);
+    expect(ids).toEqual([...FREEMODELS]);
+  });
 });
 
 describe('free model reachability', () => {
-  it('resolves a listed model in the installed CLI', () => {
-    // Cheap sanity check that the ids are still real. Skipped where the CLI is
+  it('covers every free model the installed CLI lists', () => {
+    // The list drifted once already: ling-3.1-flash-free was reachable, absent
+    // from FREEMODELS, and therefore silently unbenchmarked. This asserts against
+    // the CLI rather than against a copy of its output. Skipped where the CLI is
     // absent so the suite does not depend on the harness running these tests.
+    // resolveBin rather than the bare name: on Windows the PATH entry is an npm
+    // shim, and execFileSync cannot run a .cmd without a shell, so the bare name
+    // raised and the test returned early. It passed in 3ms while asserting
+    // nothing, which is the worst outcome for the one test standing between this
+    // list and a silently incomplete run.
     let listed: string;
     try {
-      listed = execFileSync('opencode', ['models'], { encoding: 'utf8', timeout: 120_000 });
+      listed = execFileSync(resolveBin(), ['models'], { encoding: 'utf8', timeout: 120_000 });
     } catch {
+      // Only tolerated when the CLI is genuinely absent, which resolveBin cannot
+      // distinguish from a shim problem. Recorded so a real skip is visible.
+      console.warn('skipped: opencode CLI not runnable');
       return;
     }
-    const names = listed.split(/\r?\n/).map((l) => l.trim());
-    for (const m of FREEMODELS) {
-      expect(names).toContain(m);
-    }
+    expect(listed.length).toBeGreaterThan(0);
+    const free = listed
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.endsWith('-free'));
+    const excluded = new Set(Object.keys(UNREACHABLE_FREEMODELS));
+    const expected = free.filter((m) => !excluded.has(m)).sort();
+    expect([...FREEMODELS].sort()).toEqual(expected);
   }, 180_000);
 });
