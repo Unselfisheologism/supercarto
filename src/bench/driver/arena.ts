@@ -21,8 +21,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ModelClient } from '../models.js';
 import type { ModelRequest } from '../types.js';
@@ -118,8 +117,19 @@ export async function fetchModelCatalog(): Promise<Map<string, string>> {
  * browser was reached, and the per-call error handler recorded it as a model
  * failure: twelve rows blaming the model for a bug in the harness.
  *
- * It arrives as a temp file instead. The REPL sandbox has no `process`, so
- * stdin is not an option, but it does expose `fs`.
+ * It arrives through a file the REPL writes and then reads back in the same
+ * invocation. Three earlier approaches all failed, each surfacing as a model
+ * failure rather than a harness error:
+ *
+ *  - interpolating it into the script, twice, exceeded the Windows command-line
+ *    limit and produced ENAMETOOLONG;
+ *  - stdin, because the sandbox has no `process`;
+ *  - an absolute path, because the sandbox `fs` is confined to its own
+ *    per-invocation session directory.
+ *
+ * Its `fs` is node:fs/promises, so reads and writes return promises. Reading one
+ * synchronously yields a Promise whose `.prompt` is undefined, which submits an
+ * empty message and then reports that the page answered nothing.
  *
  * The script is a flat sequence of top-level statements because the REPL
  * evaluates top-level statements and prints only what `console.log` emits; a
@@ -127,12 +137,11 @@ export async function fetchModelCatalog(): Promise<Map<string, string>> {
  */
 function callScript(url: string): string {
   return `
-// \`fs.readFile\` here returns an already-parsed object for a .json path rather
-// than a string, so it is used directly instead of through JSON.parse.
-const __cfg = fs.readFile(__PAYLOAD_PATH__);
+const __cfg = JSON.parse(await fs.readFile('__SC_IN__', 'utf8'));
 const __prompt = __cfg.prompt;
 const __mine = __cfg.mine;
 const __out = { ok: false, text: '', error: '', captcha: false };
+const __emit = () => fs.writeFile('__SC_OUT__', JSON.stringify(__out));
 const __t0 = Date.now();
 try {
   const __page = await openTab(${JSON.stringify(url)});
@@ -148,7 +157,7 @@ try {
   if (!__ready) {
     __out.error = 'composer did not load within 30s';
     __out.elapsedMs = Date.now() - __t0;
-    console.log('SUPERCARTO_JSON:' + JSON.stringify(__out));
+    await __emit();
   } else {
   const __box = __page.locator('textarea').last();
   await __box.fill(__prompt);
@@ -228,12 +237,9 @@ try {
   __out.error = (e && e.message) ? e.message : String(e);
 }
 __out.elapsedMs = Date.now() - __t0;
-console.log('SUPERCARTO_JSON:' + JSON.stringify(__out));
+await __emit();
 `;
 }
-
-/** Marker prefixed to the result so it survives arena's own console noise. */
-const MARKER = 'SUPERCARTO_JSON:';
 
 /**
  * Whitespace-normalised prompt, for comparing against arena's echo of it.
@@ -314,73 +320,104 @@ async submit(prompt: string, timeoutMs = 90_000, attempts = 3): Promise<ArenaRes
 
 private async attempt(prompt: string, timeoutMs: number): Promise<ArenaResult> {
   const url = `${DIRECT}?model_a=${encodeURIComponent(this.model)}`;
-  const stdout = await runAside(callScript(url), { prompt, timeoutMs });
-
-  const marked = stdout.split('\n').find((l) => l.includes(MARKER));
-  if (!marked) {
-    return {
-      ok: false,
-      text: '',
-      error: stdout.trim() === '' ? 'aside produced no output' : `unrecognised aside output: ${stdout.trim().slice(0, 200)}`,
-      captcha: false,
-      elapsedMs: 0,
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(marked.slice(marked.indexOf(MARKER) + MARKER.length)) as ArenaResult;
-    return { ...parsed, elapsedMs: parsed.elapsedMs ?? 0 };
-  } catch (err) {
-    return {
-      ok: false,
-      text: '',
-      error: `could not parse aside result: ${err instanceof Error ? err.message : String(err)}`,
-      captcha: false,
-      elapsedMs: 0,
-    };
-  }
+  return runAside(callScript(url), { prompt, timeoutMs });
 }
 }
 
 /**
- * Invoke the Aside REPL, passing the prompt through a temp file.
+ * Invoke the Aside REPL once, with the prompt written by the same call.
  *
- * No `shell: true`: shell interpretation would let a prompt containing a quote
- * or semicolon become command syntax. The prompt also does not go through argv,
- * because a maplet prompt is large enough to exceed the operating system's
- * command-line limit once encoded - and every call then fails with
- * ENAMETOOLONG before the browser is ever reached.
+ * A single invocation matters. Every `aside repl` call runs in its own sandbox
+ * with a fresh session directory, so a file written by one call is invisible to
+ * the next: discovering `pwd` in one invocation and writing the payload for a
+ * second put it somewhere the script would never look, and node then reported
+ * ENOENT for a file it had written moments earlier. Writing and reading inside
+ * one call avoids the question entirely.
  *
- * The file is removed after the call. It holds a full benchmark prompt, which is
- * not secret but should not outlive the run.
+ * The result is written back to the same directory and read from here, rather
+ * than parsed out of stdout. `console.log` is captured only as text, and a long
+ * model answer would otherwise be re-encoded through the command line.
  */
-function runAside(script: string, cfg: { prompt: string; timeoutMs: number }): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'supercarto-arena-'));
-  const payloadPath = join(dir, 'payload.json');
+function runAside(script: string, cfg: { prompt: string; timeoutMs: number }): Promise<ArenaResult> {
   return new Promise((resolve, reject) => {
-    writeFileSync(
-      payloadPath,
-      JSON.stringify({ prompt: cfg.prompt, mine: normText(cfg.prompt), timeoutMs: cfg.timeoutMs }),
-    );
-    // The script is built here rather than by the caller, so the temp path is
-    // known before the script that reads it is generated.
-    const body = script.replace('__PAYLOAD_PATH__', JSON.stringify(payloadPath));
+    // The payload is embedded in this bootstrap script, which is small because it
+    // is the only place the prompt appears and it appears once.
+    const payload = JSON.stringify({
+      prompt: cfg.prompt,
+      mine: normText(cfg.prompt),
+      timeoutMs: cfg.timeoutMs,
+    });
+    const body = [
+      `await fs.writeFile('__SC_IN__', ${JSON.stringify(payload)});`,
+      // Reported before the script runs so the session directory is known even
+      // when the script then throws.
+      `console.log('__DIR__' + pwd);`,
+      script
+        .replace('__SC_IN__', 'supercarto-in.json')
+        .replace('__SC_OUT__', 'supercarto-out.json'),
+    ].join('\n');
+
     const child = spawn('aside', ['repl', body], { shell: false, windowsHide: true });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => (stdout += String(d)));
     child.stderr.on('data', (d) => (stderr += String(d)));
-    child.on('error', (e) => {
-      rmSync(dir, { recursive: true, force: true });
-      reject(new Error(`could not launch the aside CLI: ${e.message}. Is it on PATH?`));
-    });
+    child.on('error', (e) =>
+      reject(new Error(`could not launch the aside CLI: ${e.message}. Is it on PATH?`)),
+    );
     child.on('close', () => {
-      rmSync(dir, { recursive: true, force: true });
-      if (/isn't running on this machine/i.test(stderr + stdout)) {
+      const all = stdout + stderr;
+      if (/isn't running on this machine/i.test(all)) {
         reject(new Error('Aside Browser is not running. Start it, then retry.'));
         return;
       }
-      resolve(stdout);
+
+      // The result file lives in the session directory the REPL chose, which is
+      // reported alongside it. Recovered from stdout rather than assumed, since
+      // the path differs on every call.
+      const dir = all.replace(/\[\d+m/g, '').match(/__DIR__([^\r\n]+)/)?.[1]?.trim() ?? '';
+      let raw = '';
+      if (dir) {
+        try {
+          raw = readFileSync(join(dir, 'supercarto-out.json'), 'utf8');
+          for (const f of ['supercarto-in.json', 'supercarto-out.json']) {
+            try {
+              rmSync(join(dir, f), { force: true });
+            } catch {
+              // The session directory may already be gone; nothing to clean.
+            }
+          }
+        } catch {
+          raw = '';
+        }
+      }
+
+      if (!raw) {
+        // No result file: the script threw before it could write one. The REPL's
+        // own error text is the only diagnostic available, and it names the
+        // problem far better than a generic failure would.
+        const err = all.replace(/\[\d+m/g, '').trim();
+        resolve({
+          ok: false,
+          text: '',
+          error: err === '' ? 'aside produced no result' : `aside error: ${err.slice(0, 400)}`,
+          captcha: false,
+          elapsedMs: 0,
+        });
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(raw) as ArenaResult);
+      } catch (e) {
+        resolve({
+          ok: false,
+          text: '',
+          error: `could not parse aside result: ${e instanceof Error ? e.message : String(e)}`,
+          captcha: false,
+          elapsedMs: 0,
+        });
+      }
     });
   });
 }
