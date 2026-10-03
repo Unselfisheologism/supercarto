@@ -307,6 +307,11 @@ case 'bench:tasks': {
       process.exitCode = await runBench(process.argv.slice(3));
       break;
     }
+    case 'bench:opencode': {
+      const { runBench } = await import('../bench/cli-run.js');
+      process.exitCode = await runBench(process.argv.slice(3), { driver: 'opencode' });
+      break;
+    }
 
     case 'serve': {
       startApiServer(num(flags.port, 8787), { carto: buildCarto(flags) });

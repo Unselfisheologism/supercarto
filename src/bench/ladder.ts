@@ -15,10 +15,12 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ArenaDriver, fetchModelCatalog } from './driver/arena.js';
+import { OpencodeDriver } from './driver/opencode.js';
 import { ArchivingClient, type RunIdentity } from './archiving.js';
-import { ResponseArchive } from './archive.js';
+import { archiveName, ResponseArchive } from './archive.js';
 import { runBenchmark } from './runner.js';
 import { SuperCarto } from '../live.js';
+import type { ModelClient } from './models.js';
 import { scoreNames, distanceCorrect, extractDistanceM, isRefusal, connectedComponents, summarise, failures } from './score.js';
 import type { ScoredTask } from './score.js';
 import type { ModelRequest } from './types.js';
@@ -49,6 +51,13 @@ export interface LadderOptions {
   dryRun?: boolean;
   /** Stop the whole ladder at the first rate limit, rather than per model. */
   stopOnRateLimit?: boolean;
+  /**
+   * Build the client for one model.
+   *
+   * Defaults to the arena browser driver. Supplied by the opencode path, which
+   * needs no model catalogue and resolves its own binary, and by tests.
+   */
+  makeClient?: (model: string, archive: string, modelId: string | undefined) => ModelClient;
   onProgress?: (msg: string) => void;
 }
 
@@ -72,8 +81,14 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
   mkdirSync(outDir, { recursive: true });
   const log = opts.onProgress ?? (() => {});
 
-  const catalog = await fetchModelCatalog();
-  log(`catalog: ${catalog.size} models resolved to uuids`);
+  // The catalogue only exists for arena, where a slug has to be resolved to a
+  // uuid before it can be selected. Failing to fetch it must not stop the opencode
+  // path, which never needed it.
+  let catalog = new Map<string, string>();
+  if (!opts.makeClient) {
+    catalog = await fetchModelCatalog();
+    log(`catalog: ${catalog.size} models resolved to uuids`);
+  }
 
   const results: LadderResult[] = [];
   let stopped = false;
@@ -87,7 +102,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       break;
     }
 
-    const archive = join(outDir, `${model}.jsonl`);
+    const archive = join(outDir, archiveName(model));
     const already = ResponseArchive.keys(archive).size;
     log(`${model}: ${already} exchanges already archived`);
 
@@ -97,9 +112,10 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
     const modelId = catalog.get(model);
     if (modelId) log(`${model}: uuid ${modelId}`);
 
-    const driver = new ArenaDriver(model, archive, () => {});
     const client = new ArchivingClient(
-      driver,
+      opts.makeClient
+        ? opts.makeClient(model, archive, modelId)
+        : new ArenaDriver(model, archive, () => {}),
       archive,
       (req: ModelRequest): RunIdentity => ({
         taskId: req.run?.taskId ?? 'unknown',

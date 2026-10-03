@@ -15,6 +15,18 @@
 import { createHash } from 'node:crypto';
 import { openSync, readFileSync, writeSync, closeSync } from 'node:fs';
 
+/**
+ * Filename for one model's archive.
+ *
+ * Model ids are `provider/model`, and that separator is a path character. Using
+ * the id verbatim wrote `opencode/fledge-alpha-free.jsonl` into a subdirectory
+ * that does not exist, so the first write of every opencode run failed with
+ * ENOENT. The slug is also easier to read and to open in an editor.
+ */
+export function archiveName(model: string): string {
+  return `${model.replace(/[^A-Za-z0-9._-]+/g, '-')}.jsonl`;
+}
+
 /** One archived exchange. Append-only, one JSON object per line. */
 export interface Exchange {
   /** `taskId#representation@budget#seed`, matching a ScoredTask. */

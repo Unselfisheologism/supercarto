@@ -19,7 +19,8 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildTasks, TASK_AREAS } from './tasks.js';
 import { LADDER, runLadder } from './ladder.js';
-import { ResponseArchive } from './archive.js';
+import { FREEMODELS, OpencodeDriver } from './driver/opencode.js';
+import { archiveName, ResponseArchive } from './archive.js';
 
 export interface BenchPlan {
   outDir: string;
@@ -31,7 +32,10 @@ export interface BenchPlan {
   dry: boolean;
 }
 
-export function planBench(argv: string[]): BenchPlan {
+export function planBench(
+  argv: string[],
+  opts: { driver?: 'arena' | 'opencode' } = {},
+): BenchPlan {
   const get = (flag: string): string | undefined => {
     const i = argv.indexOf(flag);
     return i === -1 ? undefined : argv[i + 1];
@@ -43,7 +47,9 @@ export function planBench(argv: string[]): BenchPlan {
   const budget = Number(get('--budget') ?? '30');
   const dry = argv.includes('--dry') || argv.includes('--dry-run');
 
-  const models = model ? [model] : [...LADDER];
+  // The default ladder is arena's, which only makes sense for the arena driver.
+  // The opencode models are a different set entirely.
+  const models = model ? [model] : opts.driver === 'opencode' ? [...FREEMODELS] : [...LADDER];
   const tasks = buildTasks(TASK_AREAS)
     .filter((t) => !only || t.id.startsWith(`${only}/`) || t.id === only)
     .map((t) => t.id);
@@ -59,13 +65,16 @@ export function planBench(argv: string[]): BenchPlan {
 /** Calls already archived, so a resumed run reports real remaining work. */
 export function completedCalls(outDir: string, models: string[]): number {
   return models.reduce(
-    (n, m) => n + ResponseArchive.keys(join(outDir, `${m}.jsonl`)).size,
+    (n, m) => n + ResponseArchive.keys(join(outDir, archiveName(m))).size,
     0,
   );
 }
 
-export async function runBench(argv: string[]): Promise<number> {
-  const plan = planBench(argv);
+export async function runBench(
+  argv: string[],
+  opts: { driver?: 'arena' | 'opencode' } = {},
+): Promise<number> {
+  const plan = planBench(argv, opts);
 
   console.log(`plan: ${plan.models.length} model(s) x ${plan.tasks.length} tasks x 3 arms x ${plan.seeds} seed(s)`);
   console.log(`total ${plan.totalCalls} calls, this invocation capped at ${plan.budget}`);
@@ -81,7 +90,7 @@ export async function runBench(argv: string[]): Promise<number> {
     console.log('\ndry run. task ids:');
     for (const t of plan.tasks) console.log(`  ${t}`);
     for (const m of plan.models) {
-      const p = join(plan.outDir, `${m}.jsonl`);
+      const p = join(plan.outDir, archiveName(m));
       const have = existsSync(p) ? ResponseArchive.keys(p).size : 0;
       console.log(`  ${m}: ${have}/${plan.totalCalls} done`);
     }
@@ -107,6 +116,13 @@ export async function runBench(argv: string[]): Promise<number> {
     only: selected,
     seeds: plan.seeds,
     stopOnRateLimit: true,
+    // A driver, not a client. runLadder does the archiving, so returning an
+    // ArchivingClient here would write every exchange twice - once through the
+    // inner client and once through the outer one - because each holds its own
+    // dedupe set and neither knows about the other.
+    ...(opts.driver === 'opencode'
+      ? { makeClient: (model: string) => new OpencodeDriver({ model }) }
+      : {}),
     onProgress: (m) => console.log(`  ${m}`),
   });
 
