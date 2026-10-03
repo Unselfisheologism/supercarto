@@ -1,4 +1,4 @@
-import { SuperCarto, OsrmRouter, estimateTokens, type GeoJsonFeatureCollection } from '../index.js';
+import { SuperCarto, OsrmRouter, estimateTokens, toMaplet, type GeoJsonFeatureCollection } from '../index.js';
 import type { RoutingSource } from '../source/routing.js';
 import { buildTasks, SYSTEM_PROMPT, EVAL_PROTOCOL, TASK_AREAS, type BenchmarkTask, type TaskArea } from './tasks.js';
 import {
@@ -153,7 +153,9 @@ export async function runBenchmark(opts: RunnerOptions = {}): Promise<RunReport>
       const budgetsToUse = representation === 'supercarto' ? budgets : [budgets[budgets.length - 1]!];
 
       for (const budget of budgetsToUse) {
-        const context = await buildContext(task, representation, budget, carto, log, opts.contextCache);
+        const context = await buildContext(task, representation, budget, carto, log, opts.contextCache,
+      opts.fixtures,
+    );
         contextSizes[representation].push(estimateTokens(context.text));
 
         const truth = await groundTruth(task, router, carto, opts.fixtures, representation, budget);
@@ -216,6 +218,41 @@ function taskIdFor(t: ScoredTask): string {
  * It is what a developer gets today when they call a map API and paste the
  * response into a prompt, which is the thing being compared against.
  */
+/**
+ * Compile a fixture through the real ingest-compile-emit path.
+ *
+ * Deliberately the production pipeline rather than a hand-built stub document.
+ * A fixture arm has to be the emitter's actual output, or the benchmark measures
+ * a lookalike instead of the thing being claimed, and the budget fitting that
+ * makes supercarto cheap is exactly the stage a stub would skip.
+ */
+function compileFixture(
+  fixture: GeoJsonFeatureCollection,
+  task: BenchmarkTask,
+  budget: number,
+): { yaml: string } {
+  const dLat = task.radiusM / 110_574;
+  const dLon = task.radiusM / (111_320 * Math.cos((task.center.lat * Math.PI) / 180));
+  return toMaplet(fixture, {
+    bbox: {
+      west: task.center.lon - dLon,
+      south: task.center.lat - dLat,
+      east: task.center.lon + dLon,
+      north: task.center.lat + dLat,
+    },
+    budget,
+    radiusLabel: `${task.radiusM}m`,
+    // Fixtures carry no derived heat or elevation, and saying so keeps the
+    // emitted header honest rather than advertising layers that are absent.
+    capabilities: { elevation: false, weather: false, traffic: false },
+  });
+}
+
+/** The raw comparison arm: the fixture's features, uncompiled, as JSON. */
+function geoJsonText(fixture: GeoJsonFeatureCollection): string {
+  return `Map data:\n${JSON.stringify(fixture)}`;
+}
+
 async function buildContext(
   task: BenchmarkTask,
   representation: Representation,
@@ -223,6 +260,7 @@ async function buildContext(
   carto: SuperCarto,
   log: (m: string) => void,
   cache?: Map<string, { text: string }>,
+  fixtures?: Record<string, GeoJsonFeatureCollection>,
 ): Promise<{ text: string }> {
   const area = task.center;
 
@@ -237,6 +275,27 @@ async function buildContext(
   const cacheKey = `${task.id}|${representation}|${budget}`;
   const hit = cache?.get(cacheKey);
   if (hit) return hit;
+
+  // A fixture, when one is supplied for this area, replaces the fetch entirely.
+  //
+  // Fixtures used to feed ground truth only, which meant a run could not
+  // actually be offline: the context still came from Overpass, so the model was
+  // answering about live data while being scored against a recording of it. That
+  // is the worst of both - a comparison against data nobody can reproduce, and a
+  // ground truth that may describe a different day.
+  const fixture = fixtures?.[areaIdOf(task)];
+  if (fixture) {
+    log(`using fixture for ${task.id}`);
+    // Compiled through the same path as a live maplet, so the fixture arm is the
+    // real emitter rather than a stand-in that happens to look similar. A model
+    // shown something the emitter would never produce is not being tested on the
+    // emitter's output.
+    const doc = compileFixture(fixture, task, budget);
+    const text = representation === 'geojson' ? geoJsonText(fixture) : `Map data:\n${doc.yaml}`;
+    const built = { text };
+    cache?.set(cacheKey, built);
+    return built;
+  }
 
   log(`fetching ${task.id} for ${representation}`);
 
@@ -331,6 +390,19 @@ async function groundTruth(
     }
 
     if (task.kind === 'connectivity') {
+      // From the fixture when there is one. The graph has to be the same graph
+      // the model was shown: connectivity truth taken from a live fetch while
+      // the prompt holds a recording would score the model against a different
+      // map, and would make an offline run impossible.
+      const fixture = fixtures?.[areaIdOf(task)];
+      if (fixture) {
+        const m = toMaplet(fixture, {
+          budget: 4000,
+          radiusLabel: `${task.radiusM}m`,
+          capabilities: { elevation: false, weather: false, traffic: false },
+        });
+        return { components: connectedComponents(m.graph), graph: m.graph };
+      }
       const m = await carto.maplet({
         lat: task.center.lat,
         lon: task.center.lon,

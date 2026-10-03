@@ -49,13 +49,36 @@ function bboxOf(lat: number, lon: number, radiusM: number): [number, number, num
   const dLon = radiusM / (111_320 * Math.cos((lat * Math.PI) / 180));
   return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
 }
+void bboxOf;
 
+/**
+ * The query for one area.
+ *
+ * An `around` query rather than a `bbox` one, and that is not a stylistic
+ * choice. Overpass validates a bbox-query by requiring the `n` attribute to be
+ * greater than or equal to `s`, and it applies that comparison to the absolute
+ * values, so every southern-hemisphere bbox is rejected outright:
+ *
+ *   Error: line 2: static error: The value of attribute "n" of the element
+ *   "bbox-query" must always be greater or equal than the value of attribute "s".
+ *
+ * Confirmed against Melbourne and Buenos Aires as well, so it is not specific to
+ * Sydney. With a negative latitude, `n = -33.865` has a smaller magnitude than
+ * `s = -33.872`, and the check fires. Sydney therefore could not be captured at
+ * all until this changed - which matters, because the southern hemisphere is
+ * chosen precisely to catch a sign error in the y axis, and dropping the area
+ * that tests for it would quietly remove the benchmark's hardest case.
+ *
+ * `around` takes a radius and a point, so no ordered pair of latitudes is ever
+ * constructed. It is used for every area rather than only the southern ones, so
+ * there is one query shape to reason about and the captured areas stay
+ * comparable with each other.
+ */
 function query(area: { lat: number; lon: number; radiusM: number }): string {
-  const [w, s, e, n] = bboxOf(area.lat, area.lon, area.radiusM).map((v) => v.toFixed(6));
-  const bbox = `(bbox:${s},${w},${n},${e})`;
+  const r = Math.round(area.radiusM);
   const clauses = [
-    ...WAYS.map((f) => `way${bbox}[${f}];`),
-    ...NODES.map((f) => `node${bbox}[${f}];`),
+    ...WAYS.map((f) => `way(around:${r},${area.lat},${area.lon})[${f}];`),
+    ...NODES.map((f) => `node(around:${r},${area.lat},${area.lon})[${f}];`),
   ].join('\n    ');
   return `[out:json][timeout:180];(\n    ${clauses}\n);out geom qt 20000;`;
 }
