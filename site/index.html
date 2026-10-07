@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-webtui-theme="catppuccin-mocha">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supercarto - LLM-native spatial middleware</title>
+  <meta name="description" content="Compiles geospatial data into token-budgeted topological graphs that an AI agent can reason over directly.">
+  <link rel="stylesheet" href="webtui.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+
+  <header>
+    <nav>
+      <a is-="badge" variant-="foreground0" cap-="round" href="https://www.npmjs.com/package/supercarto">npm</a>
+      <a is-="badge" variant-="foreground0" cap-="round" href="https://github.com/Unselfisheologism/supercarto">github</a>
+      <span is-="badge" variant-="background2" cap-="round">Apache-2.0</span>
+    </nav>
+    <h1>supercarto</h1>
+    <p>LLM-native spatial middleware. It compiles geospatial data into token-budgeted topological graphs that an AI agent can reason over directly.</p>
+    <div class="row">
+      <a is-="button" box-="square" href="#install">Install</a>
+      <a is-="button" variant-="foreground1" box-="square" href="https://github.com/Unselfisheologism/supercarto#readme">Read the docs</a>
+    </div>
+  </header>
+
+  <div is-="separator"></div>
+
+  <section id="install">
+    <h2>Install</h2>
+    <pre box-="square">npm install supercarto</pre>
+  </section>
+
+  <section>
+    <h2>Give it coordinates</h2>
+    <p>Real OpenStreetMap data, fetched live, compiled into a graph an agent can navigate. No API key, no tile archive, any point on earth.</p>
+    <pre box-="square">import { SuperCarto } from 'supercarto';
+
+const carto = new SuperCarto();
+
+const result = await carto.maplet({
+  lat: 35.6833,
+  lon: 139.7620,
+  radiusM: 400,
+  budget: 1500,
+});
+
+console.log(result.yaml);</pre>
+    <p>The result is plain YAML: nodes, edges with distances in metres and compass directions, a record of what was left out, and the tools the agent can call next.</p>
+    <pre box-="square">map:
+  center: "35.6833, 139.762"
+  radius: 400m
+nodes:
+  n186: {type: transit, name: 新橋駅(3), tags: [subway_entrance]}
+edges:
+  n1->n2: {dist: 120m, dir: east, path: road}
+omitted:
+  - {layer: feature, count: 1754}
+tools:
+  - expand_node(id)
+  - route(from,to,mode)</pre>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <ul marker-="bullet">
+      <li><b>Token budget.</b> Named landmarks survive, anonymous intersections go first, and the surviving network stays connected.</li>
+      <li><b>Honest omissions.</b> Every drop is recorded in <code>omitted:</code>, so the model can tell "not there" from "not shown".</li>
+      <li><b>Weather.</b> Current conditions and an hourly forecast with no key. If the source is down it says so instead of returning zeroes.</li>
+      <li><b>Traffic.</b> Live with a TomTom or HERE key. Without one it reports free-flow and labels it as such.</li>
+      <li><b>Indoor floors.</b> Floor-by-floor graphs with lifts collapsed into one vertical link.</li>
+      <li><b>MCP.</b> Works as an MCP tool server for agents.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Data sources</h2>
+    <div class="scroll">
+    <table box-="square">
+      <thead><tr><th>Source</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td>Overpass</td><td>Default map data, for development</td></tr>
+        <tr><td>PMTiles / Protomaps</td><td>Production map data</td></tr>
+        <tr><td>OSRM</td><td>Walk, bike and drive routing</td></tr>
+        <tr><td>Open-Meteo</td><td>Weather, no key</td></tr>
+        <tr><td>TomTom / HERE</td><td>Live traffic, key required</td></tr>
+        <tr><td>Terrarium tiles</td><td>Elevation and slope, no key</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <div is-="separator"></div>
+
+  <footer>
+    <p>supercarto is open source under Apache-2.0.</p>
+    <nav>
+      <a href="https://github.com/Unselfisheologism/supercarto">GitHub</a>
+      <a href="https://www.npmjs.com/package/supercarto">npm</a>
+      <a href="https://webtui.ironclad.sh">Built with WebTUI</a>
+    </nav>
+  </footer>
+
+</main>
+</body>
+</html>
