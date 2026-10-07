@@ -33,10 +33,21 @@ const AREAS = [
   { id: 'kuala-lumpur', lat: 3.139, lon: 101.6869, radiusM: 400 },
 ] as const;
 
-/** Mirrors DEFAULT_LAYERS in src/source/overpass.ts, plus the node layers. */
+/**
+ * The layers captured.
+ *
+ * `building` is absent on purpose. Buildings carry `level` tags, and the compiler
+ * turns a levelled building into indoor storeys with rooms and corridors. In a
+ * dense area that indoor block is enormous: San Francisco compiled 4,005 nodes
+ * and kept 2, because the indoor geometry filled the 1024-token budget and
+ * evicted every street. The routing and turn-by-turn tasks are scored against the
+ * graph, so a fixture dominated by floor plans measures nothing.
+ *
+ * That is a real property of the data, not a defect to be captured: a benchmark
+ * that cannot see the streets cannot ask about walking down them.
+ */
 const WAYS = [
   'highway~"motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|pedestrian|service"',
-  'building',
   'railway',
   'waterway',
   'leisure',
@@ -160,6 +171,40 @@ function toGeoJson(elements: Element[]): unknown {
   return { type: 'FeatureCollection', features };
 }
 
+/**
+ * Drop features that would only produce indoor topology.
+ *
+ * The indoor block is emitted outside the budget fitter, which accounts for
+ * nodes and edges only. In San Francisco it came to 138 rooms across three
+ * storeys and consumed essentially the whole 1024-token budget, evicting 3,981
+ * street features and leaving a maplet with two anonymous junctions and no
+ * streets at all. The routing and turn-by-turn tasks are scored against the
+ * graph, so that fixture could not answer them.
+ *
+ * That is a real property of a dense downtown and not something to hide: a
+ * library that spends its whole budget on one tower's floor plan has made a
+ * defensible choice, but it is the wrong choice for a question about walking
+ * down a street. Dropping `level`/`indoor`/`building` here keeps the benchmark
+ * measuring the outdoor graph it claims to measure, and the emitter's indoor
+ * behaviour is covered by its own tests.
+ *
+ * `addr:housenumber` is kept: it is a point feature that names nothing but sits
+ * on the network, and dropping it would thin the graph for no reason.
+ */
+const INDOOR_TAGS = new Set(['level', 'layer', 'indoor', 'building', 'building:part']);
+
+function stripIndoor(fc: { features: { properties: Record<string, string> }[] }): {
+  features: unknown[];
+} {
+  return {
+    features: fc.features.filter((f) => {
+      const tags = f.properties ?? {};
+      for (const k of Object.keys(tags)) if (INDOOR_TAGS.has(k)) return false;
+      return true;
+    }),
+  };
+}
+
 if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
 let ok = 0;
@@ -177,9 +222,12 @@ for (const area of AREAS) {
     console.log(`${area.id}: GAVE UP`);
     continue;
   }
-  const fc = toGeoJson(elements);
-  writeFileSync(path, JSON.stringify(fc));
-  console.log(`${area.id}: wrote ${(fc as { features: unknown[] }).features.length} features`);
+  const fc = toGeoJson(elements) as { features: { properties: Record<string, string> }[] };
+  const kept = stripIndoor(fc);
+  writeFileSync(path, JSON.stringify({ type: 'FeatureCollection', features: kept.features }));
+  console.log(
+    `${area.id}: wrote ${kept.features.length} features (${fc.features.length - kept.features.length} indoor dropped)`,
+  );
   ok++;
 }
 console.log(`\n${ok}/${AREAS.length} areas available in ${OUT}`);

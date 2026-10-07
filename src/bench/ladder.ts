@@ -20,6 +20,7 @@ import { ArchivingClient, type RunIdentity } from './archiving.js';
 import { archiveName, ResponseArchive } from './archive.js';
 import { runBenchmark } from './runner.js';
 import { SuperCarto } from '../live.js';
+import type { GeoJsonFeatureCollection } from '../index.js';
 import type { ModelClient } from './models.js';
 import { scoreNames, distanceCorrect, extractDistanceM, isRefusal, connectedComponents, summarise, failures } from './score.js';
 import type { ScoredTask } from './score.js';
@@ -58,6 +59,14 @@ export interface LadderOptions {
    * needs no model catalogue and resolves its own binary, and by tests.
    */
   makeClient?: (model: string, archive: string, modelId: string | undefined) => ModelClient;
+  /**
+   * Offline map data, keyed by area id.
+   *
+   * Forwarded to every per-model run so the whole ladder can be served from
+   * files. Without it each model re-fetches, and the models are then answering
+   * about whatever the live source served at that moment.
+   */
+  fixtures?: Record<string, GeoJsonFeatureCollection>;
   onProgress?: (msg: string) => void;
 }
 
@@ -144,6 +153,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       budgets: opts.budgets ?? [1024],
       seeds: opts.seeds ?? 3,
       contextCache,
+      ...(opts.fixtures ? { fixtures: opts.fixtures } : {}),
       ...(opts.only ? { only: opts.only } : {}),
       ...(opts.carto ? { carto: opts.carto } : {}),
       onProgress: (m) => log(`  ${model}: ${m}`),
