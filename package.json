@@ -28,12 +28,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/supercarto/supercarto.git"
+    "url": "git+https://github.com/Unselfisheologism/supercarto.git"
   },
   "bugs": {
-    "url": "https://github.com/supercarto/supercarto/issues"
+    "url": "https://github.com/Unselfisheologism/supercarto/issues"
   },
-  "homepage": "https://github.com/supercarto/supercarto#readme",
+  "homepage": "https://supercarto.pages.dev",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
