@@ -1,0 +1,12 @@
+/* page layout only; all components come from WebTUI */
+body { padding: 1lh 2ch; }
+main { max-width: 88ch; margin: 0 auto; display: flex; flex-direction: column; gap: 2lh; }
+header, section, footer { display: flex; flex-direction: column; gap: 1lh; }
+nav { display: flex; flex-wrap: wrap; gap: 1ch; }
+a:not([is-]) { color: var(--foreground0); }
+body, html { word-break: normal; overflow-wrap: anywhere; }
+[is-="separator"] { width: 100%; }
+pre { overflow-x: auto; white-space: pre; }
+.row { display: flex; flex-wrap: wrap; gap: 1ch; }
+table { width: 100%; }
+.scroll { overflow-x: auto; }
