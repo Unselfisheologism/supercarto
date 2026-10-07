@@ -116,25 +116,39 @@ export function scoreNames(expected: string[], answer: string): NameScore {
   // in the data? That catches the common failure of inventing a plausible shop.
   const claimed = extractQuotedOrTitled(answer);
   const known = expected.map((n) => n.toLowerCase());
-  const hallucinations = claimed.filter((c) => {
-    const norm = c.toLowerCase();
-    if (known.includes(norm)) return false;
-    // An abbreviation of a real name is a legitimate partial reference, not an
-    // invention: "Powell St Station" is the same place as "Powell Street
-    // Station". Comparing word sets rather than substrings is what makes that
-    // work, since neither string contains the other.
+
+  /**
+   * Whether a claimed run refers to something in the data.
+   *
+   * Three ways, in order of confidence. The run is often longer or shorter than
+   * the real name because the extractor had to guess a boundary in prose, so
+   * demanding an exact match flags real places - which is how a correct answer
+   * gets reported as six invented businesses.
+   */
+  const refersToKnown = (candidate: string, norm: string): boolean => {
+    if (known.includes(norm)) return true;
+    // A known name sits inside the run: the run swallowed a list separator, so
+    // "Cable Car, Boudin Bakery" contains "Boudin Bakery".
+    if (known.some((k) => containsWord(norm, k))) return true;
+    // The run is a fragment of a known name, or the run plus a couple of words is
+    // one: "Concentra Urgent" for "Concentra Urgent Care".
     const claimedWords = new Set(norm.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+    // Every word of a known name is present in the run, allowing abbreviation.
+    // This is what makes "The Powell St Station" match "Powell Street Station",
+    // where an exact or substring comparison fails in both directions.
     for (const k of known) {
       const knownWords = k.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       if (
         knownWords.length > 0 &&
         knownWords.every((w) => claimedWords.has(w) || isAbbrev(w, claimedWords))
       ) {
-        return false;
+        return true;
       }
     }
-    return true;
-  });
+    return false;
+  };
+
+  const hallucinations = claimed.filter((c) => !refersToKnown(c, c.toLowerCase()));
 
   return { recall, hallucinations };
 }
@@ -176,7 +190,7 @@ function isAbbrev(known: string, claimed: Set<string>): boolean {
 }
 
 /**
- * Candidate place names in a free-text answer.
+ * Words that mark a candidate as naming a place.
  *
  * Quoted strings are unambiguous. Bare Title Case is not: a sentence-initial
  * "There" or "Head" looks identical to a shop name by capitalisation alone, so
@@ -194,21 +208,217 @@ const PLACE_SUFFIXES = new Set([
   'hall', 'tower', 'building', 'plaza', 'gallery', 'bakery', 'pharmacy', 'clinic',
   'hospital', 'school', 'university', 'church', 'temple', 'bridge', 'terminal',
   'airport', 'stadium', 'theatre', 'theater', 'cinema', 'office', 'mall',
+  // Food and retail, because that is what most of the named features in an urban
+  // extract actually are. Without these, an invented restaurant is not detected:
+  // "Barstool Pizza" carries no word from the list above, so the whole candidate
+  // was discarded and the hallucination went unreported.
+  'pizza', 'restaurant', 'grill', 'kitchen', 'bakery', 'deli', 'cafe', 'coffee',
+  'bar', 'pub', 'brewery', 'taqueria', 'sushi', 'noodle', 'ramen', 'diner',
+  'bistro', 'brasserie', 'trattoria', 'steakhouse', 'buffet', 'food', 'foods',
+  'market', 'supermarket', 'grocery', 'grocer', 'bakery', 'butcher', 'deli',
+  'shop', 'store', 'marketplace', 'boutique', 'outfitters', 'goods', 'mart',
+  'hotel', 'motel', 'inn', 'hostel', 'lodge', 'resort',
+  'bank', 'atm', 'pharmacy', 'clinic', 'hospital', 'dentist', 'vet',
+  'school', 'college', 'university', 'academy', 'institute', 'kindergarten',
+  'church', 'mosque', 'temple', 'synagogue', 'chapel', 'cathedral',
+  'theater', 'cinema', 'gallery', 'museum', 'aquarium', 'zoo',
+  'park', 'garden', 'square', 'plaza', 'market', 'centre', 'center',
+  'tower', 'house', 'hall', 'lodge', 'inn', 'club', 'lounge', 'bar',
+  'salon', 'spa', 'salon', 'barber', 'studio', 'gallery',
+  'library', 'museum', 'theatre', 'arena', 'centre', 'depot', 'terminal',
 ]);
 
+/**
+ * Lowercase words that sit *inside* a place name.
+ *
+ * "University of Phoenix", "House of Prime Rib", "Cafe de Flore". The extractor
+ * has to let these through or it splits the name at the connector, and then flags
+ * both halves as invented places. A run of this benchmark's answers reported
+ * "University", "Phoenix", "Cafe" and "Robb" as hallucinations when the model had
+ * named four real businesses, all of them present in the fixture.
+ */
+/**
+ * Lowercase words that sit *inside* a place name.
+ *
+ * "University of Phoenix", "House of Prime Rib". `&` is handled separately because
+ * it behaves differently: "Beckett & Robb" is one name, while "Blue Bottle Cafe and
+ * Philz Coffee" is two names in a list. `and` is therefore *not* a connector here,
+ * since treating it as one fused unrelated shops into a single candidate and lost
+ * the second one entirely.
+ */
+const NAME_CONNECTORS = new Set(['of', 'the', 'de', 'del', 'la', 'le', 'du', 'da']);
+
+/**
+ * A candidate is allowed to end at a place word.
+ *
+ * "Osha Thai (restaurant)" must yield "Osha Thai" and not swallow "restaurant".
+ * But a name can *legitimately* end at one: "Salesforce Park" is a real place and
+ * "park" is a place word, so terminating there truncates a real name and reports
+ * it as invented. Terminating is therefore only the right behaviour when the word
+ * continues into something that is clearly not part of the name - which is what
+ * the bracket check below decides.
+ */
+
+/**
+ * Capitalised words that open a clause rather than a name.
+ *
+ * Only consulted before a run has started, so this cannot damage a name that
+ * legitimately begins with one of them. "Visit Blue Bottle Cafe" loses "Visit";
+ * "The Embarcadero" does not lose "The", because "The" is a name connector and
+ * is handled before this check.
+ */
+const SENTENCE_FURNITURE =
+  /^(Visit|Go|Try|Head|Walk|Continue|Turn|Start|Begin|Meet|Find|Look|Ask|See|Note|Listed|Named|Near|Around|From|With|There|Here|The following|Named places|Places|Also|Plus|And|But|So|Then|Now|You|Check|Explore|Continue on)\b/;
+
+/**
+ * Words that end a candidate rather than continue it.
+ *
+ * A place word at the end of a title-case run means the name is finished - "Osha
+ * Thai (restaurant)" should yield "Osha Thai", not "Osha Thai Restaurant". These
+ * are the words that reliably terminate a name.
+ */
+const PLACE_SUFFIXES_FOR_TERMINATION = new Set([
+  'street', 'st', 'road', 'rd', 'avenue', 'ave', 'boulevard', 'blvd', 'lane', 'ln',
+  'drive', 'dr', 'court', 'ct', 'way', 'place', 'pl', 'square', 'sq', 'terrace',
+  'walk', 'close', 'crescent', 'parade', 'highway', 'hwy', 'station', 'terminal',
+  'mall', 'plaza', 'park', 'garden', 'bridge', 'stadium', 'airport',
+]);
+
+/**
+ * Candidate place names in a free-text answer.
+ *
+ * Built by scanning forward from each capitalised word and greedily taking the
+ * longest run that stays a plausible name, rather than by matching a fixed
+ * Title Case shape. The fixed shape is what broke: it had no way to represent a
+ * lowercase connector, so every multi-word name was cut in half and each half was
+ * then reported to the caller as an invented place.
+ *
+ * Where two candidates overlap - "Osha Thai (restaurant)" produces both "Osha
+ * Thai" and "Restaurant" - the longer one wins, because a name that contains
+ * another candidate is the real claim and the inner one is a word of it.
+ */
 function extractQuotedOrTitled(answer: string): string[] {
   const out: string[] = [];
 
   for (const m of answer.matchAll(/"([^"]{2,60})"/g)) out.push(m[1]!.trim());
 
-  for (const m of answer.matchAll(/\b([A-Z][a-z]+(?:[ \-][A-Z0-9][a-z0-9]+){0,3})\b/g)) {
-    const candidate = m[1]!.trim();
-    if (candidate.length < 3) continue;
-    // Quoted names are taken on trust; unquoted ones need a place word in them.
-    if (hasPlaceWord(candidate)) out.push(candidate);
+  // Runs of capitalised words, split on anything that cannot be part of a name.
+  //
+  // This used to try to reconstruct exact name boundaries and then require the
+  // reconstruction to match the data exactly. That is the wrong shape for the job:
+  // these are comma-separated lists of prose, and every boundary rule guessed here
+  // was wrong somewhere - swallowing the next item in a list, stopping halfway
+  // through a real name, splitting at "of". The measured cost was six invented
+  // places reported in an answer that named ten genuine businesses.
+  //
+  // So the run is deliberately generous and the *matching* is tolerant: a run is a
+  // hallucination only when no known name sits inside it and no known name's words
+  // are all present in it. An over-long run therefore costs nothing, where an
+  // over-tight one invented failures.
+  const words = answer.split(/\s+/);
+  let parts: string[] = [];
+
+  const flush = (): void => {
+    if (parts.length === 0) return;
+    const text = parts.join(' ');
+    parts = [];
+    if (text.length < 3) return;
+    if (hasPlaceWord(text)) out.push(text);
+  };
+
+  for (let i = 0; i < words.length; i++) {
+    const raw = words[i]!;
+
+    // An opening bracket or a dash starts something that is not a name.
+    if (/^[[({—–]/.test(raw)) {
+      flush();
+      continue;
+    }
+
+    // A capitalised word that is plainly sentence furniture does not begin a name:
+    // "Visit Blue Bottle Cafe" must yield "Blue Bottle Cafe", not "Visit Blue
+    // Bottle Cafe". Leading furniture is dropped only while no name has started,
+    // so "The Embarcadero" keeps its article.
+    if (parts.length === 0 && SENTENCE_FURNITURE.test(raw)) {
+      continue;
+    }
+
+    const word = stripPunctuation(raw);
+    if (word === '') {
+      flush();
+      continue;
+    }
+
+    // Punctuation *trailing* a word ends the run after that word, not before it.
+    // "Thai," is the last word of "Osha Thai", so flushing on the comma rather
+    // than after it reported "Osha" and invented the rest.
+    const endsRun = /[,;:)\]}.!?—–]$/.test(raw);
+
+    const isCapitalised = /^[A-Z0-9][a-z0-9'’-]*$/.test(word);
+    // "&" joins the halves of a name exactly as "of" does: "Beckett & Robb",
+    // "Boudin Bakery & Cafe".
+    const isConnector =
+      (NAME_CONNECTORS.has(word.toLowerCase()) || word === '&') &&
+      parts.length > 0 &&
+      i + 1 < words.length;
+
+    if (isCapitalised) {
+      parts.push(word);
+    } else if (isConnector) {
+      const after = stripPunctuation(words[i + 1] ?? '');
+      // A connector only continues a name if a capitalised word follows it.
+      if (/^[A-Z0-9][a-z0-9'’-]*$/.test(after)) {
+        parts.push(word, after);
+        i++;
+      } else {
+        flush();
+      }
+    } else {
+      flush();
+    }
+
+    if (endsRun) flush();
+    // A run longer than this is prose, not a place name.
+    else if (parts.length >= 6) flush();
   }
+  flush();
 
   return [...new Set(out)];
+}
+
+/**
+ * Trailing punctuation and brackets, which are not part of a name.
+ *
+ * `&` is kept wherever it appears, because it is a name connector rather than
+ * decoration: "Beckett & Robb" and "Boudin Bakery & Cafe" are single names, and
+ * stripping the ampersand split both in half and then reported each half as an
+ * invented place.
+ */
+function stripPunctuation(word: string): string {
+  return word.replace(/^[^\p{L}\p{N}&]+|[^\p{L}\p{N}%&'-]+$/gu, '');
+}
+
+/** Whether `needle` begins `haystack` on a word boundary. */
+function startsWithWord(haystack: string, needle: string): boolean {
+  if (needle === '' || !haystack.startsWith(needle)) return false;
+  const rest = haystack.slice(needle.length);
+  return rest === '' || /^[^\p{L}\p{N}]/u.test(rest);
+}
+
+/** Whether `needle` appears inside `haystack` on word boundaries. */
+function containsWord(haystack: string, needle: string): boolean {
+  if (needle === '') return false;
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return false;
+    const before = at === 0 ? '' : haystack.slice(at - 1, at);
+    const after = haystack.slice(at + needle.length);
+    const okBefore = before === '' || /[^\p{L}\p{N}]/u.test(before);
+    const okAfter = after === '' || /^[^\p{L}\p{N}]/u.test(after);
+    if (okBefore && okAfter) return true;
+    from = at + 1;
+  }
 }
 
 /**

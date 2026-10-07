@@ -206,21 +206,15 @@ export ANTHROPIC_API_KEY=...
 npx supercarto bench:tasks --budgets 512,1024,2048 --out report.json
 ```
 
-```
-CONTEXT COST
-  representation   median tokens   vs supercarto
-  --------------   -------------   --------------
-  supercarto            1093          -
-  geojson              22114         20.2x
-  none                     12       0.0x
-
-ACCURACY
-  model              representation   accuracy   completion   tokens   spread
-  -----------------  --------------   --------   ---------   ------   ------
-  claude-sonnet      supercarto          88%         100%     1640     0.00
-  claude-sonnet      geojson             62%         100%    24680     0.04
-  claude-sonnet      none                 9%          94%       180     0.02
-```
+> **No results are published here.** An earlier version of this file showed an
+> accuracy table and a token-cost table. Those numbers were not backed by any
+> committed raw output, and the harness that produced them had three defects that
+> invalidate a run on their own: the raw GeoJSON baseline arm was stripped of
+> every name and all geometry by the harness, the turn-by-turn ground truth
+> described a 400m walk while the prompt asked about 200m, and the recall pass
+> condition was unreachable for every budgeted arm. The table was measuring the
+> harness. It has been removed rather than caveated, and it will come back when a
+> run whose raw output is committed produces it.
 
 Ground truth comes from OSRM for routing and from the source data for place
 tasks, so most rows are scored **programmatically** rather than by a judge.
@@ -229,9 +223,10 @@ What the harness refuses to do is more interesting than what it does:
 
 - **No single-model leaderboard.** A panel spanning four families, because a
   result on one model is a result about that model.
-- **Temperature 0, three seeds, reported spread.** Providers are not
+- **Three seeds minimum, spread reported.** Providers are not
   bit-deterministic; reporting one run as the score reports noise as a result.
-- **Caches disabled.** A cached response is a free run that never happened.
+- **The subject model runs in an empty directory**, never the repository, and any
+  run that reached for a tool is voided rather than scored.
 - **Completion reported separately from accuracy.** A model that answered two of
   thirty and got both right must not score 100%.
 - **Hallucinations scored as failures.** An agent that names three real cafes
@@ -239,6 +234,10 @@ What the harness refuses to do is more interesting than what it does:
 - **Unscoreable tasks count as failures, not passes.**
 - **A small local model in the panel.** Winning with a 7B model is the one claim
   a token-count benchmark cannot manufacture.
+
+Known gaps are listed in [`docs/benchmark.md`](docs/benchmark.md#what-is-not-yet-true-of-this-harness),
+including the absent oracle-solver check and the fact that token counts on the
+free-model path are estimates rather than provider figures.
 
 Methodology and the full task set: [`docs/benchmark.md`](docs/benchmark.md).
 

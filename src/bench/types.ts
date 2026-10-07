@@ -61,6 +61,18 @@ export interface GroundTruth {
   graph?: SpatialGraph;
   /** Named places present in the source data. */
   names?: string[];
+  /**
+   * Named places present in what this arm was actually shown.
+   *
+   * The recall pass condition is measured against this, not against `names`. A
+   * budget-fitted maplet at 1024 tokens carries a small fraction of the names in
+   * the source, so scoring recall against the full list sets a pass condition no
+   * budgeted arm can reach, and a run in which every arm scores zero is
+   * indistinguishable from a run in which the task is impossible. The full-list
+   * recall is still reported, because it is the number that quantifies what the
+   * budget cost.
+   */
+  shownNames?: string[];
   /** Weakly-connected component count in the emitted graph. */
   components?: number;
 }

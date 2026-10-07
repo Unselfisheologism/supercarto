@@ -36,6 +36,16 @@ export interface BenchmarkTask {
   /** Extra context appended to the question, e.g. a destination name. */
   context?: string;
   /**
+   * How far north the route question walks, in metres.
+   *
+   * A task property, not the area radius, because the question text and the
+   * routing destination have to describe the same walk. When this was derived
+   * from `area.radiusM` the turn-by-turn prompt asked about 200m while the
+   * ground truth was routed 400m out, so a model answering the question as
+   * asked was scored against a walk it was never told about.
+   */
+  offsetM?: number;
+  /**
    * Where the answer comes from.
    *
    * Recorded rather than assumed, because a score without a stated provenance
@@ -132,6 +142,14 @@ export const TASK_AREAS: readonly TaskArea[] = [
 ];
 
 /**
+ * How far north the turn-by-turn question walks.
+ *
+ * Named, and used both in the prompt text and by the router, so the two cannot
+ * drift apart. A single literal in one place is the whole fix.
+ */
+export const TURN_OFFSET_M = 200;
+
+/**
  * Tasks per area.
  *
  * Generated rather than hand-written so every area gets the same treatment. A
@@ -151,6 +169,7 @@ export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTa
       radiusM: area.radiusM,
       mode: 'walk',
       groundTruth: 'osrm',
+      offsetM: TURN_OFFSET_M,
     });
 
     out.push({
@@ -169,13 +188,14 @@ export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTa
       id: `${area.id}/turn-by-turn`,
       kind: 'turns',
       question:
-        'If someone is standing at the centre of this area and wants to walk 200m ' +
+        `If someone is standing at the centre of this area and wants to walk ${TURN_OFFSET_M}m ` +
         'north along the street network, what street names would they walk on, ' +
         'and which direction do they face at each turn?',
       center: area.center,
       radiusM: area.radiusM,
       mode: 'walk',
       groundTruth: 'osrm',
+      offsetM: TURN_OFFSET_M,
     });
 
     out.push({

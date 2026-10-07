@@ -157,11 +157,19 @@ function scoreAgainst(
     }
     case 'nearest': {
       if (!truth.names || truth.names.length === 0) return { correct: null, scoredBy: 'failed' };
-      const s = scoreNames(truth.names, answer);
+      // Against the shown set when a provider supplies it, for the same reason the
+      // runner does: recall measured against the full source list is unreachable
+      // for a budget-fitted arm. See `GroundTruth.shownNames`.
+      const shown = truth.shownNames ?? truth.names;
+      const s = scoreNames(shown, answer);
+      const areaRecall = scoreNames(truth.names, answer).recall;
       return {
         correct: s.recall >= 0.5 && s.hallucinations.length === 0,
         scoredBy: 'exact',
-        rationale: `recall ${Math.round(s.recall * 100)}%, ${s.hallucinations.length} not in data`,
+        rationale:
+          `recall ${Math.round(s.recall * 100)}% of ${shown.length} shown, ` +
+          `${Math.round(areaRecall * 100)}% of ${truth.names.length} in area, ` +
+          `${s.hallucinations.length} not in data`,
       };
     }
     case 'connectivity': {

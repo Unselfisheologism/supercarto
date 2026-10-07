@@ -26,6 +26,15 @@ only variable is what sits in the context window.
 | `geojson` | Raw GeoJSON for the same features. This is what a map API returns today. |
 | `none` | Coordinates and nothing else. |
 
+The raw arm carries the source features, with their geometry and properties
+intact. It is recovered from the same document the supercarto arm was compiled
+from, not reconstructed from the compiled graph: projecting graph nodes back into
+GeoJSON drops every name (only budgeted nodes are named) and all geometry
+(compiled intersections carry no coordinates), which produced an arm of 66
+nameless, geometry-less features against a 720-feature source. That measures the
+harness rather than the compiler, and it flatters supercarto by making the
+baseline unreadable.
+
 `none` is the honest floor. Without it, a run can look good because a model
 refused rather than because it reasoned well — and refusal is cheap. It is also
 what a human gets with no map.
@@ -67,6 +76,14 @@ exist is the worst outcome this library could produce. Abbreviations are handled
 (`Powell St Station` matches `Powell Street Station`) because that is a
 legitimate partial reference; fuzzy string matching is not used, because it would
 also excuse `Starbucks` against `Starbunks`, which is the error being measured.
+
+**Recall is measured against what the arm was shown**, not against every name in
+the area. A 1024-token maplet for San Francisco downtown names about ten of the
+336 named features in the fixture, so a pass condition of "recall half the
+area's names" is unreachable at every budget and the run reports zero for a model
+that in fact reported its data accurately. Recall against the shown set is the
+pass condition; recall against the whole area is reported alongside it as
+`area recall`, because that is the number which says what a budget costs.
 
 **Connectivity.** Self-consistent: an answer is correct *about the data it was
 shown*. If the graph has two components, saying some places are isolated is
@@ -181,6 +198,37 @@ Things worth checking before believing a table:
 
 ---
 
+## Ground truth is frozen per fixture, not rebuilt live
+
+Truth for the `route` and `turns` kinds comes from OSRM, queried live. That is
+reproducible only if the query is recorded: the answer for a given pair of
+coordinates can change when OSM changes, so a run and a re-score months apart can
+legitimately disagree.
+
+Every exchange in the archive stores the exact prompt, its SHA-256, and the raw
+answer, so a re-score is a pure function of the file and cannot silently drift.
+What is *not* frozen is the route truth itself, and the honest statement is that a
+run is reproducible from its archive rather than from the live map.
+
+## What is not yet true of this harness
+
+Stated so a reader does not have to discover it. These are known gaps, not
+results.
+
+- **No oracle solver.** A benchmark should demonstrate that a perfect solver
+  scores 100%, which is what proves the pass condition is satisfiable. There is no
+  such check, and the recall bug above is exactly the class of error it would have
+  caught.
+- **Free-model runs are not reproducible from the harness alone.** The subject is
+  an unpinned free model behind `opencode run`, so a repeat run is a different
+  model behind the same name. Only the archived exchanges are reproducible.
+- **Token counts on the free path are `chars / 4` estimates.** The free tier
+  reports no usage block, so the provider tokenizer promised above is not
+  available there. Cost ratios are still meaningful because both arms use the same
+  estimator; absolute token figures are not provider figures.
+- **The dataset is not yet released.** No license note, no datasheet, no Croissant
+  metadata, and `.bench/` is gitignored, so no raw results are committed.
+
 ## Reporting it
 
 ```bash
@@ -206,10 +254,27 @@ Stated plainly, because a benchmark that overstates itself is worse than none.
 - **Distance tolerance is 15%.** A systematic bias within that band would pass.
   The library's own test suite pins distance error at 0.11%, which is where the
   tight check lives.
-- **Hallucination detection is heuristic.** It looks for place-suffixed and
-  title-cased names. An invented name with no place word and no capitalisation
-  is not detected. Precision matters more than recall here, because a detector
-  that cries wolf on every answer is worse than none.
+- **Hallucination detection is heuristic, and it was measured to be wrong.** It
+  works by finding runs of capitalised words and asking whether any known name sits
+  inside one. Two failure modes are known and neither is fixed:
+  - *False negatives.* An invented name with no capitalisation and no place word is
+    not detected.
+  - *False positives on messy real names.* OSM names contain commas, initials and
+    ampersands — `Steven S. Miyake, Esq.`, `University of San Francisco - Folger
+    Building` — and a comma-separated answer listing 181 of them is genuinely
+    ambiguous text. On the sf-cbd fixture an oracle listing every name is
+    mis-segmented on 23 of them. The pass condition is reachable, but the detector
+    is not exact, and an invented-place count from this harness should be read as
+    an upper bound.
+
+  This metric was previously wrong in the opposite direction and far more
+  damaging: an early extractor had no way to represent a lowercase connector, so
+  `University of Phoenix` was split into `University` and `Phoenix` and both were
+  reported as invented. A correct answer naming ten real businesses was scored as
+  six hallucinations, and because hallucination is a hard failure, every arm in
+  every run scored zero. A detector that cries wolf on every answer is worse than
+  no detector, which is why there is now a test asserting a known-correct answer
+  produces zero hallucinations.
 - **Live data moves.** The same task on the same day next month may have a
   different answer because OSM changed. Reports should state the date, which the
   JSON does.
