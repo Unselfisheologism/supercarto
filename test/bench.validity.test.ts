@@ -131,6 +131,32 @@ describe('hallucination detection does not invent false positives', () => {
     expect(s.hallucinations).toContain('Marek Tlusty Bakery');
   });
 
+  it('accepts a former or alternate name as a real name', () => {
+    // OSM keeps a place's other names outside `name`, in `old_name`, `alt_name`
+    // and friends. A model quoting one has not invented anything.
+    //
+    // Measured: a real answer was reported as inventing "Justin Herman Plaza"
+    // and "S.D. Bechtel Plaza", which are in the sf-cbd fixture as the `old_name`
+    // of Embarcadero Plaza and the `alt_name` of 50 Beale Street Plaza. The
+    // answer was better than the scorer could represent.
+    const expected = Object.assign(['Embarcadero Plaza', '50 Beale Street Plaza'], {
+      aliases: ['Justin Herman Plaza', 'S.D. Bechtel Plaza'],
+    });
+    const s = scoreNames(
+      expected,
+      'Embarcadero Plaza (park, formerly Justin Herman Plaza) and 50 Beale Street Plaza (also S.D. Bechtel Plaza).',
+    );
+    expect(s.hallucinations).toEqual([]);
+  });
+
+  it('still flags a name that is in neither name nor any alias', () => {
+    const expected = Object.assign(['Embarcadero Plaza'], {
+      aliases: ['Justin Herman Plaza'],
+    });
+    const s = scoreNames(expected, 'Visit Zzyzx Ferry Terminal Embarcadero Center today.');
+    expect(s.hallucinations.length).toBeGreaterThan(0);
+  });
+
   it('does not flag a name that is a fragment of a real one', () => {
     // The qualifier case. OSM names carry qualifiers models drop and fragments
     // they keep: "Lookout, Inc." -> "Lookout", "Purism SPC" -> "Purism",
@@ -290,6 +316,45 @@ describe('ground truth matches the prompt', () => {
       expect(task.offsetM).toBe(TURN_OFFSET_M);
       expect(task.offsetM).not.toBe(montana.radiusM);
     }
+  });
+
+  it('compiles the shown-name set within the task bbox', () => {
+    // The bbox is what scopes the compile. Without it a different set of nodes
+    // survives budget fitting: at sf-cbd budget 1024 the bbox-scoped compile names
+    // ten places and the unscoped one names seven. Scoring against the wrong scope
+    // reported two hallucinations in an answer that had correctly listed every
+    // place it was shown.
+    const c = { lat: 37.7936, lon: -122.3958 };
+    const r = 400;
+    const dLat = r / 110_574;
+    const dLon = r / (111_320 * Math.cos((c.lat * Math.PI) / 180));
+    const opts = {
+      budget: 1024,
+      radiusLabel: '400m',
+      capabilities: { elevation: false, weather: false, traffic: false },
+    } as const;
+
+    const scoped = toMaplet(fixture, {
+      ...opts,
+      bbox: {
+        west: c.lon - dLon,
+        south: c.lat - dLat,
+        east: c.lon + dLon,
+        north: c.lat + dLat,
+      },
+    });
+    const unscoped = toMaplet(fixture, opts);
+
+    const namesOf = (doc: { graph: { nodes: { name?: string }[] } }): string[] => [
+      ...new Set(doc.graph.nodes.filter((n) => n.name).map((n) => n.name!)),
+    ];
+    const inScope = namesOf(scoped);
+    const outOfScope = namesOf(unscoped);
+
+    // Every place the scoped compile names must be reportable without penalty.
+    expect(scoreNames(inScope, inScope.join(', ')).hallucinations).toEqual([]);
+    // And the two sets really do differ, or the test passes for the wrong reason.
+    expect(inScope.length).not.toBe(outOfScope.length);
   });
 
   it('scores connectivity against the graph at the shown budget', () => {

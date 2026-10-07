@@ -142,6 +142,22 @@ export const TASK_AREAS: readonly TaskArea[] = [
 ];
 
 /**
+ * Tags that hold a name a place also answers to.
+ *
+ * A model that gives a plaza's former name is not inventing it. OSM keeps those
+ * under `old_name` and `alt_name` rather than in `name`, so a scorer reading only
+ * `name` reports a correct answer as a fabrication.
+ */
+export const NAME_ALIAS_TAGS = [
+  'alt_name',
+  'old_name',
+  'official_name',
+  'short_name',
+  'loc_name',
+  'brand',
+] as const;
+
+/**
  * How far north the turn-by-turn question walks.
  *
  * Named, and used both in the prompt text and by the router, so the two cannot

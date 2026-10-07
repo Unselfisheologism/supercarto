@@ -399,7 +399,16 @@ describe('runBenchmark offline', () => {
     expect(parallel.detail.map((r) => [r.taskId, r.model, r.seed, r.correct])).toEqual(
       serial.detail.map((r) => [r.taskId, r.model, r.seed, r.correct]),
     );
-    expect(parallel.summaries).toEqual(serial.summaries);
+    // Everything except wall-clock time, which cannot match: six workers do not
+    // take the same milliseconds as one. Asserting on it made this test pass only
+    // while every call rounded to 0ms, and fail intermittently once any real work
+    // happened inside a call - so it was measuring the speed of the test fixture,
+    // not the property it claims to check.
+    const withoutTiming = (s: (typeof serial.summaries)[number]): unknown => ({
+      ...s,
+      meanWallMs: undefined,
+    });
+    expect(parallel.summaries.map(withoutTiming)).toEqual(serial.summaries.map(withoutTiming));
     // Every model and seed must appear, or a worker dropped work.
     expect(parallel.detail.filter((r) => r.model === 'm1').length).toBeGreaterThan(0);
     expect(parallel.detail.filter((r) => r.model === 'm2').length).toBeGreaterThan(0);

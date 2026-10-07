@@ -118,6 +118,25 @@ export function scoreNames(expected: string[], answer: string): NameScore {
   const known = expected.map((n) => n.toLowerCase());
 
   /**
+   * Every name string the data legitimately answers to.
+   *
+   * `expected` holds the `name` tag, but OSM records the other names a place goes
+   * by in `alt_name`, `old_name`, `official_name`, `short_name` and `loc_name`. A
+   * model quoting one of those has not invented anything.
+   *
+   * This is not hypothetical. A real answer reported two invented plazas -
+   * "Justin Herman Plaza" and "S.D. Bechtel Plaza" - and both are in the fixture
+   * as the `old_name` and `alt_name` of Embarcadero Plaza and 50 Beale Street
+   * Plaza. The answer was better than the scorer could represent.
+   *
+   * Aliases are collected where the caller can supply them and simply absent
+   * otherwise, so `scoreNames` keeps its signature and stays usable on a bare list
+   * of names.
+   */
+  const aliases = (expected as { aliases?: string[] }).aliases ?? [];
+  const allNames = [...known, ...aliases.map((a) => a.toLowerCase())];
+
+  /**
    * Whether a claimed run refers to something in the data.
    *
    * Four ways, loosest last. The run is often longer or shorter than the real
@@ -126,10 +145,10 @@ export function scoreNames(expected: string[], answer: string): NameScore {
    * invented businesses.
    */
   const refersToKnown = (norm: string): boolean => {
-    if (known.includes(norm)) return true;
+    if (allNames.includes(norm)) return true;
     // A known name sits inside the run: the run swallowed a list separator, so
     // "Cable Car, Boudin Bakery" contains "Boudin Bakery".
-    if (known.some((k) => containsWord(norm, k))) return true;
+    if (allNames.some((k) => containsWord(norm, k))) return true;
     // The run sits inside a known name. This is the case that decides whether the
     // metric works at all, because OSM names routinely carry a qualifier the model
     // drops or a fragment it keeps: "Lookout, Inc." -> "Lookout", "Purism SPC" ->
@@ -143,14 +162,12 @@ export function scoreNames(expected: string[], answer: string): NameScore {
     // Erring toward "not a hallucination" is deliberate. A missed invention costs
     // detection power; a count that flags real places costs the whole metric, and
     // the documentation already states the figure is an upper bound.
-    if (known.some((k) => containsWord(k, norm))) return true;
-    // The run is a fragment of a known name, or the run plus a couple of words is
-    // one: "Concentra Urgent" for "Concentra Urgent Care".
-    const claimedWords = new Set(norm.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+    if (allNames.some((k) => containsWord(k, norm))) return true;
     // Every word of a known name is present in the run, allowing abbreviation.
     // This is what makes "The Powell St Station" match "Powell Street Station",
     // where an exact or substring comparison fails in both directions.
-    for (const k of known) {
+    const claimedWords = new Set(norm.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+    for (const k of allNames) {
       const knownWords = k.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       if (
         knownWords.length > 0 &&
@@ -301,7 +318,41 @@ const NAME_CONNECTORS = new Set(['of', 'the', 'de', 'del', 'la', 'le', 'du', 'da
  * is handled before this check.
  */
 const SENTENCE_FURNITURE =
-  /^(Visit|Go|Try|Head|Walk|Continue|Turn|Start|Begin|Meet|Find|Look|Ask|See|Note|Listed|Named|Near|Around|From|With|There|Here|The following|Named places|Places|Also|Plus|And|But|So|Then|Now|You|Check|Explore|Continue on)\b/;
+  /^(Visit|Go|Try|Head|Walk|Continue|Turn|Start|Begin|Meet|Find|Look|Ask|See|Note|Listed|Named|Near|Around|From|With|There|Here|The following|Named places|Places|Also|Plus|And|But|So|Then|Now|You|Check|Explore|Since|Unless|Because|However|Although|Therefore|Instead|Otherwise|Meanwhile|Furthermore|Additionally|In|On|At|For|By|As|It|They|We|I|If|When|While|Before|After|Until|Till|Once|Though)\b/;
+
+/**
+ * Lowercase words that carry no place claim even when capitalised mid-sentence.
+ *
+ * The furniture list above only applies before a run has started, because "The"
+ * and "In" can legitimately open a name. A capitalised word in the middle of a
+ * sentence is a different case: "it reports 2,286 features and 21 landmarks were
+ * omitted" capitalises nothing, but "Named places in the data:" is a heading and
+ * "Since the absence of data isn't" is a clause. Both were reported as invented
+ * places.
+ *
+ * A run consisting only of these words is not a place claim. A run that contains
+ * one alongside real words is fine - "Union Square Hotel" keeps "Square".
+ */
+const NON_PLACE_WORDS = new Set([
+  'feature', 'features', 'landmark', 'landmarks', 'named', 'since', 'note',
+  'notes', 'data', 'map', 'maps', 'list', 'lists', 'total', 'area', 'omitted',
+  'shown', 'provided', 'available', 'missing', 'partial', 'following',
+  'answer', 'question', 'result', 'results', 'detail', 'details', 'summary',
+  'example', 'examples', 'above', 'below', 'here', 'there', 'overall',
+  'approx', 'approximately', 'roughly', 'about', 'around', 'including',
+  'based', 'using', 'according', 'per', 'via', 'along', 'near', 'next',
+  'previous', 'first', 'second', 'third', 'last', 'same', 'other', 'another',
+  'such', 'each', 'every', 'some', 'many', 'most', 'few', 'all', 'both',
+]);
+
+/** Whether every word of a candidate is a word that names no place. */
+function allWordsNonPlace(text: string): boolean {
+  const words = text
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+  return words.length > 0 && words.every((w) => NON_PLACE_WORDS.has(w));
+}
 
 /**
  * Words that end a candidate rather than continue it.
@@ -333,7 +384,15 @@ const PLACE_SUFFIXES_FOR_TERMINATION = new Set([
 function extractQuotedOrTitled(answer: string): string[] {
   const out: string[] = [];
 
-  for (const m of answer.matchAll(/"([^"]{2,60})"/g)) out.push(m[1]!.trim());
+  // Quotation is taken as an explicit claim of a name, so a quoted string needs no
+  // place word to be checked. The exception is a quoted *word* rather than a name:
+  // a maplet header says features were omitted from the "feature" and "landmark"
+  // layers, and quoting a layer name is not a claim that a place exists.
+  for (const m of answer.matchAll(/"([^"]{2,60})"/g)) {
+    const quoted = m[1]!.trim();
+    if (allWordsNonPlace(quoted)) continue;
+    out.push(quoted);
+  }
 
   // Runs of capitalised words, split on anything that cannot be part of a name.
   //
@@ -356,6 +415,7 @@ function extractQuotedOrTitled(answer: string): string[] {
     const text = parts.join(' ');
     parts = [];
     if (text.length < 3) return;
+    if (allWordsNonPlace(text)) return;
     if (hasPlaceWord(text)) out.push(text);
   };
 

@@ -62,6 +62,15 @@ export interface GroundTruth {
   /** Named places present in the source data. */
   names?: string[];
   /**
+   * Other names the same places go by, from `alt_name`, `old_name`,
+   * `official_name`, `short_name` and `loc_name`.
+   *
+   * A model that answers with a plaza's former name has not invented it. Without
+   * these, a real answer was reported as inventing two plazas that are in the
+   * fixture under `old_name` and `alt_name`.
+   */
+  aliases?: string[];
+  /**
    * Named places present in what this arm was actually shown.
    *
    * The recall pass condition is measured against this, not against `names`. A
