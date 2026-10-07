@@ -14,6 +14,18 @@ import { toMaplet, type GeoJsonFeatureCollection } from '../src/index.js';
 
 const DIR = 'fixtures/bench';
 
+/**
+ * Areas that are meant to be empty.
+ *
+ * rural-montana is the adversarial case: 2km of genuinely empty terrain with one
+ * unpaved service road and nothing else, verified against Overpass. Its
+ * nearest-poi task is unscoreable on purpose - an agent asked to name the cafes
+ * in a field should say there are none, and there is nothing to score a refusal
+ * against. Flagging it as a broken fixture would push a correct result out of the
+ * set.
+ */
+const EXPECTED_EMPTY = new Set(['rural-montana']);
+
 /** Must match TASK_AREAS. */
 const AREAS: Record<string, { lat: number; lon: number; radiusM: number }> = {
   'sf-cbd': { lat: 37.7936, lon: -122.3958, radiusM: 400 },
@@ -80,7 +92,13 @@ for (const [id, want] of Object.entries(AREAS)) {
   const named = fc.features.filter(
     (f) => typeof (f.properties as Record<string, unknown> | null)?.name === 'string',
   ).length;
-  if (named === 0) problems.push('no named features (nearest-poi would be unscoreable)');
+  if (named === 0 && !EXPECTED_EMPTY.has(id)) {
+    problems.push('no named features (nearest-poi would be unscoreable)');
+  }
+  const expectEmpty = EXPECTED_EMPTY.has(id);
+  if (expectEmpty && fc.features.length > 5) {
+    problems.push(`expected near-empty adversarial area, got ${fc.features.length} features`);
+  }
 
   // Compiling proves the fixture survives the real pipeline and says what the
   // model would actually be shown.
@@ -115,6 +133,7 @@ for (const [id, want] of Object.entries(AREAS)) {
     `${id.padEnd(16)} ${status.padEnd(5)} ${String(fc.features.length).padStart(6)} feat  ` +
       `${String(named).padStart(5)} named  ${String(nodes).padStart(5)} nodes  ` +
       `${String(edges).padStart(5)} edges  ${String(yamlChars).padStart(6)}B yaml` +
+      (expectEmpty && problems.length === 0 ? '  (adversarial: expected empty)' : '') +
       (problems.length ? `\n                 ${problems.join('; ')}` : ''),
   );
 }
