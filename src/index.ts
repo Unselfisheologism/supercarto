@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 /**
  * supercarto — LLM-native spatial middleware.
  *
@@ -237,4 +238,4 @@ export {
   type EnvOverrides,
 } from './config.js';
 
-export const VERSION = '0.3.0';
+export const VERSION: string = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
