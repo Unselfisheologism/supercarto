@@ -61,8 +61,24 @@ export interface CompileOptions {
   /**
    * Hard cap on emitted nodes. The budgeter is the primary control; this is a
    * backstop against a pathological document producing an unbounded graph.
+   *
+   * The cap reserves room for named places rather than being spent entirely on
+   * anonymous geometry. A dense street grid compiles to thousands of anonymous
+   * intersections, and with a uniform cap those exhausted it before the point
+   * pass ran at all: the maplet came out with no cafes, no shops, no station,
+   * and an agent asking where to get coffee was told, confidently, that the data
+   * did not say. The budgeter could not rescue it, because it runs on the
+   * compiled graph and the names were never compiled into it.
    */
   readonly maxNodes?: number;
+  /**
+   * Nodes reserved for named places when `maxNodes` would otherwise be spent
+   * entirely on anonymous intersections. Default 512.
+   *
+   * A share rather than a fixed count, so the reservation stays proportionate
+   * to whatever cap the caller chose.
+   */
+  readonly maxNamedNodes?: number;
   /**
    * Build indoor per-floor topology when the document has it. Default true.
    *
@@ -97,6 +113,14 @@ export interface CompileOptions {
 
 const DEFAULT_WELD = 2;
 const DEFAULT_MAX_NODES = 4000;
+
+/**
+ * Nodes held back from the line pass for named places.
+ *
+ * A share of `maxNodes` rather than a constant, so it scales with whatever cap
+ * the caller chose, and large enough to hold a dense block's worth of places.
+ */
+const DEFAULT_MAX_NAMED_NODES = 512;
 
 /** Feature classes treated as named places an agent would navigate to. */
 const POI_CLASSES = new Set([
@@ -207,6 +231,23 @@ export function compile(doc: ScrDocument, opts: CompileOptions = {}): SpatialGra
   const className = (id: number) => doc.classes.get(id)?.name ?? '';
   const layerName = (id: number) => doc.layers.get(id)?.name ?? '';
 
+  // How many nodes the line pass may claim, leaving room for named places.
+  //
+  // Without this the two passes shared one ceiling in a fixed order, so a dense
+  // street grid spent all of it on anonymous intersections and the point pass
+  // broke out before adding a single named node. The reservation is computed
+  // once, up front, from the same `maxNodes` the caller set, so it scales with
+  // the cap rather than hardcoding a count.
+  const namedReserve = Math.min(
+    opts.maxNamedNodes ?? DEFAULT_MAX_NAMED_NODES,
+    Math.floor(maxNodes / 2),
+  );
+  // The line pass stops early so the reservation is available. It is not a hard
+  // limit on total nodes: the point pass and the area pass both draw from the
+  // full ceiling, so a document with few anonymous intersections still gets
+  // everything.
+  const lineNodeCeiling = Math.max(0, maxNodes - namedReserve);
+
   // 1. Line features become the edge backbone. Doing this first means every
   //    later point feature can snap onto a junction that already exists.
   //    Only genuine lines form edges: a building footprint is an area, and
@@ -219,7 +260,10 @@ export function compile(doc: ScrDocument, opts: CompileOptions = {}): SpatialGra
 
   for (const f of lineFeatures) {
     if (excluded.has(className(f.classId))) continue;
-    if (b.nodes.length >= maxNodes) break;
+    // The line pass stops at its own ceiling so the named reservation survives
+    // for the point pass. Every node it adds is anonymous: a junction that only
+    // means something once something is named after it.
+    if (b.nodes.length >= lineNodeCeiling) break;
     compileLinear(b, f, className(f.classId), layerName(f.layerId));
   }
 
