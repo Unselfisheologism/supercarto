@@ -14,6 +14,8 @@ import type { ScoredTask } from './score.js';
 import type { GroundTruth } from './types.js';
 import type { RunnerOptions } from './runner.js';
 import { SuperCarto } from '../live.js';
+import { OsrmRouter, type RoutingSource } from '../source/routing.js';
+import { groundTruth } from './runner.js';
 import type { GeoJsonFeatureCollection } from '../ingest/geojson.js';
 
 export interface RescoreOptions {
@@ -24,6 +26,37 @@ export interface RescoreOptions {
   truth?: GroundTruthProvider;
   carto?: SuperCarto;
   fixtures?: Record<string, GeoJsonFeatureCollection>;
+  router?: RoutingSource;
+}
+
+/**
+ * Ground truth rebuilt the way the runner builds it.
+ *
+ * The previous default was an empty object, which made every task unscoreable and
+ * turned a re-score of a healthy archive into a table of failures. That is the
+ * opposite of the point: the archive is the durable artefact, and re-scoring it is
+ * how a run outlives a change in the scoring rules or a withdrawn model.
+ *
+ * The runner's own `groundTruth` is used rather than a second implementation.
+ * Two copies of a ground-truth rule eventually disagree, and only one of them is
+ * exercised by the run - so the re-score would quietly report something different
+ * from the original.
+ */
+export function truthProvider(opts: {
+  areas?: readonly TaskArea[];
+  carto?: SuperCarto;
+  fixtures?: Record<string, GeoJsonFeatureCollection>;
+  router?: RoutingSource;
+}): GroundTruthProvider {
+  const carto = opts.carto ?? new SuperCarto();
+  const router = opts.router ?? new OsrmRouter();
+  return async ({ id, kind }) => {
+    const task = buildTasks(opts.areas).find((t) => t.id === id);
+    if (!task) return {};
+    // The representation is irrelevant to ground truth, and `none` has no map to
+    // reason about, so the supercarto arm's rule is used throughout.
+    return groundTruth(task, router, carto, opts.fixtures, 'supercarto', 1024);
+  };
 }
 
 export type GroundTruthProvider = (
@@ -50,7 +83,7 @@ export async function rescore(opts: RescoreOptions): Promise<{
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
   // Current prompt for each task, to detect drift against the archive.
-  const truth = opts.truth ?? (async () => ({}));
+  const truth = opts.truth ?? truthProvider(opts);
   const truthCache = new Map<string, GroundTruth>();
   const rows: ScoredTask[] = [];
   const stale: Exchange[] = [];
@@ -161,8 +194,11 @@ function scoreAgainst(
       // runner does: recall measured against the full source list is unreachable
       // for a budget-fitted arm. See `GroundTruth.shownNames`.
       const shown = truth.shownNames ?? truth.names;
-      const s = scoreNames(shown, answer);
-      const areaRecall = scoreNames(truth.names, answer).recall;
+      const s = scoreNames(Object.assign([...shown], { aliases: truth.aliases }), answer);
+      const areaRecall = scoreNames(
+        Object.assign([...truth.names], { aliases: truth.aliases }),
+        answer,
+      ).recall;
       return {
         correct: s.recall >= 0.5 && s.hallucinations.length === 0,
         scoredBy: 'exact',

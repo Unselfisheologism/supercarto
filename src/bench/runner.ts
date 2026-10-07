@@ -9,7 +9,15 @@ import {
   type MapletResult,
 } from '../index.js';
 import type { RoutingSource } from '../source/routing.js';
-import { buildTasks, SYSTEM_PROMPT, EVAL_PROTOCOL, TASK_AREAS, type BenchmarkTask, type TaskArea } from './tasks.js';
+import {
+  buildTasks,
+  SYSTEM_PROMPT,
+  EVAL_PROTOCOL,
+  NAME_ALIAS_TAGS,
+  TASK_AREAS,
+  type BenchmarkTask,
+  type TaskArea,
+} from './tasks.js';
 import {
   acknowledgesOmission,
   connectedComponents,
@@ -140,7 +148,7 @@ function destination(center: LatLon, offsetM: number): LatLon {
  * Task ids are `<area-id>/<kind>`, so the prefix identifies which area a task
  * belongs to. That is the key `fixtures` is indexed by.
  */
-function areaIdOf(task: BenchmarkTask): string {
+export function areaIdOf(task: BenchmarkTask): string {
   const slash = task.id.indexOf('/');
   return slash === -1 ? task.id : task.id.slice(0, slash);
 }
@@ -461,7 +469,7 @@ async function buildContext(
  * the claim under test is about token cost and readability, not about route
  * optimality.
  */
-async function groundTruth(
+export async function groundTruth(
   task: BenchmarkTask,
   router: RoutingSource,
   carto: SuperCarto,
@@ -497,6 +505,21 @@ async function groundTruth(
           .filter((n): n is string => typeof n === 'string' && n.length > 0);
         if (names.length > 0) {
           const all = [...new Set(names)];
+          // A place answers to more than its `name` tag.
+          const aliases = [
+            ...new Set(
+              fixture.features
+                .flatMap((f) => {
+                  const p = (f.properties ?? {}) as Record<string, unknown>;
+                  return NAME_ALIAS_TAGS.flatMap((tag) => {
+                    const v = p[tag];
+                    if (typeof v !== 'string' || v.length === 0) return [];
+                    // Several of these are semicolon-separated lists.
+                    return v.split(';').map((s) => s.trim()).filter(Boolean);
+                  });
+                }),
+            ),
+          ].filter((a) => !all.includes(a));
           // What this arm was shown, at the budget it was shown at. For the
           // geojson arm that is the whole fixture; for supercarto it is whatever
           // survived budget fitting.
@@ -506,7 +529,7 @@ async function groundTruth(
               : compileFixture(fixture, task, budget)
                   .graph.nodes.filter((n) => n.name)
                   .map((n) => n.name!);
-          return { names: all, shownNames: [...new Set(shown)] };
+          return { names: all, aliases, shownNames: [...new Set(shown)] };
         }
       }
       // Every named feature in the area, deliberately not budget-fitted.
@@ -703,8 +726,16 @@ function scoreAnswer(
       // reported, as `shownRecall`, because it is the number that says what a
       // budget costs - but it is not the pass condition, because a truncated
       // context cannot be expected to contain what was cut from it.
-      const { recall, hallucinations } = scoreNames(truth.shownNames ?? truth.names, answer);
-      const areaRecall = scoreNames(truth.names, answer).recall;
+      // Aliases travel with `names` so the scorer can accept `old_name` and
+      // `alt_name`; recall itself must be computed over the primary names only.
+      const withAliases = Object.assign([...(truth.shownNames ?? truth.names)], {
+        aliases: truth.aliases,
+      });
+      const { recall, hallucinations } = scoreNames(withAliases, answer);
+      const areaRecall = scoreNames(
+        Object.assign([...truth.names], { aliases: truth.aliases }),
+        answer,
+      ).recall;
       // A hallucinated place is penalised as a failure regardless of recall.
       // Telling someone to walk to a shop that does not exist is the worst
       // outcome this library could produce.
