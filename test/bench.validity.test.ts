@@ -118,6 +118,43 @@ describe('hallucination detection does not invent false positives', () => {
     expect(s.hallucinations.length).toBeGreaterThan(0);
   });
 
+  it('still flags invented names whose only place word is retail', () => {
+    // Regression guard. A candidate carrying no word from the place list is
+    // discarded before matching ever happens, so a missing noun is a hallucination
+    // the detector is structurally unable to see. "Zzyzx Books" and "Marek Tlusty
+    // Bakery" both went unreported until the retail nouns were added.
+    const s = scoreNames(
+      KNOWN,
+      'Try Zzyzx Books, then Marek Tlusty Bakery, then Starbucks Reserve Roastery.',
+    );
+    expect(s.hallucinations).toContain('Zzyzx Books');
+    expect(s.hallucinations).toContain('Marek Tlusty Bakery');
+  });
+
+  it('does not flag a name that is a fragment of a real one', () => {
+    // The qualifier case. OSM names carry qualifiers models drop and fragments
+    // they keep: "Lookout, Inc." -> "Lookout", "Purism SPC" -> "Purism",
+    // "The UPS Store" -> "Store", "Taxi Stand at Hotel Vitale" -> "Hotel Vitale".
+    //
+    // Before this, one real answer describing the map accurately was reported as
+    // twenty invented places, all twenty traceable to names in the data - and
+    // because hallucination is a hard failure, that arm scored zero for being
+    // correct.
+    const messy = [
+      'Lookout, Inc.',
+      'Purism SPC',
+      'The UPS Store',
+      'Taxi Stand at Hotel Vitale',
+      'STK Steakhouse',
+      'Flywheel Coffee Roasters',
+      'University of San Francisco - Folger Building',
+    ];
+    const answer =
+      'Lookout, Purism, The UPS Store, Hotel Vitale, STK Steakhouse, ' +
+      'Flywheel Coffee Roasters and University of San Francisco are all present.';
+    expect(scoreNames(messy, answer).hallucinations).toEqual([]);
+  });
+
   it('does not treat a parenthetical type as part of the name', () => {
     const s = scoreNames(KNOWN, 'Osha Thai (restaurant) is open.');
     expect(s.hallucinations).toEqual([]);

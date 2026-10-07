@@ -259,13 +259,14 @@ Stated plainly, because a benchmark that overstates itself is worse than none.
   inside one. Two failure modes are known and neither is fixed:
   - *False negatives.* An invented name with no capitalisation and no place word is
     not detected.
-  - *False positives on messy real names.* OSM names contain commas, initials and
-    ampersands — `Steven S. Miyake, Esq.`, `University of San Francisco - Folger
-    Building` — and a comma-separated answer listing 181 of them is genuinely
-    ambiguous text. On the sf-cbd fixture an oracle listing every name is
-    mis-segmented on 23 of them. The pass condition is reachable, but the detector
-    is not exact, and an invented-place count from this harness should be read as
-    an upper bound.
+  - *False positives on messy real names.* OSM names contain commas, initials,
+    ampersands and qualifiers — `Steven S. Miyake, Esq.`, `Lookout, Inc.`,
+    `Taxi Stand at Hotel Vitale` — and a model quoting them back may drop the
+    qualifier or keep only a fragment. The matcher accepts a run that sits inside
+    a known name as well as one that contains it, which removes the common case;
+    on a real 71%-recall answer the invented-place count went from 20 to 1. It is
+    not zero, so an invented-place count from this harness should be read as an
+    upper bound rather than a measurement.
 
   This metric was previously wrong in the opposite direction and far more
   damaging: an early extractor had no way to represent a lowercase connector, so

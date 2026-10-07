@@ -120,16 +120,30 @@ export function scoreNames(expected: string[], answer: string): NameScore {
   /**
    * Whether a claimed run refers to something in the data.
    *
-   * Three ways, in order of confidence. The run is often longer or shorter than
-   * the real name because the extractor had to guess a boundary in prose, so
-   * demanding an exact match flags real places - which is how a correct answer
-   * gets reported as six invented businesses.
+   * Four ways, loosest last. The run is often longer or shorter than the real
+   * name because the extractor had to guess a boundary in prose, so demanding an
+   * exact match flags real places - which is how a correct answer gets reported as
+   * invented businesses.
    */
-  const refersToKnown = (candidate: string, norm: string): boolean => {
+  const refersToKnown = (norm: string): boolean => {
     if (known.includes(norm)) return true;
     // A known name sits inside the run: the run swallowed a list separator, so
     // "Cable Car, Boudin Bakery" contains "Boudin Bakery".
     if (known.some((k) => containsWord(norm, k))) return true;
+    // The run sits inside a known name. This is the case that decides whether the
+    // metric works at all, because OSM names routinely carry a qualifier the model
+    // drops or a fragment it keeps: "Lookout, Inc." -> "Lookout", "Purism SPC" ->
+    // "Purism", "STK Steakhouse" -> "Steakhouse", "Taxi Stand at Hotel Vitale" ->
+    // "Hotel Vitale", "The UPS Store" -> "Store".
+    //
+    // Without it, one real answer describing the map accurately was reported as
+    // twenty invented places, all twenty traceable to names in the data. Since
+    // hallucination is a hard failure, that arm scored zero for being correct.
+    //
+    // Erring toward "not a hallucination" is deliberate. A missed invention costs
+    // detection power; a count that flags real places costs the whole metric, and
+    // the documentation already states the figure is an upper bound.
+    if (known.some((k) => containsWord(k, norm))) return true;
     // The run is a fragment of a known name, or the run plus a couple of words is
     // one: "Concentra Urgent" for "Concentra Urgent Care".
     const claimedWords = new Set(norm.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
@@ -148,7 +162,7 @@ export function scoreNames(expected: string[], answer: string): NameScore {
     return false;
   };
 
-  const hallucinations = claimed.filter((c) => !refersToKnown(c, c.toLowerCase()));
+  const hallucinations = claimed.filter((c) => !refersToKnown(c.toLowerCase()));
 
   return { recall, hallucinations };
 }
@@ -226,6 +240,25 @@ const PLACE_SUFFIXES = new Set([
   'tower', 'house', 'hall', 'lodge', 'inn', 'club', 'lounge', 'bar',
   'salon', 'spa', 'salon', 'barber', 'studio', 'gallery',
   'library', 'museum', 'theatre', 'arena', 'centre', 'depot', 'terminal',
+  // More retail and service nouns. The list is long on purpose: a candidate with
+  // no place word in it is discarded before matching, so a missing word is a
+  // hallucination the detector can never see. "Zzyzx Books" and "Starbucks
+  // Reserve" were both invented in a probe and both went unreported for exactly
+  // this reason.
+  'books', 'bookstore', 'records', 'record', 'shop', 'stores', 'florist', 'florists',
+  'flowers', 'jewellers', 'jewelers', 'jewellery', 'jewelry', 'optician',
+  'opticians', 'shoes', 'clothing', 'clothes', 'apparel', 'boutique', 'outlet',
+  'furniture', 'hardware', 'garden', 'nursery', 'pets', 'pet', 'toys', 'toy',
+  'tailor', 'tailors', 'shoe', 'cleaners', 'drycleaners', 'laundry', 'pharmacies',
+  'physio', 'physiotherapy', 'chiropractic', 'optometrist', 'midwife',
+  'gallery', 'galleries', 'studio', 'studios', 'salon', 'spa', 'barber', 'barbers',
+  'gym', 'fitness', 'yoga', 'pilates', 'martial', 'karate', 'climbing',
+  'bakery', 'bakeries', 'butchers', 'greengrocer', 'newsagent', 'post',
+  'postoffice', 'atm', 'banking', 'currency', 'exchange', 'nails', 'tattoo',
+  'tattoos', 'massage', 'reflexology', 'sauna', 'onsen', 'hostel', 'campsite',
+  'restaurant', 'restaurants', 'eatery', 'trattoria', 'pizzeria', 'patisserie',
+  'chocolaterie', 'creperie', 'bagel', 'donuts', 'doughnuts', 'icecream',
+  'brewery', 'winery', 'distillery', 'tasting', 'roastery', 'tea', 'teahouse',
 ]);
 
 /**
