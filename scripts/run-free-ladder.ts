@@ -62,6 +62,10 @@ const model = arg('--model');
 const outDir = arg('--out', '.bench')!;
 const budget = Number(arg('--budget', '60'));
 const seeds = Number(arg('--seeds', '1'));
+// Default 1, i.e. serial. A free tier that starts refusing requests turns each
+// refusal into a failed row, and a failed row is recorded as a model failure, so
+// raising this is a decision about pressure rather than a free speedup.
+const concurrency = Number(arg('--concurrency', '1'));
 
 const models = model ? [model] : [...FREEMODELS];
 console.log(`\nmodels: ${models.length}`);
@@ -74,6 +78,7 @@ const results = await runLadder({
   seeds,
   stopOnRateLimit: true,
   fixtures,
+  concurrency,
   makeClient: (m: string) => new OpencodeDriver({ model: m }),
   onProgress: (m: string) => console.log(m),
 });

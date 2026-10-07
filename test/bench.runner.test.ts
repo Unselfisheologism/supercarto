@@ -374,6 +374,57 @@ describe('runBenchmark offline', () => {
     }
   });
 
+  it('produces the same rows whether or not calls run concurrently', async () => {
+    // Concurrency is a latency fix, not a measurement change. The free tier takes
+    // ~110s per call because each one spawns a standalone server, so a full ladder
+    // is over 23 hours serially - but a different set of rows would make the
+    // comparison between two runs meaningless, which is worse than being slow.
+    const opts = {
+      areas: [AREA],
+      budgets: [1024],
+      seeds: 3,
+      carto: stubCarto(),
+      router: new StubRouter(),
+    };
+    const a = new ScriptedModel('m1', 'fake-1', () => '480m');
+    const b = new ScriptedModel('m2', 'fake-2', (req) =>
+      req.user.includes('geojson') ? '470m' : '480m',
+    );
+
+    const serial = await runBenchmark({ ...opts, models: [a, b], concurrency: 1 });
+    const parallel = await runBenchmark({ ...opts, models: [a, b], concurrency: 6 });
+
+    // Same rows, same verdicts, same order.
+    expect(parallel.detail.length).toBe(serial.detail.length);
+    expect(parallel.detail.map((r) => [r.taskId, r.model, r.seed, r.correct])).toEqual(
+      serial.detail.map((r) => [r.taskId, r.model, r.seed, r.correct]),
+    );
+    expect(parallel.summaries).toEqual(serial.summaries);
+    // Every model and seed must appear, or a worker dropped work.
+    expect(parallel.detail.filter((r) => r.model === 'm1').length).toBeGreaterThan(0);
+    expect(parallel.detail.filter((r) => r.model === 'm2').length).toBeGreaterThan(0);
+    expect(new Set(parallel.detail.map((r) => r.seed)).size).toBe(3);
+  });
+
+  it('still records every row when one call fails under concurrency', async () => {
+    // A rejected call must not take the pool down with it, and must not leave a
+    // hole in the report: a missing row is not a failure, it is a silently
+    // smaller denominator.
+    const ok = new ScriptedModel('m1', 'fake-1', () => '480m');
+    const bad = new ScriptedModel('m2', 'fake-2', () => '480m', true);
+    const report = await runBenchmark({
+      areas: [AREA],
+      budgets: [1024],
+      seeds: 2,
+      models: [ok, bad],
+      carto: stubCarto(),
+      router: new StubRouter(),
+      concurrency: 4,
+    });
+    expect(report.detail.some((r) => r.error !== undefined)).toBe(true);
+    expect(report.detail.some((r) => r.model === 'm1' && r.error === undefined)).toBe(true);
+  });
+
   it('fetches each context once when a shared cache is supplied', async () => {
     // The ladder runs one benchmark per model over identical map data. Without a
     // shared cache an eight-model run refetches every maplet eight times, which

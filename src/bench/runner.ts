@@ -1,4 +1,13 @@
-import { SuperCarto, OsrmRouter, estimateTokens, toMaplet, type GeoJsonFeatureCollection } from '../index.js';
+import {
+  SuperCarto,
+  OsrmRouter,
+  estimateTokens,
+  featuresFromDocument,
+  toMaplet,
+  type GeoJsonFeature,
+  type GeoJsonFeatureCollection,
+  type MapletResult,
+} from '../index.js';
 import type { RoutingSource } from '../source/routing.js';
 import { buildTasks, SYSTEM_PROMPT, EVAL_PROTOCOL, TASK_AREAS, type BenchmarkTask, type TaskArea } from './tasks.js';
 import {
@@ -78,6 +87,20 @@ export interface RunnerOptions {
    * inputs buildContext takes.
    */
   contextCache?: Map<string, { text: string }>;
+  /**
+   * Model calls to have in flight at once. Default 1, i.e. serial.
+   *
+   * A per-call latency problem rather than a throughput one: each call spawns a
+   * standalone opencode server and takes around 110s on the free tier, so a full
+   * ladder of 768 calls is over 23 hours of mostly waiting.
+   *
+   * Default 1 because raising it is a decision with consequences, not an
+   * optimisation. A free tier that starts refusing requests turns each refusal
+   * into a failed row, and a failed row is recorded as a model failure. Whoever
+   * sets this is choosing how much parallel pressure to put on an undocumented
+   * limit.
+   */
+  concurrency?: number;
 }
 
 export interface RunReport {
@@ -97,9 +120,18 @@ export interface RunReport {
   }[];
 }
 
-/** Offset point for a route task, so it has somewhere to go. */
-function destination(center: LatLon, radiusM: number): LatLon {
-  return { lat: center.lat + radiusM / 110574, lon: center.lon };
+/**
+ * Offset point for a route task, so it has somewhere to go.
+ *
+ * The offset is a task property rather than the area radius. The turn-by-turn
+ * prompt asks for a 200m walk, and the harness used to route to `area.radiusM`
+ * instead - 400m in most areas, 2000m in rural Montana. Ground truth was
+ * therefore describing a different walk than the question asked about, which is
+ * the SOP Step 4 failure: a verified answer to the wrong question. `buildTasks`
+ * now states the offset explicitly and both read the same field.
+ */
+function destination(center: LatLon, offsetM: number): LatLon {
+  return { lat: center.lat + offsetM / 110574, lon: center.lon };
 }
 
 /**
@@ -160,13 +192,56 @@ export async function runBenchmark(opts: RunnerOptions = {}): Promise<RunReport>
 
         const truth = await groundTruth(task, router, carto, opts.fixtures, representation, budget);
 
+        // Every (model, seed) pair for this configuration is an independent call,
+        // so they are issued together rather than one after another.
+        //
+        // Measured on the free tier: 110s mean per call, because each one spawns
+        // a standalone opencode server. Issued serially, a full ladder is 768
+        // calls and 23 hours of wall clock, almost all of it waiting. Nothing in
+        // the loop depends on another call's result, and the archive is
+        // append-only with one writer per process, so concurrency changes the
+        // elapsed time and nothing about what is measured.
+        //
+        // The concurrency factor is a bound, not a target: a free tier that
+        // starts refusing requests would turn every refusal into a failed row, so
+        // the caller picks a value it is willing to have recorded as failures.
+        // Every (model, seed) pair for this configuration is an independent call,
+        // so a fixed pool of workers takes them off a shared queue.
+        //
+        // Measured on the free tier: 110s mean per call, because each one spawns
+        // a standalone opencode server. Issued serially, a full ladder is 768
+        // calls and 23 hours of wall clock, almost all of it waiting. Nothing in
+        // the loop depends on another call's result, so concurrency changes the
+        // elapsed time and nothing about what is measured.
+        //
+        // The factor is a bound, not a target: a free tier that starts refusing
+        // requests turns every refusal into a failed row, and a failed row is
+        // recorded as a model failure. Whoever sets it is choosing how much
+        // parallel pressure to put on an undocumented limit.
+        const work: ScoredTask[] = [];
+        const queue: { model: ModelClient; seed: number }[] = [];
         for (const model of models) {
-          for (let seed = 0; seed < seeds; seed++) {
-            detail.push(
-              await runOne(task, representation, budget, model, seed, context.text, truth),
+          for (let seed = 0; seed < seeds; seed++) queue.push({ model, seed });
+        }
+        let next = 0;
+        const worker = async (): Promise<void> => {
+          for (;;) {
+            const index = next++;
+            if (index >= queue.length) return;
+            const { model, seed } = queue[index]!;
+            work[index] = await runOne(
+              task, representation, budget, model, seed, context.text, truth,
             );
           }
-        }
+        };
+        const slots = Math.max(1, Math.min(Math.floor(opts.concurrency ?? 1), queue.length));
+        await Promise.all(Array.from({ length: slots }, worker));
+        const settled = work.filter((r): r is ScoredTask => r !== undefined);
+        // Order is restored, so a report is byte-identical whether or not
+        // concurrency was used. Summaries group by model and representation, so
+        // row order does not change any number - but a diffable report is worth
+        // more than the convenience.
+        detail.push(...orderCalls(settled, models, seeds));
       }
     }
   }
@@ -212,6 +287,29 @@ function taskIdFor(t: ScoredTask): string {
 }
 
 /**
+ * Restore the order the serial loop would have produced.
+ *
+ * `Promise.all` resolves in argument order, which is already model-then-seed, so
+ * this is mostly a statement of intent. It is here because the alternative -
+ * relying on `Promise.all` ordering forever - would silently change report layout
+ * the first time the loop was restructured, and a benchmark whose JSON diffs
+ * differently for no reason is a benchmark nobody trusts.
+ */
+function orderCalls(rows: ScoredTask[], models: readonly ModelClient[], seeds: number): ScoredTask[] {
+  const expected: ScoredTask[] = [];
+  for (const model of models) {
+    for (let seed = 0; seed < seeds; seed++) {
+      const row = rows.find((r) => r.model === model.id && r.seed === seed);
+      if (row) expected.push(row);
+    }
+  }
+  // Anything unmatched is appended rather than dropped: a row that exists but is
+  // not in the expected shape should be visible in the report, not disappear.
+  for (const row of rows) if (!expected.includes(row)) expected.push(row);
+  return expected;
+}
+
+/**
  * Assemble what the model sees.
  *
  * The GeoJSON arm is the honest baseline: the same features, uncompiled, as JSON.
@@ -230,7 +328,7 @@ function compileFixture(
   fixture: GeoJsonFeatureCollection,
   task: BenchmarkTask,
   budget: number,
-): { yaml: string } {
+): MapletResult {
   const dLat = task.radiusM / 110_574;
   const dLon = task.radiusM / (111_320 * Math.cos((task.center.lat * Math.PI) / 180));
   return toMaplet(fixture, {
@@ -251,6 +349,36 @@ function compileFixture(
 /** The raw comparison arm: the fixture's features, uncompiled, as JSON. */
 function geoJsonText(fixture: GeoJsonFeatureCollection): string {
   return `Map data:\n${JSON.stringify(fixture)}`;
+}
+
+/**
+ * The raw arm when the map came from a live fetch rather than a fixture.
+ *
+ * This used to serialise `result.graph.nodes`, which is the *compiled* graph. That
+ * made the raw baseline strictly worse than the thing it was the baseline for, and
+ * for reasons that had nothing to do with the compiler:
+ *
+ *  - geometry was dropped, because compiled intersection nodes carry no lat/lon,
+ *    so every feature serialised as `"geometry":null`
+ *  - names were dropped, because `n.name` is only populated for the subset of
+ *    nodes that survived budgeting
+ *  - tags were dropped, so a raw consumer could not tell a cafe from a bench
+ *
+ * Measured on the sf-cbd fixture at budget 1024: the old arm was 66 features with
+ * 0 names and 0 geometries; the fixture path for the same data is 720 features
+ * with 336 names and full geometry. A model shown the old arm was being asked to
+ * answer questions about data the harness had deleted, and the resulting score
+ * measured the projection step rather than the compiler. This is the ABC outcome
+ * validity failure in its purest form: the pass condition did not correspond to
+ * real success, and the baseline was rigged.
+ *
+ * The fix is to fetch once and reuse the *raw source features* for the geojson
+ * arm, so both arms look at the same underlying data and differ only in
+ * representation. That is what `maplet` exposes via `result.features` when the
+ * caller asks for the source rather than the graph.
+ */
+function geoJsonFromSource(features: GeoJsonFeature[]): string {
+  return `Map data:\n${JSON.stringify({ type: 'FeatureCollection', features })}`;
 }
 
 async function buildContext(
@@ -312,18 +440,9 @@ async function buildContext(
 
   let built: { text: string };
   if (representation === 'geojson') {
-    const raw = JSON.stringify({
-      type: 'FeatureCollection',
-      features: result.graph.nodes.map((n) => ({
-        type: 'Feature',
-        properties: { name: n.name, type: n.kind, tags: n.tags },
-        geometry:
-          n.lat !== undefined && n.lon !== undefined
-            ? { type: 'Point', coordinates: [n.lon, n.lat] }
-            : null,
-      })),
-    });
-    built = { text: `Map data:\n${raw}` };
+    // The raw source features the supercarto arm was compiled from, recovered from
+    // the same document. Not the compiled graph: see `geoJsonFromSource`.
+    built = { text: geoJsonFromSource(featuresFromDocument(result.doc)) };
   } else {
     built = { text: `Map data:\n${result.yaml}` };
   }
@@ -350,12 +469,10 @@ async function groundTruth(
   representation: Representation,
   budget: number,
 ): Promise<GroundTruth> {
-  void representation;
-  void budget;
-
   try {
     if (task.kind === 'route' || task.kind === 'turns') {
-      const to = destination(task.center, task.radiusM);
+      // The offset the question names, not the area radius. See `destination`.
+      const to = destination(task.center, task.offsetM ?? task.radiusM);
       const r = await router.route({
         from: task.center,
         to,
@@ -378,15 +495,51 @@ async function groundTruth(
         const names = fixture.features
           .map((f) => (f.properties as Record<string, unknown> | null)?.name)
           .filter((n): n is string => typeof n === 'string' && n.length > 0);
-        if (names.length > 0) return { names: [...new Set(names)] };
+        if (names.length > 0) {
+          const all = [...new Set(names)];
+          // What this arm was shown, at the budget it was shown at. For the
+          // geojson arm that is the whole fixture; for supercarto it is whatever
+          // survived budget fitting.
+          const shown =
+            representation === 'geojson'
+              ? all
+              : compileFixture(fixture, task, budget)
+                  .graph.nodes.filter((n) => n.name)
+                  .map((n) => n.name!);
+          return { names: all, shownNames: [...new Set(shown)] };
+        }
       }
+      // Every named feature in the area, deliberately not budget-fitted.
+      //
+      // The question is "list the named places here", so the answer is the full
+      // set, and it has to be the same set for every arm or the arms are graded
+      // against different questions. A budget-fitted graph names far fewer
+      // places, and scoring a 1024-budget maplet against the full list measures
+      // the budget rather than the model's reading of it. The cost of that choice
+      // is real and is the point of the token column: recall falls as the budget
+      // falls, and accuracy is only comparable at equal budget.
       const m = await carto.maplet({
         lat: task.center.lat,
         lon: task.center.lon,
         radiusM: task.radiusM,
         budget: 4000,
       });
-      return { names: m.graph.nodes.filter((n) => n.name).map((n) => n.name!) };
+      const all = [...new Set(m.graph.nodes.filter((n) => n.name).map((n) => n.name!))];
+      // For the live path, shown names need the budget-fitted compile, which is
+      // the maplet already cached for this task.
+      const shown =
+        representation === 'geojson'
+          ? all
+          : (
+              await carto.maplet({
+                lat: task.center.lat,
+                lon: task.center.lon,
+                radiusM: task.radiusM,
+                budget,
+              })
+            ).graph.nodes.filter((n) => n.name)
+              .map((n) => n.name!);
+      return { names: all, shownNames: [...new Set(shown)] };
     }
 
     if (task.kind === 'connectivity') {
@@ -396,18 +549,21 @@ async function groundTruth(
       // map, and would make an offline run impossible.
       const fixture = fixtures?.[areaIdOf(task)];
       if (fixture) {
-        const m = toMaplet(fixture, {
-          budget: 4000,
-          radiusLabel: `${task.radiusM}m`,
-          capabilities: { elevation: false, weather: false, traffic: false },
-        });
+        // At the budget the model was shown, not an unbounded one.
+        //
+        // Truth used to be compiled at budget 4000 while the model saw 1024. The
+        // component count is a property of the graph: at sf-cbd it is 8 at budget
+        // 1024 and 33 at 4000. Scoring a 1024-budget answer against the 4000 graph
+        // asks the model to report structure it was never given, so every correct
+        // answer read as wrong.
+        const m = compileFixture(fixture, task, budget);
         return { components: connectedComponents(m.graph), graph: m.graph };
       }
       const m = await carto.maplet({
         lat: task.center.lat,
         lon: task.center.lon,
         radiusM: task.radiusM,
-        budget: 4000,
+        budget,
       });
       return { components: connectedComponents(m.graph), graph: m.graph };
     }
@@ -531,7 +687,24 @@ function scoreAnswer(
 
     case 'nearest': {
       if (!truth.names || truth.names.length === 0) return { correct: null, by: 'failed' };
-      const { recall, hallucinations } = scoreNames(truth.names, answer);
+      // Recall is measured against the names the model was actually shown, not
+      // against every name in the area.
+      //
+      // Against the full source list this task is unwinnable for the supercarto
+      // arm and therefore meaningless: at budget 1024 the sf-cbd maplet carries
+      // about ten named places out of 336 in the fixture, so recall cannot exceed
+      // 3% and every arm scores zero regardless of what it did. In a real
+      // benchmark run every single arm reported 0%, which reads as "the model
+      // cannot do this task" when the truth is "the pass condition was
+      // unreachable".
+      //
+      // Scoring against the shown set measures what it should: did the model
+      // report the places it was given. Coverage of the whole area is still
+      // reported, as `shownRecall`, because it is the number that says what a
+      // budget costs - but it is not the pass condition, because a truncated
+      // context cannot be expected to contain what was cut from it.
+      const { recall, hallucinations } = scoreNames(truth.shownNames ?? truth.names, answer);
+      const areaRecall = scoreNames(truth.names, answer).recall;
       // A hallucinated place is penalised as a failure regardless of recall.
       // Telling someone to walk to a shop that does not exist is the worst
       // outcome this library could produce.
@@ -539,7 +712,10 @@ function scoreAnswer(
       return {
         correct,
         by: 'exact',
-        rationale: `recall ${Math.round(recall * 100)}%, ${hallucinations.length} not in data`,
+        rationale:
+          `recall ${Math.round(recall * 100)}% of ${truth.shownNames?.length ?? truth.names.length} shown, ` +
+          `${Math.round(areaRecall * 100)}% of ${truth.names.length} in area, ` +
+          `${hallucinations.length} not in data`,
       };
     }
 

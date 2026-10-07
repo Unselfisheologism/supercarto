@@ -67,6 +67,14 @@ export interface LadderOptions {
    * about whatever the live source served at that moment.
    */
   fixtures?: Record<string, GeoJsonFeatureCollection>;
+  /**
+   * Model calls in flight at once. Default 1.
+   *
+   * Forwarded rather than set here: a free tier refusing requests turns each
+   * refusal into a failed row, so the factor belongs to whoever is running the
+   * ladder and can see their own rate limits.
+   */
+  concurrency?: number;
   onProgress?: (msg: string) => void;
 }
 
@@ -153,6 +161,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       budgets: opts.budgets ?? [1024],
       seeds: opts.seeds ?? 3,
       contextCache,
+      concurrency: opts.concurrency ?? 1,
       ...(opts.fixtures ? { fixtures: opts.fixtures } : {}),
       ...(opts.only ? { only: opts.only } : {}),
       ...(opts.carto ? { carto: opts.carto } : {}),
