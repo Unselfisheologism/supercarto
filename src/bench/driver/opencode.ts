@@ -36,7 +36,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelClient } from '../models.js';
 import type { ModelRequest } from '../types.js';
@@ -51,11 +52,16 @@ export interface OpencodeDriverOptions {
   /**
    * Directory the child runs in.
    *
-   * Defaults to a scratch directory rather than the repo. In the repo the model
-   * can read the task definitions and the ground truth, which would let it
-   * answer without reasoning about the map at all. Voiding on tool calls catches
-   * that after the fact; not offering the files makes cheating much less likely
-   * in the first place.
+   * Defaults to a scratch directory, never the caller's. This is not hygiene:
+   * the subject model has tools, and running it in the repo hands it the answer
+   * key. A smoke run caught it - the `none` arm, which is given no map data at
+   * all, answered "the maplet lists 89 nodes" and "895 m along streets", and 895
+   * is OSRM's answer to within 0.03%. It had read `.bench/`, where the archive
+   * stores every earlier arm's answers alongside the task, and the fixtures
+   * directory holds the ground truth.
+   *
+   * Voiding a run on tool use catches that afterwards. Not offering the files
+   * means it rarely happens at all.
    */
   cwd?: string;
   /**
@@ -96,16 +102,25 @@ export class OpencodeDriver implements ModelClient {
   readonly id: string;
   readonly model: string;
   private readonly bin: string;
-  private readonly timeoutMs: number;
-  private readonly cwd: string | undefined;
+  /** Per-call ceiling. Comfortably above the slowest observed free model. */
+private readonly timeoutMs: number;
+  private readonly cwd: string;
   private readonly args: string[] | undefined;
 
   constructor(opts: OpencodeDriverOptions) {
     this.id = opts.model;
     this.model = opts.model;
     this.bin = opts.bin ?? resolveBin();
-    this.timeoutMs = opts.timeoutMs ?? 180_000;
-    this.cwd = opts.cwd;
+    // 180s was too tight: 4 of 14 calls in a smoke run hit it, and a timeout is
+    // recorded as a model failure rather than as a harness shortfall. Free models
+    // are slow to start a standalone server, and a large GeoJSON prompt is slow
+    // to read, so the ceiling is generous and a genuinely wedged call is caught by
+    // the fact that it never terminates.
+    this.timeoutMs = opts.timeoutMs ?? 420_000;
+    // An empty scratch directory per driver, never the caller's cwd. See the
+    // note on `cwd`: an inherited working directory is how the subject model
+    // read the answer key.
+    this.cwd = opts.cwd ?? mkdtempSync(join(tmpdir(), 'supercarto-subject-'));
     this.args = opts.args;
   }
 

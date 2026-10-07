@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   FREEMODELS,
@@ -176,6 +176,58 @@ describe('opencode driver', () => {
       );
       const driver = new OpencodeDriver({ model: 'opencode/fledge-alpha-free', bin, args });
       expect((await driver.call(REQ)).text).toBe('ok');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('runs the child somewhere other than the repository', async () => {
+    // The leak this prevents: with the repo as the working directory, the subject
+    // model could read `.bench/` (every earlier arm's answers, plus the task) and
+    // `fixtures/bench/` (the ground truth). It did. A `none` arm - shown no map at
+    // all - answered "the maplet lists 89 nodes" and "895 m along streets", and
+    // OSRM's answer is 895.3m.
+    try {
+      const dir = mkdtempSync(join(tmpdir(), 'oc-stub-'));
+      dirs.push(dir);
+      const script = join(dir, 'cwd.js');
+      writeFileSync(script, 'process.stdout.write(JSON.stringify({type:"text",part:{text:process.cwd()}}));');
+      // No cwd passed, so this exercises the default rather than a test override.
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin: process.execPath,
+        args: [script],
+      });
+      const res = await driver.call(REQ);
+      const reported = resolve(res.text);
+      expect(reported).not.toBe(resolve(process.cwd()));
+      // And the repository itself must be unreachable as the child's root.
+      expect(reported.startsWith(resolve(tmpdir()))).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('gives the child an empty directory to work in', async () => {
+    // The scratch directory must not be the repo, and must not contain the
+    // fixtures either.
+    try {
+      const dir = mkdtempSync(join(tmpdir(), 'oc-stub-'));
+      dirs.push(dir);
+      const script = join(dir, 'ls.js');
+      writeFileSync(
+        script,
+        `let input='';process.stdin.on('data',d=>input+=d);process.stdin.on('end',()=>{` +
+          `const fs=require('fs');let n=0;try{n=fs.readdirSync(process.cwd()).length}catch{}\n` +
+          `process.stdout.write(JSON.stringify({type:'text',part:{text:String(n)}}));});`,
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin: process.execPath,
+        args: [script],
+      });
+      const res = await driver.call(REQ);
+      expect(res.text).toBe('0');
     } finally {
       cleanup();
     }
