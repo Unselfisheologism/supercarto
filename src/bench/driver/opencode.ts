@@ -347,4 +347,9 @@ export const FREEMODELS = [
 export const UNREACHABLE_FREEMODELS: Record<string, string> = {
   'opencode/ling-3.0-flash-fin-free':
     '404 Cannot find any route matching [POST] /zen/v1/chat/completions',
+  // Listed by `opencode models` but answered 503 "Endpoint is unavailable" on
+  // two separate calls, so it is recorded rather than benchmarked. A model that
+  // cannot serve a request costs a full ladder of failures that look like model
+  // failures, which is the specific confusion this map exists to prevent.
+  'opencode/exo-free': '503 Upstream request failed: Endpoint is unavailable',
 };
