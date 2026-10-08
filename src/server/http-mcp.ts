@@ -222,23 +222,33 @@ export class McpHttpServer {
     const headers: Record<string, string> = {};
     if (newSession) headers['mcp-session-id'] = newSession;
 
-    if (wantsSse) {
-      // The spec's SSE form: each JSON-RPC message is one `data:` line. A
-      // notification-only request legitimately produces no events, so the stream
-      // is simply closed.
+    // Notification-only input is 202 with no body, whatever the client accepts.
+    //
+    // This check comes before the SSE branch deliberately. The spec states that a
+    // request consisting solely of notifications is answered 202 Accepted with an
+    // empty body, and doing it the other way round returns an empty 200
+    // text/event-stream instead - which a strict client treats as a malformed
+    // response to its `notifications/initialized`.
+    if (responses.length === 0) {
+      res.writeHead(202, headers);
+      res.end();
+      return;
+    }
+
+    if (wantsSse && !wantsJson) {
+      // The spec's SSE form: each JSON-RPC message is one `data:` line.
       res.writeHead(200, { 'content-type': 'text/event-stream', ...headers });
       for (const r of responses) res.write(`data: ${JSON.stringify(r)}\n\n`);
       res.end();
       return;
     }
 
-    // JSON form. A notifications-only batch has no messages to return, and the
-    // spec says that is 202 with no body rather than an empty `result`.
-    if (responses.length === 0) {
-      res.writeHead(202, headers);
-      res.end();
-      return;
-    }
+    // JSON when the client accepts it, even if it also accepts SSE.
+    //
+    // A strict client sends `Accept: application/json, text/event-stream` because
+    // the spec tells it to list both, so preferring SSE here made every such client
+    // parse `data: {...}` as if it were a JSON body. JSON is the safer default:
+    // every client can read it, whereas SSE framing is less universally handled.
     res.writeHead(200, { 'content-type': 'application/json', ...headers });
     res.end(JSON.stringify(responses.length === 1 ? responses[0] : responses));
   }
@@ -275,6 +285,22 @@ export class McpHttpServer {
   }
 }
 
+/**
+ * Read `--strict-sessions`.
+ *
+ * Exported so the flag's meaning can be tested without binding a port, and so the
+ * inversion that shipped once cannot come back unnoticed: `strict = true` must
+ * mean "reject unknown sessions", never "accept them".
+ */
+export function strictSessionsFrom(argv: string[]): boolean {
+  const i = argv.indexOf('--strict-sessions');
+  if (i === -1) return false;
+  const next = argv[i + 1];
+  // A bare `--strict-sessions` with no value reads as true; `--strict-sessions
+  // false` turns it off. Anything else is not a boolean, so treat it as absent.
+  return next === undefined || next === 'true';
+}
+
 /** Entry point for `supercarto mcp-http`. */
 export async function mainMcpHttp(argv: string[] = []): Promise<number> {
   const get = (flag: string): string | undefined => {
@@ -290,14 +316,20 @@ export async function mainMcpHttp(argv: string[] = []): Promise<number> {
     return 1;
   }
 
+  // Strict mode is opt-in and means "reject a session id I did not issue". It was
+  // previously written as `allowForeignSessions: flag === 'true'`, which inverted
+  // it: the default run rejected every session id including the one it had just
+  // handed out, so a strict client could not get past `initialize`. A unit test
+  // missed this because it constructs the server directly and never goes through
+  // this function - the wiring was the broken part, and it was untested.
+  const strictSessions = strictSessionsFrom(argv);
+
   const server = new McpHttpServer({
     carto: cartoFromEnv(),
     host,
     port,
     maxTokens,
-    // A strict session check is opt-in, because this server holds no session state
-    // to protect and rejecting a client's own id helps nobody.
-    allowForeignSessions: (get('--strict-sessions') ?? 'false') === 'true',
+    allowForeignSessions: !strictSessions,
   });
 
   const bound = await server.listen();

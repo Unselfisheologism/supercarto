@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { McpHttpServer } from '../src/server/http-mcp.js';
+import { McpHttpServer, strictSessionsFrom } from '../src/server/http-mcp.js';
 import { McpStdioServer } from '../src/server/stdio.js';
 import { SuperCarto } from '../src/index.js';
 
@@ -182,6 +182,50 @@ describe('mcp over streamable http', () => {
       });
       expect(res.status).toBe(404);
     });
+  });
+
+  it('completes a full client handshake, echoing the session id back', async () => {
+    // The sequence a strict client actually performs. It shipped broken: the CLI
+    // passed `allowForeignSessions: flag === 'true'`, which inverts the flag, so the
+    // default run rejected the very session id it had just issued and a strict
+    // client could not get past `initialize`. The unit tests missed it because
+    // they construct the server directly and never exercise the CLI wiring.
+    await withServer(async (_s, url) => {
+      const h = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+
+      const init = await fetch(url, {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(INIT),
+      });
+      const sid = init.headers.get('mcp-session-id');
+      expect(sid).toBeTruthy();
+
+      // The initialized notification, carrying the session id the server issued.
+      const notif = await fetch(url, {
+        method: 'POST',
+        headers: { ...h, 'mcp-session-id': sid! },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      });
+      expect(notif.status).toBe(202);
+
+      const list = await fetch(url, {
+        method: 'POST',
+        headers: { ...h, 'mcp-session-id': sid! },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+      });
+      expect(list.status).toBe(200);
+      const body = (await list.json()) as { result: { tools: unknown[] } };
+      expect(body.result.tools.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('reads --strict-sessions so that strict means reject, not accept', () => {
+    // The inversion this pins: strict=true must reject unknown sessions.
+    expect(strictSessionsFrom([])).toBe(false);
+    expect(strictSessionsFrom(['--strict-sessions', 'true'])).toBe(true);
+    expect(strictSessionsFrom(['--strict-sessions', 'false'])).toBe(false);
+    expect(strictSessionsFrom(['--strict-sessions'])).toBe(true);
   });
 
   it('accepts a foreign session id, because it keeps no session state', async () => {
