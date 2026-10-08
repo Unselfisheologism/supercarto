@@ -144,17 +144,52 @@ console.log('\nFLOOR CHECK (the `none` arm should score near zero)');
 const noneRows = allRows.filter((r) => r.representation === 'none');
 const noneAnswered = noneRows.filter((r) => r.correct !== null);
 const noneOk = noneAnswered.filter((r) => r.correct === true).length;
+const floorHigh = noneAnswered.length > 0 && noneOk > noneAnswered.length * 0.25;
 console.log(
   `  none arm: ${noneOk}/${noneAnswered.length} correct` +
-    (noneOk > noneAnswered.length * 0.25
-      ? '  <-- HIGH. Likely memorised city knowledge rather than leakage, but it'
-      : '  (as expected)'),
+    (floorHigh ? '  <-- HIGH. Likely memorised city knowledge rather than leakage' : '  (as expected)'),
 );
-if (noneOk > noneAnswered.length * 0.25) {
+
+// The comparison that matters, and the one a headline number hides: does the arm
+// given the map beat the arm given nothing, task by task?
+//
+// A raised floor does not merely shrink the gap, it can invert it. Measured on
+// sf-cbd: the `none` arm answered the turn-by-turn question with 863m via Market
+// Street -> Spear Street -> Mission Street against OSRM's 868m via the same
+// sequence, while the supercarto arm - correctly reporting that the maplet has no
+// routable street-name layer - refused and scored zero. The arm with no map beat
+// the arm with the map, on the task the library exists to support.
+const byTask = new Map<string, { none: number; supercarto: number; n: number }>();
+for (const r of allRows) {
+  if (r.correct === null) continue;
+  const key = r.taskId.split('#')[0]!;
+  const e = byTask.get(key) ?? { none: 0, supercarto: 0, n: 0 };
+  if (r.representation === 'none' && r.correct) e.none++;
+  if (r.representation === 'supercarto' && r.correct) e.supercarto++;
+  e.n++;
+  byTask.set(key, e);
+}
+const inverted = [...byTask.entries()].filter(([, e]) => e.none > e.supercarto);
+if (inverted.length > 0) {
+  console.log(`\n  INVERTED (the floor is ABOVE the treatment) in ${inverted.length} task(s):`);
+  for (const [task, e] of inverted) {
+    console.log(
+      `    ${task.padEnd(26)} none ${e.none}/${e.n}  >  supercarto ${e.supercarto}/${e.n}`,
+    );
+  }
   console.log(
-    '      raises the floor: the areas here are well-known cities, and a model can\n' +
-      '      answer from memory. Treat the supercarto-minus-none gap as a lower\n' +
-    '      bound on the real advantage, not the advantage itself.',
+    '      supercarto-minus-none is NEGATIVE here. This is not a small effect and\n' +
+      '      not a leak: the model is recalling a city centre it has memorised, and\n' +
+      '      the maplet is honest about what it omits while the scorer rewards a\n' +
+      '      confident answer. Do not quote a supercarto advantage for these areas.',
+  );
+}
+
+if (floorHigh && inverted.length === 0) {
+  console.log(
+    '      raises the floor: the areas here are well-known cities and a model can\n' +
+      '      answer from memory. Treat the supercarto-minus-none gap as a lower bound\n' +
+      '      on the real advantage, not the advantage itself.',
   );
 }
 
