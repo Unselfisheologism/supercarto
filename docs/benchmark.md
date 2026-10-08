@@ -272,6 +272,16 @@ Things worth checking before believing a table:
 
 ---
 
+## The datasheet
+
+Composition, provenance, preprocessing, related work, and the list of what would
+make this publishable: [`docs/datasheet.md`](docs/datasheet.md).
+
+The most important section is §7 there — *the floor is memorisation, and it is
+currently above the treatment* — summarised above. Related work and the novelty
+claim are in §8; note that public map and geospatial benchmarks for LLMs do
+exist, and that this benchmark's claim is narrower than "nobody has done this".
+
 ## Ground truth is frozen per fixture, not rebuilt live
 
 Truth for the `route` and `turns` kinds comes from OSRM, queried live. That is

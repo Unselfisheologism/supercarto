@@ -235,11 +235,24 @@ What the harness refuses to do is more interesting than what it does:
 - **A small local model in the panel.** Winning with a 7B model is the one claim
   a token-count benchmark cannot manufacture.
 
+> **The benchmark has no published result, and the reason is not modesty.** In the
+> runs archived under [`bench-results/`](bench-results/), the `none` arm — given
+> coordinates and nothing else — scores *above* the supercarto arm on two of four
+> task kinds. Given downtown San Francisco and no map, a model returned 863m via
+> Market Street → Spear Street → Mission Street against OSRM's 868m via the same
+> sequence; meanwhile the arm that *was* given the maplet correctly said the maplet
+> has no routable street layer, and was scored zero for saying so. The floor is
+> memorised city knowledge, so `supercarto − none` is not an effect size here and
+> can be negative. Fixing this needs a non-memorised area and a scorer that credits
+> honest "the data doesn't say", both listed as work in the datasheet.
+
 Known gaps are listed in [`docs/benchmark.md`](docs/benchmark.md#what-is-not-yet-true-of-this-harness),
-including the absent oracle-solver check and the fact that token counts on the
-free-model path are estimates rather than provider figures.
+including the absent oracle-solver check on the live path and the fact that token
+counts on the free-model path are estimates rather than provider figures.
 
 Methodology and the full task set: [`docs/benchmark.md`](docs/benchmark.md).
+Datasheet, related work, and what would make this publishable:
+[`docs/datasheet.md`](docs/datasheet.md).
 
 ---
 
