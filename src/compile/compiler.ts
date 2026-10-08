@@ -888,20 +888,48 @@ function compileHeat(doc: ScrDocument, env: Envelope, maxHotspots: number): Heat
   for (const h of doc.heat) {
     const cells = h.cells ?? [];
     if (cells.length === 0) continue;
-    const values = cells.map((c) => c.value);
-    const max = Math.max(...values);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
     // Normalize against the layer's *declared* range, not the observed
     // maximum. Using the observed max would report the strongest cell as
     // `rel: 1.0` on every maplet, which tells the agent nothing about how
     // intense it is relative to what the layer is capable of.
     const lo = h.minValue || 0;
     const span = h.maxValue !== lo ? h.maxValue - lo : 1;
-    const hotspots = [...cells]
+
+    /**
+     * Heat cells live in the layer's own `resolution` grid, not the document's
+     * quantised extent.
+     *
+     * They were projected as though they were extent coordinates, so a 16x16 cell
+     * grid was read as a 4096-unit one and every cell landed in the same corner of
+     * the map. A live maplet showed three distinct density values printed at one
+     * coordinate and five samples across three unique points - the layer was
+     * spending token budget saying the same thing repeatedly.
+     */
+    const scale = h.resolution > 0 ? doc.extent / h.resolution : 1;
+
+    // A layer whose cells are all the same value carries no information, and a
+    // flat terrain slope layer is always exactly that. Emitting it burns budget
+    // asserting nothing: a real maplet printed `slope: {max: 0, mean: 0}` followed
+    // by five lines all reading `v: 0, rel: 0`.
+    const distinct = new Set(cells.map((c) => c.value));
+    if (distinct.size <= 1) continue;
+
+    // Zero is the absence of a hotspot, not a weak one. Ranking by value already
+    // sinks these to the bottom, but a small cell cap on a sparse layer can still
+    // reach them.
+    const useful = cells.filter((c) => c.value > 0);
+    if (useful.length === 0) continue;
+
+    const hotspots = [...useful]
       .sort((a, b) => b.value - a.value)
       .slice(0, maxHotspots)
       .map((c) => {
-        const ll = gridToLonLat({ x: c.x, y: c.y }, env, doc.extent, doc.projection);
+        const ll = gridToLonLat(
+          { x: Math.round(c.x * scale), y: Math.round(c.y * scale) },
+          env,
+          doc.extent,
+          doc.projection,
+        );
         return {
           lat: round(ll.lat, 5),
           lon: round(ll.lon, 5),
@@ -909,7 +937,21 @@ function compileHeat(doc: ScrDocument, env: Envelope, maxHotspots: number): Heat
           rel: round((c.value - lo) / span, 2),
         };
       });
-    out.push({ name: h.name, max, mean: round(mean, 1), hotspots });
+
+    // Distinct grid cells can still round to the same printed coordinate. Two
+    // lines at one point saying different values is worse than one, so keep the
+    // stronger and drop the rest.
+    const seen = new Set<string>();
+    const deduped = hotspots.filter((s) => {
+      const key = `${s.lat},${s.lon}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const outMax = Math.max(...useful.map((c) => c.value));
+    const outMean = useful.reduce((a, c) => a + c.value, 0) / useful.length;
+    out.push({ name: h.name, max: outMax, mean: round(outMean, 1), hotspots: deduped });
   }
   return out;
 }

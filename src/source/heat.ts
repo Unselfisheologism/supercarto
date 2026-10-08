@@ -111,32 +111,62 @@ export function slopeToHeat(
       const right = elevations[y * width + Math.min(width - 1, x + 1)] ?? here;
       const down = elevations[Math.min(height - 1, y + 1) * width + x] ?? here;
       const run = mpu;
-      const g = Math.hypot(right - here, down - here) / run;
-      grade[y * width + x] = g;
-      // Clamped to 20%: beyond that nothing is walkable without a vehicle, and
-      // a cell reported as 400% grade is noise rather than information.
-      bins.set(
-        cellKey(x, y, width, height, res),
-        Math.min(0.2, g) * 100,
-      );
+      grade[y * width + x] = Math.hypot(right - here, down - here) / run;
+      // Stored unclamped.
+      //
+      // Clamping here collapsed every cell steeper than 20% to the same value
+      // before ranking, so any terrain with a real gradient produced a flat
+      // distribution and was then dropped as carrying no signal. The clamp is a
+      // presentation limit - "beyond this nothing is walkable" - so it belongs at
+      // emit time, after the hottest cells have already been chosen.
+      bins.set(cellKey(x, y, width, height, res), grade[y * width + x]!);
     }
   }
 
+  const all = [...bins.values()];
+  if (all.length === 0) return undefined;
+
+  /**
+   * Flat terrain has no slope layer.
+   *
+   * Every cell grades to 0, so there is no distribution to report and every
+   * hotspot it could emit reads `v: 0, rel: 0`. That is the whole layer. A real
+   * maplet printed `slope: {max: 0, mean: 0}` followed by five identical zero
+   * lines - token budget spent asserting nothing.
+   *
+   * The range is taken over every cell, not just the ones that survive the cap.
+   * Judging the top N meant a ridge whose 16 hottest cells happened to tie was
+   * reported as having no variation at all, while its flatter cells existed.
+   *
+   * An absent layer is also the honest signal: no gradient here, so accessibility
+   * is not constrained by terrain.
+   */
+  const rawMax = Math.max(...all);
+  const rawMin = Math.min(...all);
+  if (rawMax - rawMin <= 0) return undefined;
+
   const ranked = [...bins.entries()].sort((a, b) => b[1] - a[1]).slice(0, opts.maxCells ?? 16);
   if (ranked.length === 0) return undefined;
-  const values = ranked.map(([, v]) => v);
+
+  // Clamped only now, after selection.
+  const MAX_GRADE_PCT = 20;
+  const values = ranked.map(([, v]) => Math.min(MAX_GRADE_PCT, v * 100));
 
   return {
     id: 1,
     name: opts.name ?? 'slope_pct',
     resolution: res,
-    minValue: Math.round(Math.min(...values)),
-    maxValue: Math.round(Math.max(...values)),
+    // The declared range is the layer's own range, over every cell and clamped at
+    // the same ceiling the emitted values use. Taking it from the emitted top-N
+    // instead reported max == min whenever those happened to tie, which collapsed
+    // the compiler's `rel` normalisation to a divide-by-nothing.
+    minValue: Math.round(Math.min(MAX_GRADE_PCT, rawMin * 100)),
+    maxValue: Math.round(Math.min(MAX_GRADE_PCT, rawMax * 100)),
     encoding: 'sparse',
-    cells: ranked.map(([key, v]) => ({
+    cells: ranked.map(([key], i) => ({
       x: key % res,
       y: Math.floor(key / res),
-      value: Math.round(v),
+      value: Math.round(values[i]!),
     })),
   };
 }
