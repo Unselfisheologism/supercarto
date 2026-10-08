@@ -15,8 +15,11 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { runLadder } from '../src/bench/ladder.js';
+import { completedCalls } from '../src/bench/cli-run.js';
 import { FREEMODELS } from '../src/bench/driver/opencode.js';
 import { OpencodeDriver } from '../src/bench/driver/opencode.js';
+import { buildTasks, TASK_AREAS } from '../src/bench/tasks.js';
+import { runMetadata } from '../src/bench/metadata.js';
 import type { GeoJsonFeatureCollection } from '../src/index.js';
 
 const FIXTURE_DIR = 'fixtures/bench';
@@ -68,14 +71,53 @@ const seeds = Number(arg('--seeds', '1'));
 const concurrency = Number(arg('--concurrency', '1'));
 
 const models = model ? [model] : [...FREEMODELS];
+const allTasks = buildTasks(TASK_AREAS).map((t) => t.id);
+const totalCalls = allTasks.length * 3 * seeds * models.length;
+
 console.log(`\nmodels: ${models.length}`);
-console.log(`budget: ${budget} calls this invocation`);
-console.log(`seeds: ${seeds}\n`);
+console.log(`seeds: ${seeds}`);
+console.log(`concurrency: ${concurrency}`);
+console.log(`budget: ${budget} calls this invocation, of ${totalCalls} total`);
+console.log(`already archived: ${completedCalls(outDir, models)}`);
+console.log(`out: ${outDir}\n`);
+
+if (budget <= 0) {
+  console.error('--budget must be a positive number of model calls');
+  process.exit(1);
+}
+
+/**
+ * The call ceiling, enforced by shortening the task list.
+ *
+ * `--budget` used to be read, printed, and then ignored: `runLadder` took the
+ * whole task list every time. A printed ceiling that does not bound anything is
+ * worse than no ceiling, because the operator believes the run is bounded when it
+ * is not, and a free tier that starts refusing requests turns every refusal into
+ * a row scored as a model failure.
+ *
+ * Truncating the task list ends the invocation while there is still quota, which
+ * is the same approach `cli-run.ts` takes. Resume continues from the archive.
+ */
+const perModel = Math.max(1, Math.floor(budget / models.length));
+const selected = only
+  ? allTasks.filter((t) => t.startsWith(`${only}/`) || t === only)
+  : allTasks;
+const capped = selected.slice(0, perModel);
+
+if (capped.length < selected.length) {
+  console.log(
+    `running ${capped.length}/${selected.length} tasks per model to stay inside the budget`,
+  );
+  console.log('rerun later with the same --out to continue from where this stopped\n');
+} else {
+  console.log('');
+}
 
 const results = await runLadder({
   models,
   outDir,
   seeds,
+  only: capped,
   stopOnRateLimit: true,
   fixtures,
   concurrency,
@@ -86,22 +128,25 @@ const results = await runLadder({
 // A machine-readable summary, so the numbers can be diffed and audited rather
 // than read off a terminal.
 const report = {
-  generatedAt: new Date().toISOString(),
+  metadata: runMetadata({ models, fixtures }),
   protocol: {
-    temperature: 0,
-    seeds,
+    repeats: seeds,
+    // Stated because a report asserting "temperature 0" for a path that cannot
+    // set it is the kind of claim that survives until someone re-runs it.
+    temperature: null,
+    seed: null,
     note:
-      'Free-tier models reached through `opencode run --standalone`. Token counts ' +
-      'are chars/4 estimates: the free tier reports no usage block, so the ' +
-      'provider tokenizer the docs call for is not available on this path.',
+      'Free-tier models reached through `opencode run --standalone`. The CLI has ' +
+      'no --temperature and no --seed flag, so neither reaches the model: ' +
+      '`repeats` are repeats, not independent seeds, and a spread of 0 is not ' +
+      'an error bar. Token counts are chars/4 estimates because the free tier ' +
+      'reports no usage block.',
     toolPolicy:
       'A run that invoked any tool is voided, not scored. Tool use cannot be ' +
       'prevented on this CLI, so a cheating model produces a failed run rather ' +
       'than a prevented one.',
   },
-  fixtures: Object.fromEntries(
-    Object.entries(fixtures).map(([k, v]) => [k, v.features.length]),
-  ),
+  budget: { callsThisInvocation: budget, totalPlanned: totalCalls, concurrency },
   models: results.map((r) => ({
     model: r.model,
     rows: r.rows.length,

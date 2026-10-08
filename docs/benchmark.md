@@ -120,21 +120,44 @@ export SUPERCARTO_LOCAL_LLM=http://localhost:8000/v1/chat/completions
 Stated in full because a benchmark without its protocol is a number with nothing
 attached to it.
 
-- **Temperature 0**, three seeds minimum, spread reported. Providers are not
-  bit-deterministic even at temperature 0 — batching, kernel selection, and
-  floating-point reduction order all move logit ties. One run reports noise as a
-  result.
-- **Caches disabled.** A cached response is a free run that never happened, and
-  the token counts for it are not the ones being claimed.
-- **Provider tokenizers.** Tokens are counted by the provider under test, not by
-  `chars / 4`. This matters more than most benchmarks admit: the same bytes cost
-  different amounts to different tokenizers, and grading the library with the
-  wrong ruler flatters whichever provider is measured most favourably.
-- **Judging from a different family** than the model under test, where a judge is
-  used at all.
-- **Per-task detail in the JSON output.** Every row is auditable.
-- **Failures reported separately from accuracy.** `completion` and `accuracy`
-  are distinct columns for a reason.
+Each claim below states what actually happens, and names the path it holds on. A
+protocol section that describes an intention rather than the code is worse than no
+protocol section, because it cannot be checked.
+
+**Holds on every path:**
+
+- **Per-task detail in the JSON output.** Every row is auditable, with the exact
+  prompt, its SHA-256, and the raw answer.
+- **Failures reported separately from accuracy.** `completion` and `accuracy` are
+  distinct columns for a reason.
+- **Unscoreable tasks count as failures**, never passes.
+- **The subject model runs in an empty directory**, never the repository, and any
+  run that invoked a tool is voided rather than scored.
+
+**Holds only on the paid-provider path** (`bench:tasks`, via `models.ts`):
+
+- **Temperature 0**, three seeds minimum, spread reported.
+- **Provider tokenizers.** Tokens counted by the provider under test, not by
+  `chars / 4`.
+
+**Holds on neither path — do not assume these:**
+
+- **Seeds are not independent on the opencode path.** `opencode run` exposes no
+  `--temperature` and no `--seed` flag, so `OpencodeDriver` cannot pass them and
+  does not try. Three `--seeds` runs are three *repeats*, not three seeds: the
+  model is free to return the same answer, and a spread of `0.00` across them is
+  the expected result whether or not the model is deterministic. **A spread on this
+  path is not an error bar.** It is the only evidence available that a run is
+  stable, and it is much weaker than a seeded interval. This is why the free-tier
+  numbers in this repo carry no confidence intervals.
+- **Token counts on the opencode path are `chars / 4` estimates.** The free tier
+  reports no usage block, so no provider tokenizer is available. Ratios between
+  arms remain meaningful because both arms use the same estimator, and that is the
+  only claim the context-cost column supports. Absolute token figures are not
+  provider figures and must not be quoted as such.
+- **Caches cannot be disabled on the opencode path.** `--standalone` gives each
+  call a private server, which removes the shared-session cache, but any caching
+  inside the provider is not reachable from here and is not measured.
 
 ---
 
@@ -173,8 +196,54 @@ interesting question is not "does it work" but "does it say so" when there is
 almost nothing to show. An agent that invents a cafe in an empty field is worse
 than one that reports the emptiness.
 
-**The `none` arm.** Reykjavik's cafe task with no map data should mostly fail.
-If it succeeds, something is leaking between arms and the run is invalid.
+**The `none` arm.** Reykjavik's cafe task with no map data should mostly fail. If
+it succeeds, check *why* before concluding anything — see below, because on a
+well-known city it succeeds for a reason that invalidates the comparison.
+
+### The floor is memorisation, and it is currently above the treatment
+
+This is the most important limitation in this document, and it was measured rather
+than assumed.
+
+The `none` arm receives coordinates and nothing else. Given downtown San Francisco
+at 37.7936, −122.3958 and asked to walk 200m north, one free model answered:
+
+> ~863 m street-network path: start facing north-east on **Market Street** (~24 m),
+> turn right to face south-east on **Spear Street** (~197 m), turn right to face
+> south-west on **Mission Street** (~109 m)…
+
+OSRM's truth for that query is **868m via Market Street → Spear Street → Mission
+Street → Main Street → Drumm Street**. The model produced the right distance and the
+right street sequence with no map in its prompt. Those prompts are 184–205
+estimated tokens; there is no map data in them to leak.
+
+So the floor is memorised city knowledge, and the areas picked to be
+"representative" are the places most likely to be memorised. Worse, on that same
+task the **supercarto arm refused** — correctly reporting that the maplet carried
+no routable street-name layer — and scored zero:
+
+> I can't determine that from the provided map: it has no routable street-name
+> layer, no graph node at the map centre, and 2286 features plus 21 landmarks are
+> omitted, so the map is incomplete. Any street names or turn directions would be
+> invented.
+
+That answer is *right*. It is scored wrong because the pass condition wants a
+distance and the maplet does not carry one. The result is a benchmark where the arm
+given no map beats the arm given the map, on the task the library exists to
+support.
+
+What follows, stated plainly:
+
+- **`supercarto − none` is not an effect size on these areas.** It can be negative.
+- **No figure from this harness should quote a supercarto-vs-none gap for a
+  well-known city centre.** One exists in this repository's history and it is wrong.
+- **The honest floor needs an area the model has not memorised** — a small city, a
+  rural area, or a synthetic extract at coordinates matching nowhere real. Nothing
+  in this repo has that yet.
+- **Refusal is scored as failure everywhere.** Defensible for `nearest`, where
+  inventing a shop is the worst outcome; indefensible for `turn-by-turn`, where the
+  map genuinely lacks the layer and saying so is correct. The scoring does not
+  distinguish the two cases.
 
 **No-data areas.** An area with nothing in OSM should produce an honest empty
 maplet with `omitted:` populated, not a confident fabrication.
@@ -185,9 +254,14 @@ maplet with `omitted:` populated, not a confident fabrication.
 
 Things worth checking before believing a table:
 
-- **Did the `none` arm score near zero?** If not, something leaked.
-- **Is the spread reported?** A zero spread across three seeds is suspicious —
-  it usually means one seed was run and copied.
+- **Did the `none` arm score near zero?** If not, find out why before using the
+  number. On a well-known city the answer is usually memorisation, not leakage, and
+  a non-zero floor means the supercarto-minus-none gap is not an effect size.
+- **Which path produced this?** A table with no path named cannot be interpreted,
+  because the two paths differ in what they can hold. See [Protocol](#protocol).
+- **Is a spread of `0.00` being read as precision?** On the opencode path it is
+  not. No seed reaches the model, so repeats agreeing is close to the floor of
+  what that number can tell you.
 - **Is `small-local` present?** Without it there is no efficiency result, only a
   quality result.
 - **Is accuracy rising with budget for `geojson`?** It should plateau. If it

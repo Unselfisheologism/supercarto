@@ -53,6 +53,14 @@ export interface LadderOptions {
   /** Stop the whole ladder at the first rate limit, rather than per model. */
   stopOnRateLimit?: boolean;
   /**
+   * Permit resuming an archive written under a different prompt.
+   *
+   * Off by default. Resuming across a harness change otherwise blends two
+   * harnesses into one table, which is the specific failure the archive's
+   * `promptHash` field was added to detect.
+   */
+  allowMixedRuns?: boolean;
+  /**
    * Build the client for one model.
    *
    * Defaults to the arena browser driver. Supplied by the opencode path, which
@@ -148,6 +156,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
       }),
       undefined,
       () => modelId,
+      { requireFresh: !(opts.allowMixedRuns ?? false) },
     );
 
     if (opts.dryRun) {

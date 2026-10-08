@@ -14,6 +14,21 @@ import type { ModelRequest, RunIdentity } from './types.js';
 export type { RunIdentity };
 
 /**
+ * Options for `ArchivingClient`.
+ *
+ * An object rather than a bare sixth positional boolean, because that is exactly
+ * the argument a caller passes `undefined` to and thereby means "off" while
+ * believing they meant "default".
+ */
+export interface ArchivingOptions {
+  /**
+   * Refuse to replay an archived answer whose prompt differs from the current one.
+   * Default true.
+   */
+  requireFresh?: boolean;
+}
+
+/**
  * Provider's stable model id, recorded on every exchange.
  *
  * Kept off `RunIdentity` because it describes the model rather than the call,
@@ -37,9 +52,24 @@ export class ArchivingClient implements ModelClient {
     private readonly keyFor: (req: ModelRequest) => RunIdentity,
     private readonly archive: ResponseArchive = new ResponseArchive(archivePath),
     private readonly modelIdFor: ModelIdFor = () => undefined,
+    /**
+     * Refuse to replay an archived answer whose prompt differs from the current
+     * one. Default true: silently combining two harnesses is the failure mode this
+     * exists to prevent, so opting out should be deliberate.
+     *
+     * Accepts a boolean for convenience at the call site and an options object for
+     * anything further, because a sixth positional boolean is exactly the kind of
+     * argument that gets passed as `undefined` and silently means "false" to a
+     * reader who meant "default".
+     */
+    requireFresh: boolean | ArchivingOptions = true,
   ) {
+    this.requireFresh =
+      typeof requireFresh === 'boolean' ? requireFresh : (requireFresh.requireFresh ?? true);
     this.archive.open();
   }
+
+  private readonly requireFresh: boolean;
 
   get id(): string {
     return this.inner.id;
@@ -63,19 +93,40 @@ export class ArchivingClient implements ModelClient {
     // comparable set of rows rather than interleaved models.
     const fullKey = `${this.model}|${id.taskId}|${id.representation}@${id.budget}|s${id.seed}`;
 
+    const promptHash = fingerprintPrompt(req.system, req.user);
+
     if (this.archive.has(fullKey)) {
+      const prior = ResponseArchive.read(this.archivePath).find((e) => e.key === fullKey);
       this.skipped++;
+
+      // Resume must not blend runs from different harnesses.
+      //
+      // The archive key is task, arm, budget and seed, and none of those change
+      // when the code does. So after a scoring or prompt change a resumed run
+      // silently replayed old answers and scored them under new rules, producing a
+      // table that mixed two harnesses and looked like a single result. The
+      // prompt hash is already stored on every exchange precisely so this is
+      // detectable; nothing compared it until now.
+      //
+      // `requireFresh` makes it fatal rather than silent. A run that cannot
+      // distinguish its own history should stop and say so.
+      if (this.requireFresh && prior && prior.promptHash !== promptHash) {
+        throw new Error(
+          `archived exchange ${fullKey} was produced by a different prompt ` +
+            `(archive ${prior.promptHash}, now ${promptHash}). Refusing to resume ` +
+            `across a harness change: use a new --out directory, or pass ` +
+            `allowMixedRuns to accept that the two are being combined.`,
+        );
+      }
+
       // The caller still needs a response to score, so a resumed run replays the
       // stored answer rather than calling the model again.
-      const prior = ResponseArchive.read(this.archivePath).find((e) => e.key === fullKey);
       return {
         text: prior?.answer ?? '',
         inputTokens: prior?.inputTokens ?? 0,
         outputTokens: prior?.outputTokens ?? 0,
       };
     }
-
-    const promptHash = fingerprintPrompt(req.system, req.user);
     try {
       const res = await this.inner.call(req);
       const record: Exchange = {
