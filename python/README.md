@@ -169,7 +169,7 @@ raises a `SuperCartoConnectionError` that says so, with the fix, in one sentence
 ## Links
 
 - **npm:** https://www.npmjs.com/package/supercarto
-- **Repository:** https://github.com/supercarto/supercarto
-- **Benchmark:** https://github.com/supercarto/supercarto/blob/main/docs/benchmark.md
+- **Repository:** https://github.com/Unselfisheologism/supercarto
+- **Benchmark:** https://github.com/Unselfisheologism/supercarto/blob/master/docs/benchmark.md
 
 Apache-2.0
