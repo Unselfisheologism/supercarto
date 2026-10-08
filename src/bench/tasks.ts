@@ -22,7 +22,7 @@
 
 import type { LatLon } from './types.js';
 
-export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns';
+export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission';
 
 export interface BenchmarkTask {
   id: string;
@@ -51,7 +51,7 @@ export interface BenchmarkTask {
    * Recorded rather than assumed, because a score without a stated provenance
    * is a score nobody can audit.
    */
-  groundTruth: 'osrm' | 'source-data' | 'self-consistent';
+  groundTruth: 'osrm' | 'source-data' | 'self-consistent' | 'omission-record';
 }
 
 export interface TaskArea {
@@ -166,6 +166,34 @@ export const NAME_ALIAS_TAGS = [
 export const TURN_OFFSET_M = 200;
 
 /**
+ * The non-memorisable area, and the only one that gets an `omission` task.
+ *
+ * Every other fixture sits at a real city centre, which makes the `none` arm
+ * worthless as a floor: measured in `bench-results/`, the no-map arm scored
+ * *above* the supercarto arm on two of four kinds because the model recalled San
+ * Francisco. This area has no real coordinates and no real names, so memorisation
+ * is impossible rather than merely unlikely.
+ */
+export const SYNTHETIC_AREA: TaskArea = {
+  id: 'synthetic-pacific',
+  label: 'Synthetic area, open North Pacific',
+  center: { lat: 44.0, lon: -150.0 },
+  radiusM: 400,
+  rationale:
+    'Coordinates match no place and every name is synthetic, so the no-map arm ' +
+    'cannot answer from memory. Carries dense low-priority clutter that budget ' +
+    'fitting drops, which is what makes the omission protocol observable.',
+  adversarial: true,
+};
+
+/** The question the omission task asks. */
+export const OMISSION_QUESTION =
+  'Does the map data you were given show everything that is present in this ' +
+  'area, or has some of it been left out? If something was left out, say so and ' +
+  'roughly how much. Do not describe the area as bare or empty unless the data ' +
+  'really says so.';
+
+/**
  * Tasks per area.
  *
  * Generated rather than hand-written so every area gets the same treatment. A
@@ -174,6 +202,31 @@ export const TURN_OFFSET_M = 200;
 export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTask[] {
   const out: BenchmarkTask[] = [];
   for (const area of areas) {
+    /**
+     * The omission task, which exists to test the protocol's actual claim rather
+     * than its token count.
+     *
+     * Every other kind is satisfiable by a sufficiently good map of the area. This
+     * one is only satisfiable by a map that admits what it left out: a raw file cut
+     * short is silently incomplete, so the model either guesses that the area holds
+     * only what it can see, or it says the data is partial.
+     *
+     * Restricted to the synthetic area, because on a real city the no-map arm can
+     * bluff this from memory and the measurement stops meaning anything.
+     */
+    if (area.id === SYNTHETIC_AREA.id) {
+      out.push({
+        id: `${area.id}/omission-awareness`,
+        kind: 'omission',
+        question: OMISSION_QUESTION,
+        center: area.center,
+        radiusM: area.radiusM,
+        mode: 'walk',
+        groundTruth: 'omission-record',
+        offsetM: TURN_OFFSET_M,
+      });
+    }
+
     out.push({
       id: `${area.id}/route-distance`,
       kind: 'route',

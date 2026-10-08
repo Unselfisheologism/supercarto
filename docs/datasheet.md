@@ -291,7 +291,52 @@ oracle can validate it. A systematic OSRM routing bias would pass every task.
   harness will see flaky failures that read as model errors. `SUPERCARTO_PMTILES`
   is the intended fix and is not configured.
 
-## 12. What would make this publishable
+## 12. The `omission` task: measuring the protocol instead of the map
+
+Every other task kind is satisfiable by a sufficiently good map of the area. The
+`omission` kind is only satisfiable by a map that admits what it left out, which is
+the protocol's actual claim and not its token count.
+
+**The task.** On an area of 4,570 features compiled at budget 1024, the maplet
+declares `omitted: - {layer: feature, count: 3966}` and keeps 34 nodes. The model
+is asked whether the data it was given shows everything present. Passing requires
+acknowledging the gap and **not** concluding the area is bare.
+
+**Why it is not another accuracy number.** A raw GeoJSON cut short is *silently*
+incomplete — nothing in it says data is missing, so the natural reading is "this
+area holds only what I can see". At 12% of the file the truncated extract does not
+even parse as JSON, shows 462 of 4,500 trees with no indication that the other
+4,038 are absent rather than unshown, and mentions no category counts. There is no
+token budget at which a truncated raw file tells a model that it is truncated.
+
+**Where it runs.** Only on `synthetic-pacific`, because on a real city the no-map
+arm bluffs it from memory. That area has open-North-Pacific coordinates and
+synthetic names (`Cafe 0`, `Tree 1`), so memorisation is impossible by
+construction rather than merely unlikely.
+
+**Verified end to end** against the real fixture and the runner's own ground-truth
+builder:
+
+| Answer | Verdict |
+|---|---|
+| "3,973 features were omitted to fit the budget" | **PASS** |
+| "Some features were omitted" | PASS, flagged for not sizing |
+| "This area appears empty apart from a few cafes" | fail — both conditions |
+| "I cannot determine this from the data" | fail — the data contains the answer |
+| "A quiet residential grid with a few cafes, nothing more" | fail — the memory bluff |
+
+The last row is the one that matters: the memorisation defence holds.
+
+**Known gap in the underlying protocol.** The omission record says
+`layer: feature`, not `layer: tree`. The budgeter records a generic
+`waypoint`/`feature` because `GraphNode` carries no semantic layer, so an agent is
+told 3,966 features were dropped without being told what kind. That is a real
+limitation of claim 1 — the record is honest that something was omitted and silent
+about what — and the task is framed not to depend on it. Fixing it means threading
+a layer through the compiler into `GraphNode` and changing how the budgeter names
+its omissions.
+
+## 13. What would make this publishable
 
 1. **A non-memorised area**, so the floor is a floor. Synthetic coordinates are the
    cheapest option and are not yet implemented.

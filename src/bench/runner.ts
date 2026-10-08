@@ -26,6 +26,7 @@ import {
   isRefusal,
   scoreConnectivity,
   scoreNames,
+  scoreOmission,
   summarise,
   type Representation,
   type ScoredTask,
@@ -565,6 +566,31 @@ export async function groundTruth(
       return { names: all, shownNames: [...new Set(shown)] };
     }
 
+    if (task.kind === 'omission') {
+      /**
+       * Truth is what the maplet itself admitted to dropping.
+       *
+       * Not what a live fetch would have contained, and not what the model should
+       * guess: the pass condition is "did the answer report the gap the data
+       * declared", so the expectation has to be that declared gap and no other.
+       */
+      const areaFixture = fixtures?.[areaIdOf(task)];
+      const compiled = areaFixture
+        ? compileFixture(areaFixture, task, budget)
+        : await carto.maplet({
+            lat: task.center.lat,
+            lon: task.center.lon,
+            radiusM: task.radiusM,
+            budget,
+          });
+
+      return {
+        omitted: compiled.graph.omitted.map((o) => ({ layer: o.layer, count: o.count })),
+        sourceFeatures: areaFixture?.features.length,
+        emittedNodes: compiled.graph.nodes.length,
+      };
+    }
+
     if (task.kind === 'connectivity') {
       // From the fixture when there is one. The graph has to be the same graph
       // the model was shown: connectivity truth taken from a live fetch while
@@ -762,6 +788,18 @@ function scoreAnswer(
         correct,
         by: 'exact',
         rationale: `${truth.components} component(s) in graph`,
+      };
+    }
+
+    case 'omission': {
+      if (!truth.omitted) return { correct: null, by: 'failed' };
+      const v = scoreOmission(answer, truth.omitted, truth.emittedNodes ?? 0);
+      return {
+        correct: v.correct,
+        by: 'exact',
+        rationale:
+          `omitted ${truth.omitted.map((o) => `${o.count} ${o.layer}`).join(', ') || 'nothing'}; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'acknowledged'}`,
       };
     }
   }

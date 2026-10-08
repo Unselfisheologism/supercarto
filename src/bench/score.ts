@@ -582,6 +582,65 @@ export function scoreConnectivity(graph: SpatialGraph, answer: string): boolean 
   return claimsAllConnected && !claimsIsolated;
 }
 
+/**
+ * Whether an answer reported what the maplet left out.
+ *
+ * This is the only task that tests the protocol rather than the map, and the only
+ * one a truncated file cannot pass by accident. A raw GeoJSON cut short is
+ * *silently* incomplete: nothing in it says data is missing, so the natural
+ * reading is "this area holds only what I can see". A maplet that says
+ * `omitted: - {layer: feature, count: 3973}` gives the model something to report,
+ * and reporting it is the capability.
+ *
+ * Two things are required, and the second is the one that catches a fluent,
+ * confident wrong answer: it must acknowledge the gap, and it must not conclude
+ * the area is bare. "This area appears empty apart from a few places" reports no
+ * gap and reads as if it did.
+ */
+export function scoreOmission(
+  answer: string,
+  omitted: readonly { layer: string; count: number }[],
+  emittedNodes: number,
+): { correct: boolean; flags: string[] } {
+  const total = omitted.reduce((n, o) => n + o.count, 0);
+  const flags: string[] = [];
+
+  if (total <= 0) return { correct: false, flags: ['nothing was actually omitted'] };
+
+  const acknowledges =
+    /\b(omitted|left out|not shown|excluded|dropped|removed|truncated|not included|partial|incomplete|only (?:part|some))\b/i.test(
+      answer,
+    ) || acknowledgesOmission(answer);
+
+  const claimsBare =
+    /\b(bare|deserted|nothing (?:else )?(?:here|nearby)|no (?:other )?(?:features|buildings|places|trees)|empty of)\b/i.test(
+      answer,
+    );
+
+  if (!acknowledges) flags.push('did not acknowledge anything was left out');
+  if (claimsBare) flags.push('described the area as bare despite a declared omission');
+
+  /**
+   * Sizing the gap is reported, not required.
+   *
+   * A model that says "several thousand features were left out" has understood
+   * the point. Demanding an exact integer punishes honest approximation, and the
+   * number it would be compared against is itself an artefact of the budget, not
+   * a fact about the area.
+   */
+  const thousands = Math.floor(total / 1000);
+  const citesAmount =
+    /\b(thousand|thousands)\b/i.test(answer) ||
+    (thousands >= 1 && new RegExp(`\\b${thousands},?\\d{3}\\b`).test(answer)) ||
+    new RegExp(`\\b${Math.round(total / 100) / 10}k\\b`, 'i').test(answer);
+
+  if (acknowledges && !citesAmount && emittedNodes > 0) {
+    flags.push('acknowledged the gap without sizing it');
+  }
+
+  return { correct: !claimsBare && acknowledges, flags };
+}
+
 /** Weakly-connected component count over the emitted graph. */
 export function connectedComponents(graph: SpatialGraph): number {
   const parent = new Map<string, string>();

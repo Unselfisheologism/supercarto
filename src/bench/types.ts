@@ -84,4 +84,16 @@ export interface GroundTruth {
   shownNames?: string[];
   /** Weakly-connected component count in the emitted graph. */
   components?: number;
+  /**
+   * What the maplet admitted to leaving out.
+   *
+   * Per layer, as emitted. This is the ground truth for the `omission` task: the
+   * question is whether the model reports the gap rather than concluding the area
+   * holds only what it can see.
+   */
+  omitted?: { layer: string; count: number }[];
+  /** Total features present in the source, before budget fitting. */
+  sourceFeatures?: number;
+  /** Features that survived into the emitted graph. */
+  emittedNodes?: number;
 }
