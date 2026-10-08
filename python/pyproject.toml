@@ -54,10 +54,10 @@ dependencies = []
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "mypy>=1.11", "ruff>=0.6"]
 
 [project.urls]
-Homepage = "https://github.com/supercarto/supercarto"
-Repository = "https://github.com/supercarto/supercarto"
-Issues = "https://github.com/supercarto/supercarto/issues"
-"Benchmark" = "https://github.com/supercarto/supercarto/blob/main/docs/benchmark.md"
+Homepage = "https://github.com/Unselfisheologism/supercarto"
+Repository = "https://github.com/Unselfisheologism/supercarto"
+Issues = "https://github.com/Unselfisheologism/supercarto/issues"
+"Benchmark" = "https://github.com/Unselfisheologism/supercarto/blob/master/docs/benchmark.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/supercarto"]
