@@ -105,6 +105,9 @@ bench:tasks             Run the task-level accuracy benchmark against
                            --budget <n> [--model <slug>] [--seeds <n>] [--dry]
   serve                    Start the HTTP API server.
   mcp                      Start the MCP server on stdio, for agent clients.
+  mcp-http                 Start the MCP server on Streamable HTTP, for harnesses
+                           that connect to an endpoint (GABench, MCP-Atlas,
+                           MCP-Universe). --port <n> --host <addr>
   help                     Show this message.
 
 LIVE COMMANDS
@@ -320,6 +323,12 @@ case 'bench:tasks': {
 
     case 'mcp': {
       mainMcp();
+      return;
+    }
+
+    case 'mcp-http': {
+      const { mainMcpHttp } = await import('../server/http-mcp.js');
+      process.exitCode = await mainMcpHttp(process.argv.slice(3));
       return;
     }
 
