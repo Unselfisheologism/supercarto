@@ -225,6 +225,51 @@ export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTa
         groundTruth: 'omission-record',
         offsetM: TURN_OFFSET_M,
       });
+
+      /**
+       * Routing tasks are not measurable here, so they are not generated.
+       *
+       * Two independent reasons, both found by running rather than by reasoning:
+       *
+       *  - **No routable geometry.** The fixture is synthetic GeoJSON, not OSM ways,
+       *    so the reference router has nothing to route over. It answers
+       *    `{"code":"Ok","distance":0}` - success for a route it did not compute -
+       *    which made ground truth 0m and failed every arm, including the no-map
+       *    arm that correctly said the coordinate is in open ocean.
+       *  - **No street names to report.** At budget 1024 the maplet emits 34 nodes
+       *    and zero street names, so "which street names would they walk on" is
+       *    unanswerable from the data. A model reporting that honestly is scored
+       *    as failing.
+       *
+       * Generating them anyway would produce rows that are unscoreable forever.
+       *    They remain generated for the real areas, which have OSM geometry the
+       *    router recognises.
+       */
+      out.push({
+        id: `${area.id}/nearest-poi`,
+        kind: 'nearest',
+        question:
+          'List the named places here with the type of thing each one is. ' +
+          'Do not invent any that are not in the data.',
+        center: area.center,
+        radiusM: area.radiusM,
+        mode: 'walk',
+        groundTruth: 'source-data',
+      });
+
+      out.push({
+        id: `${area.id}/connectivity`,
+        kind: 'connectivity',
+        question:
+          'Are the places in this map connected to each other by walkable paths in ' +
+          'the data, or are some of them isolated? Answer from the graph.',
+        center: area.center,
+        radiusM: area.radiusM,
+        mode: 'walk',
+        groundTruth: 'self-consistent',
+      });
+
+      continue;
     }
 
     out.push({

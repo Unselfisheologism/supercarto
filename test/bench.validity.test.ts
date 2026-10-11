@@ -381,12 +381,16 @@ describe('ground truth matches the prompt', () => {
       },
     };
 
+    // A real area, because route tasks are no longer generated for the synthetic
+    // one - there the reference router has nothing to route over, which is the
+    // very condition under test.
+    const realArea = TASK_AREAS.find((a) => a.id === 'sf-cbd')!;
     const report = await runBenchmark({
-      areas: [SYNTHETIC_AREA],
-      only: ['synthetic-pacific/route-distance'],
+      areas: [realArea],
+      only: ['sf-cbd/route-distance'],
       budgets: [1024],
       seeds: 1,
-      fixtures: { 'synthetic-pacific': fixture },
+      fixtures: { 'sf-cbd': fixture },
       models: [model],
       router: new ZeroRouter() as never,
     });

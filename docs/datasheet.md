@@ -327,6 +327,36 @@ builder:
 
 The last row is the one that matters: the memorisation defence holds.
 
+### What the synthetic area can and cannot measure
+
+Measured, not assumed. Four kinds were run there; two work and two have no valid
+ground truth.
+
+| Kind | Status | Why |
+|---|---|---|
+| `omission` | works | 3/3 supercarto, 1/3 geojson, 0/3 none |
+| `connectivity` | works | 2/2 |
+| `nearest` | works | 2/2 |
+| `route` | **not measurable** | no routable geometry |
+| `turns` | **not measurable** | no routable geometry, and no street names in the maplet |
+
+The two failures share a root cause worth recording, because it is the worst kind of
+benchmark bug: **a ground-truth source that reports success for a route it did not
+compute.** OSRM answers `{"code":"Ok","routes":[{"distance":0,"duration":0}]}` for a
+point with no road network. The runner took that at face value, so ground truth
+became 0m and every arm was graded against "the true walking distance is zero" —
+including the no-map arm that correctly observed the coordinate lies in open ocean
+with no streets anywhere near it. A zero-metre route is now treated as no truth at
+all, so the task surfaces as unscoreable rather than failing everything.
+
+`turns` has a second, independent problem: it asks which street names a walker would
+pass, and at budget 1024 the synthetic maplet emits 34 nodes and **zero street
+names**. A model reporting that honestly is scored as failing.
+
+Both kinds are therefore not generated for this area. They remain generated for the
+real areas, which carry OSM geometry the reference router recognises — though the
+street-name problem may affect those too and has not been re-measured.
+
 **Known gap in the underlying protocol — since fixed.** The omission record used to
 read `layer: feature`, not `layer: tree`: the budgeter filed every removal under one
 generic label because `GraphNode` carried no semantic layer, so an agent was told

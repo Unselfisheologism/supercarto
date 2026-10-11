@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { scoreOmission } from '../src/bench/score.js';
-import { buildTasks, SYNTHETIC_AREA, OMISSION_QUESTION } from '../src/bench/tasks.js';
+import { buildTasks, SYNTHETIC_AREA, OMISSION_QUESTION, TASK_AREAS } from '../src/bench/tasks.js';
 import { toMaplet } from '../src/index.js';
 import type { GeoJsonFeatureCollection } from '../src/index.js';
 
@@ -34,6 +34,26 @@ describe('the omission task exists, and only where it can be measured', () => {
       const kinds = buildTasks([area]).map((t) => t.kind);
       expect(kinds).not.toContain('omission');
     }
+  });
+
+  it('generates no routing tasks for the synthetic area', () => {
+    // Neither is measurable there, so generating them would produce rows that are
+    // unscoreable forever.
+    //
+    // route/turns: the reference router answers `{"code":"Ok","distance":0}` over
+    // geometry it has no ways for, so ground truth was 0m and every arm failed.
+    // turn-by-turn additionally asks for street names the budgeted maplet does not
+    // carry - at 1024 it emits 34 nodes and no names.
+    const kinds = buildTasks([SYNTHETIC_AREA]).map((t) => t.kind);
+    expect(kinds).not.toContain('route');
+    expect(kinds).not.toContain('turns');
+    expect(kinds.sort()).toEqual(['connectivity', 'nearest', 'omission']);
+  });
+
+  it('still generates every kind for a real area', () => {
+    const real = TASK_AREAS.find((a) => a.id === 'sf-cbd')!;
+    const kinds = buildTasks([real]).map((t) => t.kind);
+    expect(kinds.sort()).toEqual(['connectivity', 'nearest', 'route', 'turns']);
   });
 
   it('asks the question the omission record answers', () => {
