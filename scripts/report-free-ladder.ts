@@ -213,6 +213,24 @@ const report = {
   models: [...perModel.keys()].sort(),
   archives: archives.length,
   rows: allRows.length,
+  /**
+   * Per-row verdicts, not just the count.
+   *
+   * A count cannot answer the only question a scoring change poses: which rows
+   * moved, and why. Two reports with identical summaries can differ on every row
+   * and still print the same table, which is how "no summary row changed" gets
+   * mistaken for "nothing was affected".
+   */
+  detail: allRows.map((r) => ({
+    taskId: r.taskId,
+    model: r.model,
+    representation: r.representation,
+    seed: r.seed,
+    correct: r.correct,
+    scoredBy: r.scoredBy,
+    rationale: r.rationale ?? null,
+    error: r.error ?? null,
+  })),
   fixtures: Object.fromEntries(Object.entries(fixtures).map(([k, v]) => [k, v.features.length])),
   summary,
   failures: [...causes].map(([cause, n]) => ({ cause, n })),

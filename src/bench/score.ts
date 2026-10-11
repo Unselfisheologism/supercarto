@@ -544,10 +544,60 @@ function hasPlaceWord(candidate: string): boolean {
   return words.some((w) => PLACE_SUFFIXES.has(w.replace(/\.$/, '')));
 }
 
-/** True when the answer declines or says it cannot tell. */
+/**
+ * True when the answer declines or says it cannot tell.
+ *
+ * Matches refusal *shapes*, not refusal *words*. The old version fired on the
+ * bare word "cannot" anywhere in a paragraph, so a real answer on the omission
+ * task - "a missing feature here cannot be taken as proof of absence" - was scored
+ * as a refusal. It is the most common English hedge in technical writing and
+ * carries almost no evidence of declining to answer.
+ *
+ * What distinguishes a refusal here is the subject of the inability: the model
+ * saying it cannot answer, rather than describing something that cannot be
+ * concluded. So the patterns require a first-person or imperative frame, or the
+ * specific stock phrases.
+ *
+ * Deliberately still broad in the other direction. A missed refusal is a false
+ * negative in a metric that errs toward under-reporting elsewhere, and this
+ * function's job is only to catch the obvious "I cannot tell you" answers.
+ */
 export function isRefusal(answer: string): boolean {
-  return /\b(cannot|can't|unable|no (map|data|information)|not (enough|available)|insufficient)\b/i.test(
-    answer,
+  const text = answer.toLowerCase();
+
+  // Stock phrases with no grammatical frame to rely on.
+  if (/\bnot (?:enough|sufficient) (?:information|data|detail)\b/.test(text)) return true;
+  // "no map data available", "no map data was provided", "no information is
+  // present". The copula is optional because "available" is an adjective that
+  // stands alone here, which is the commonest phrasing in practice.
+  if (
+    /\bno (?:map|data|information)\b\s*(?:is |are |was |were |has been |have been )?\b(?:provided|given|supplied|available|present|included|shown)?\b/.test(
+      text,
+    )
+  )
+    return true;
+  if (/\b(?:the )?(?:map|data) (?:is|was) (?:absent|missing|unavailable|not (?:provided|given))\b/.test(text))
+    return true;
+  if (/\bwithout (?:any )?(?:map|data) data\b/.test(text)) return true;
+
+  // "I cannot tell", "I can't determine", "unable to answer from this".
+  // The subject has to be the model, not the world.
+  if (/\b(?:i|we) (?:cannot|can't|can not|am unable to|'m unable to)\b[^.!?]{0,40}\b(?:tell|determine|determine|answer|say|confirm|verify|establish|assess|know|be sure)\b/.test(text))
+    return true;
+  if (/\b(?:i|we) am (?:not able|unable)\b/.test(text)) return true;
+  if (/\bunable to (?:answer|determine|tell|say|confirm|verify)\b/.test(text)) return true;
+
+  // A refusal is usually short. A long paragraph that happens to contain "cannot"
+  // is an answer, not a decline.
+  const sentences = answer.split(/[.!?]+\s/).filter((s) => s.trim().length > 0);
+  if (sentences.length > 3) {
+    const last = sentences.slice(-2).join(' ');
+    return /\b(?:i|we) (?:cannot|can't|am unable to)\b/i.test(last);
+  }
+
+  // Short answer: the hedge is the whole content.
+  return /\b(?:cannot|can't|can not|unable to)\s+(?:tell|determine|answer|say|confirm|verify|establish|assess|know)\b/.test(
+    text,
   );
 }
 
