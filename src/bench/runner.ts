@@ -502,21 +502,46 @@ export async function groundTruth(
       });
 
       /**
-       * OSRM reports success for a route it did not compute.
+       * The reference router reports success for routes it did not compute.
        *
-       * Asked about a point in the open Pacific with no road network, it answers
-       * `{"code":"Ok","routes":[{"distance":0,"duration":0}]}`. Taking that at face
-       * value made ground truth 0m, and every arm was then graded against "the true
-       * distance is 0" - including the no-map arm, which correctly said the
-       * coordinate is in open ocean and was scored wrong for it.
+       * Two separate failure modes, both measured against the public demo server,
+       * and both shaped so that nothing in the response looks wrong:
        *
-       * A zero-metre walk is not a real answer to "how far do you travel along
-       * streets", so the truth is treated as unavailable and the task surfaces as
-       * unscoreable. That is the honest outcome: neither the model nor the
-       * reference router can answer a routing question where there is no network.
+       * 1. **Zero for no network.** Asked about a point in the open Pacific, it
+       *    answers `{"code":"Ok","routes":[{"distance":0,"duration":0}]}`. Taking
+       *    that at face value made ground truth 0m, so every arm was graded against
+       *    "the true distance is 0" - including the no-map arm, which correctly
+       *    observed the coordinate is in open ocean and was scored wrong for it.
+       *
+       * 2. **Impossible distances where a network exists.** Walking north from the
+       *    centre of sf-cbd, a 50 m displacement returns 35 m of walking, which is
+       *    shorter than the straight line and therefore physically impossible. At
+       *    100 m it returns 725 m, a factor of 7.25. The response is `code: Ok` in
+       *    every case, and the endpoints snap within 9 m and 25 m of the points
+       *    asked for, so neither the code nor the snapping reveals the problem.
+       *
+       * The second case is the dangerous one. Zero is visibly degenerate, so it
+       * gets noticed; 868 m for a 200 m walk looks like a real detour and so was
+       * silently used as truth, failing every arm for reasons no model could
+       * infer.
+       *
+       * `router.project-osrm.org` is a shared demo server with an experimental
+       * walking profile. It cannot serve as an oracle for this benchmark.
+       *
+       * So the answer is checked against the geometry the question actually
+       * describes. A walking route cannot be shorter than the straight line, and
+       * in a city grid it is not many times longer. Outside those bounds the truth
+       * is unavailable rather than wrong, and the task surfaces as unscoreable
+       * instead of grading arms against a number nothing can hit.
        */
       const dist = r.route.dist;
       if (dist === undefined || !Number.isFinite(dist) || dist <= 0) {
+        return {};
+      }
+
+      const asked = task.offsetM ?? task.radiusM;
+      const ratio = dist / asked;
+      if (ratio < 0.95 || ratio > 3) {
         return {};
       }
 

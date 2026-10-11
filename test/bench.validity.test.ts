@@ -403,6 +403,54 @@ describe('ground truth matches the prompt', () => {
     }
   });
 
+  it('rejects route truth that is physically impossible', async () => {
+    // The demo server returns 35m of walking for a 50m displacement from sf-cbd's
+    // centre - shorter than the straight line - with `code: Ok` and endpoints that
+    // snap within 9m and 25m. Nothing in the response says it is wrong, so an
+    // unchecked harness grades every arm against a distance nothing can be near.
+    for (const [label, dist] of [
+      ['shorter than the straight line', 35],
+      ['seven times the straight line', 725],
+    ] as const) {
+      const model = {
+        id: 'm',
+        model: 'm',
+        async call() {
+          return { text: 'about 400m', inputTokens: 100, outputTokens: 10 };
+        },
+      };
+
+      class WeirdRouter {
+        readonly name = 'weird';
+        async available() {
+          return true;
+        }
+        async route() {
+          return {
+            route: { dist, time: 60, steps: [] },
+            source: 'weird',
+            freeFlowOnly: false,
+          };
+        }
+      }
+
+      const report = await runBenchmark({
+        areas: [TASK_AREAS.find((a) => a.id === 'sf-cbd')!],
+        only: ['sf-cbd/route-distance'],
+        budgets: [1024],
+        seeds: 1,
+        fixtures: { 'sf-cbd': fixture },
+        models: [model],
+        router: new WeirdRouter() as never,
+      });
+
+      for (const row of report.detail) {
+        expect(row.correct, label).toBeNull();
+        expect(row.scoredBy, label).toBe('failed');
+      }
+    }
+  });
+
   it('scores connectivity against the graph at the shown budget', () => {
     const at1024 = toMaplet(fixture, {
       budget: 1024,

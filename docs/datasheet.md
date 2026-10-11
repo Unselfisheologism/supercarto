@@ -353,9 +353,49 @@ all, so the task surfaces as unscoreable rather than failing everything.
 pass, and at budget 1024 the synthetic maplet emits 34 nodes and **zero street
 names**. A model reporting that honestly is scored as failing.
 
-Both kinds are therefore not generated for this area. They remain generated for the
-real areas, which carry OSM geometry the reference router recognises — though the
-street-name problem may affect those too and has not been re-measured.
+Both kinds are therefore not generated for this area.
+
+### The routing oracle is unusable, on real areas too
+
+The comment above originally ended "they remain generated for the real areas, which
+carry OSM geometry the reference router recognises." That was checked, and it is
+false. `route` and `turns` were re-run on `sf-cbd` and produced 0% across every arm,
+including answers that were individually reasonable. The cause is the reference
+router, not the tasks and not the scorer.
+
+`router.project-osrm.org` is a shared demo server with an experimental walking
+profile. Measured from the centre of `sf-cbd`, walking north:
+
+| Straight line | Walked | Factor |
+|---|---|---|
+| 50 m | **35 m** | 0.71 |
+| 100 m | 725 m | 7.25 |
+| 200 m | 868 m | 4.34 |
+| 400 m | 897 m | 2.24 |
+
+**A 50 m displacement cannot take 35 m of walking.** That is shorter than the
+straight line and is physically impossible. Every one of these returns `code: Ok`,
+and the endpoints snap within 9 m and 25 m of the points asked for, so neither the
+response code nor the snapped geometry reveals the problem.
+
+This is the same failure class as the zero-distance case above, and the second form
+is the more dangerous one. Zero is visibly degenerate, so it gets noticed. 868 m for a
+200 m walk looks like an ordinary urban detour, so it was silently accepted as truth
+and graded against. The models answered "roughly 450–500 m" — a reasonable reading of
+a grid city — and were marked wrong against a number that reflects a broken profile
+rather than the walk.
+
+Ground truth is therefore checked against the geometry the question describes: a
+walking route must be at least 95% of the straight line and at most 3x it. Outside
+those bounds the truth is unavailable rather than wrong, and the row surfaces as
+unscoreable. On `sf-cbd` that makes both kinds unscoreable.
+
+**What this costs the benchmark, stated plainly:** `route` and `turns` are
+unmeasurable on every area, synthetic or real. Of the five task kinds, three measure
+something and two depend on a routing oracle that would have to be a self-hosted
+OSRM with a real walking profile — or a different question that does not require one.
+This is recorded rather than worked around, because the alternative is publishing
+numbers produced by an oracle that returns 35 m walks.
 
 **Known gap in the underlying protocol — since fixed.** The omission record used to
 read `layer: feature`, not `layer: tree`: the budgeter filed every removal under one
