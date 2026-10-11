@@ -62,7 +62,20 @@ if (Object.keys(fixtures).length === 0) {
 }
 
 const only = arg('--only');
-const model = arg('--model');
+/**
+ * Every `--model`, not just the first.
+ *
+ * `arg` returns one value, so `--model a --model b --model c` silently ran only
+ * `a`. The flag reads as repeatable and the help text implies it, so a run
+ * intended for three models quietly measured one - and the report looked
+ * complete. Accumulating here is the difference between a smoke test and a lie.
+ */
+const modelFlags: string[] = [];
+for (let i = 0; i < process.argv.length - 1; i++) {
+  if (process.argv[i] === '--model' && process.argv[i + 1] && !process.argv[i + 1]!.startsWith('--')) {
+    modelFlags.push(process.argv[i + 1]!);
+  }
+}
 const outDir = arg('--out', '.bench')!;
 const budget = Number(arg('--budget', '60'));
 const seeds = Number(arg('--seeds', '1'));
@@ -78,7 +91,7 @@ const concurrency = Number(arg('--concurrency', '1'));
  */
 const dry = process.argv.includes('--dry');
 
-const models = model ? [model] : [...FREEMODELS];
+const models = modelFlags.length > 0 ? modelFlags : [...FREEMODELS];
 /**
  * The synthetic area is included alongside the real ones.
  *
@@ -114,8 +127,18 @@ if (budget <= 0) {
  * is the same approach `cli-run.ts` takes. Resume continues from the archive.
  */
 const perModel = Math.max(1, Math.floor(budget / models.length));
+/**
+ * `--only` accepts an area prefix or a comma-separated list of exact task ids.
+ *
+ * Prefix-only matching meant `--only synthetic-pacific` pulled in all five task
+ * kinds when the intent was the one omission task, so a targeted run cost 15
+ * calls instead of 3. Exact ids are now matched exactly, and a prefix still works
+ * for "everything in this area".
+ */
 const selected = only
-  ? allTasks.filter((t) => t.startsWith(`${only}/`) || t === only)
+  ? only.includes(',')
+    ? allTasks.filter((t) => only.split(',').map((s) => s.trim()).includes(t))
+    : allTasks.filter((t) => t.startsWith(`${only}/`) || t === only)
   : allTasks;
 const capped = selected.slice(0, perModel);
 
