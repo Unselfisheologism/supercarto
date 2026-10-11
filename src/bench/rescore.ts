@@ -8,7 +8,7 @@
  */
 
 import { buildTasks, TASK_AREAS, type TaskArea } from './tasks.js';
-import { connectedComponents, failures, scoreNames, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
+import { connectedComponents, failures, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
 import { fingerprintPrompt, ResponseArchive, type Exchange } from './archive.js';
 import type { ScoredTask } from './score.js';
 import type { GroundTruth } from './types.js';
@@ -160,7 +160,20 @@ function scoreAgainst(
   answer: string,
   truth: GroundTruth,
 ): { correct: boolean | null; scoredBy: ScoredTask['scoredBy']; rationale?: string } {
-  if (isRefusal(answer) && kind !== 'connectivity') {
+  /**
+   * Refusal short-circuits the rest of the switch.
+   *
+   * Exempt for `connectivity` and `omission`, because on those tasks a correct
+   * answer is *about* what the data cannot tell you. The omission task's real
+   * answer reads "a missing feature here cannot be taken as proof of absence",
+   * which `isRefusal` matches on the bare word "cannot" - so a correct answer was
+   * scored as a refusal before it ever reached its own scorer.
+   *
+   * `isRefusal` matching "cannot" anywhere in a paragraph is too eager in general.
+   * Narrowing it to refusal-shaped phrasing is the better fix, but it would move
+   * existing scores, so it is recorded rather than smuggled in here.
+   */
+  if (isRefusal(answer) && kind !== 'connectivity' && kind !== 'omission') {
     return { correct: false, scoredBy: 'exact', rationale: 'refused or said it could not tell' };
   }
 
@@ -216,6 +229,21 @@ function scoreAgainst(
       const saysAll = /\b(all (are )?connected|every one is|fully connected)\b/i.test(answer);
       const correct = isolated ? saysIsolated && !saysAll : saysAll && !saysIsolated;
       return { correct, scoredBy: 'exact', rationale: `${truth.components} component(s) in graph` };
+    }
+    case 'omission': {
+      // Added here when the kind was, and the omission arm scored 0% for a
+      // correct answer until it was not. `default` returns unscoreable, so the row
+      // vanished into failures rather than showing as wrong - which is the same
+      // class of bug as the two earlier scoring duplications in this file.
+      if (!truth.omitted) return { correct: null, scoredBy: 'failed' };
+      const v = scoreOmission(answer, truth.omitted, truth.emittedNodes ?? 0);
+      return {
+        correct: v.correct,
+        scoredBy: 'exact',
+        rationale:
+          `omitted ${truth.omitted.map((o) => `${o.count} ${o.layer}`).join(', ') || 'nothing'}; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'acknowledged'}`,
+      };
     }
     default:
       return { correct: null, scoredBy: 'failed' };

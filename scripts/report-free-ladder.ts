@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { rescore } from '../src/bench/rescore.js';
 import { failures, median, summarise } from '../src/bench/score.js';
 import type { ScoredTask } from '../src/bench/score.js';
+import { TASK_AREAS, SYNTHETIC_AREA } from '../src/bench/tasks.js';
 import type { GeoJsonFeatureCollection } from '../src/index.js';
 
 const FIXTURE_DIR = 'fixtures/bench';
@@ -55,6 +56,11 @@ for (const file of archives) {
   const { rows } = await rescore({
     archive: join(dir, file),
     fixtures,
+    // The synthetic area is not in TASK_AREAS, and rescore builds its task list
+    // from the areas it is given - so without this it drops every synthetic row on
+    // the floor and reports a table of dashes that looks like "nothing archived".
+    // Third instance of the same defect: areas not threaded through the harness.
+    areas: [...TASK_AREAS, SYNTHETIC_AREA],
   });
   perModel.set(model, rows);
   allRows.push(...rows);

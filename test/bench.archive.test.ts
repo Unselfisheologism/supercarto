@@ -9,6 +9,7 @@ import {
 } from '../src/bench/archive.js';
 import { ArchivingClient, type RunIdentity } from '../src/bench/archiving.js';
 import { rescore, scoreArchived } from '../src/bench/rescore.js';
+import { scoreOmission } from '../src/bench/score.js';
 import type { ModelClient } from '../src/bench/models.js';
 import type { ModelRequest } from '../src/bench/types.js';
 import type { ScoredTask } from '../src/bench/score.js';
@@ -371,6 +372,44 @@ describe('archive is independent of the scoring rules', () => {
     });
     expect(row.correct).toBe(true);
     expect(row.rationale).toContain('2/3');
+  });
+
+  it('re-scores the omission kind instead of dropping it', () => {
+    // The archive is the durable artefact. A kind the re-scorer does not
+    // recognise falls through to `default`, which returns unscoreable - so the row
+    // disappears into failures instead of appearing as wrong.
+    //
+    // That is exactly what happened: the omission task was added to the runner,
+    // the re-scorer's own copy of the switch was not updated, and a correct
+    // answer citing 3,925 omitted trees was reported as 0%.
+    const truth = {
+      omitted: [{ layer: 'tree', count: 3925 }],
+      emittedNodes: 34,
+    };
+    const passing = exchange({
+      answer:
+        'The map data is incomplete: it explicitly lists omitted features - 3,925 trees ' +
+        'and 41 roads were left out of this extract, so a missing feature here cannot be ' +
+        'taken as proof of absence.',
+    });
+    const row = scoreArchived(passing, 'omission', truth);
+
+    expect(row.correct, 'a correct omission answer must not fall through to unscoreable').toBe(true);
+    expect(row.scoredBy).toBe('exact');
+
+    // And it must agree with the shared scorer rather than a second copy.
+    const direct = scoreOmission(passing.answer, truth.omitted, truth.emittedNodes!);
+    expect(row.correct).toBe(direct.correct);
+  });
+
+  it('re-scores an omission answer that wrongly calls the area bare', () => {
+    const row = scoreArchived(
+      exchange({ answer: 'This area appears to be empty apart from a few cafes.' }),
+      'omission',
+      { omitted: [{ layer: 'tree', count: 3925 }], emittedNodes: 34 },
+    );
+    expect(row.correct).toBe(false);
+    expect(row.scoredBy).toBe('exact');
   });
 });
 

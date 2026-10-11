@@ -818,8 +818,16 @@ function scoreAnswer(
   }
 }
 
+/**
+ * Whether a refusal is a failure on this task.
+ *
+ * False for `connectivity` and `omission`, because on those a correct answer is
+ * *about* what the data cannot support. "A missing feature here cannot be taken as
+ * proof of absence" is the omission task answered correctly, and it contains the
+ * word `cannot`.
+ */
 function representationNeedsData(task: BenchmarkTask): boolean {
-  return task.kind !== 'connectivity';
+  return task.kind !== 'connectivity' && task.kind !== 'omission';
 }
 
 function round1(n: number): number {
