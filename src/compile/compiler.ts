@@ -278,7 +278,7 @@ export function compile(doc: ScrDocument, opts: CompileOptions = {}): SpatialGra
     // the four hundred unnamed information boards are not.
     if (WEAK_POI_CLASSES.has(className(f.classId)) && !isNamed(doc, f)) continue;
     if (b.nodes.length >= maxNodes) break;
-    compilePoint(b, f, className(f.classId));
+    compilePoint(b, f, className(f.classId), layerName(f.layerId));
   }
 
   // 3. Areas become single nodes at their centroid, attached to the network by
@@ -287,7 +287,7 @@ export function compile(doc: ScrDocument, opts: CompileOptions = {}): SpatialGra
   for (const f of areaFeatures) {
     if (excluded.has(className(f.classId))) continue;
     if (b.nodes.length >= maxNodes) break;
-    compileArea(b, f, className(f.classId));
+    compileArea(b, f, className(f.classId), layerName(f.layerId));
   }
 
   // 3. Any node not touched by an edge is still useful context, but only if it
@@ -587,7 +587,7 @@ function compileLinear(b: Builder, f: Feature, className: string, layerName: str
       if (nodeId === undefined) {
         // Interior vertices stay anonymous unless a later point feature claims
         // them. They still exist, so a route can traverse them.
-        nodeId = addNode(b, { kind: 'intersection', features: [f.id] }, pt);
+        nodeId = addNode(b, { kind: 'intersection', features: [f.id], layer: layerName }, pt);
         b.junctionIndex.set(key, nodeId);
       } else {
         const existing = nodeById(b, nodeId);
@@ -609,7 +609,7 @@ function compileLinear(b: Builder, f: Feature, className: string, layerName: str
  * existing junction, so the agent can state the distance from a street to a
  * landmark without the footprint pretending to be a walkable path.
  */
-function compileArea(b: Builder, f: Feature, className: string): void {
+function compileArea(b: Builder, f: Feature, className: string, layer: string): void {
   if (f.geometry.kind !== 'polygon' && f.geometry.kind !== 'building') return;
 
   const props = propsOf(b.doc, f.attrSet);
@@ -643,7 +643,7 @@ function compileArea(b: Builder, f: Feature, className: string): void {
     return;
   }
 
-  const partial: Omit<GraphNode, 'id'> = { kind, features: [f.id] };
+  const partial: Omit<GraphNode, 'id'> = { kind, features: [f.id], layer };
   if (name) partial.name = name;
   if (tags.length > 0) partial.tags = tags;
   const h = numProp(b.doc, props, 'height_m', 'height', 'building:levels');
@@ -732,7 +732,7 @@ function nodeById(b: Builder, id: string): GraphNode | undefined {
 // Point features -> named nodes
 // ---------------------------------------------------------------------------
 
-function compilePoint(b: Builder, f: Feature, className: string): void {
+function compilePoint(b: Builder, f: Feature, className: string, layer: string): void {
   if (f.geometry.kind !== 'point') return;
   const p = f.geometry.point;
   const key = weldKey(p, b.weld);
@@ -776,7 +776,7 @@ function compilePoint(b: Builder, f: Feature, className: string): void {
     return;
   }
 
-  const partial: Omit<GraphNode, 'id'> = { kind, features: [f.id] };
+  const partial: Omit<GraphNode, 'id'> = { kind, features: [f.id], layer };
   if (name) partial.name = name;
   if (tags.length > 0) partial.tags = tags;
   if (hours) partial.hours = hours;

@@ -327,14 +327,22 @@ builder:
 
 The last row is the one that matters: the memorisation defence holds.
 
-**Known gap in the underlying protocol.** The omission record says
-`layer: feature`, not `layer: tree`. The budgeter records a generic
-`waypoint`/`feature` because `GraphNode` carries no semantic layer, so an agent is
-told 3,966 features were dropped without being told what kind. That is a real
-limitation of claim 1 — the record is honest that something was omitted and silent
-about what — and the task is framed not to depend on it. Fixing it means threading
-a layer through the compiler into `GraphNode` and changing how the budgeter names
-its omissions.
+**Known gap in the underlying protocol — since fixed.** The omission record used to
+read `layer: feature`, not `layer: tree`: the budgeter filed every removal under one
+generic label because `GraphNode` carried no semantic layer, so an agent was told
+3,966 features had been dropped without being told they were trees. Honest about
+the gap, silent about its nature. `GraphNode` now carries the source layer and the
+budgeter groups by it, so the record reads `{layer: tree, count: 3925}`.
+
+Two things surfaced while fixing it:
+
+- **`layerKey` is silently dropped at the top level.** It is a valid *ingest*
+  option, but `MapletRequest` has no such field, so `toMaplet({layerKey: 'x'})`
+  is accepted and ignored rather than rejected. Documented at the call site rather
+  than validated, because the option is one level down and the mistake is easy.
+- **Inference alone still separates categories.** Without any explicit tag, the
+  same area yields `poi` and `road` omissions rather than one bucket, so the fix
+  does not depend on a source labelling its data.
 
 ## 13. What would make this publishable
 

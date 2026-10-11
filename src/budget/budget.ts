@@ -94,6 +94,15 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
     else omissions.push({ layer, count, near: 'unspecified' });
   };
 
+  /**
+   * Index for the layer lookup.
+   *
+   * Built once and safe to keep: `nodes` is rebuilt in place each pass, but the
+   * node objects themselves are reused, so a reference taken now still resolves
+   * after the array is emptied and refilled.
+   */
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
   // --- Pass 1: chain contraction -----------------------------------------
   // A node with exactly two edges and no name contributes nothing an agent can
   // reference. Contract it and join its neighbours, preserving reachability.
@@ -168,7 +177,21 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
 
     for (const id of remove) keep.delete(id);
     droppedNodes += remove.size;
-    recordOmission('feature', remove.size);
+    /**
+     * Name the omission by what was actually dropped.
+     *
+     * Every removal used to be filed under the literal `feature`, so a maplet
+     * told an agent "3,966 features omitted" without saying they were trees. That
+     * is the least useful form of an honest statement: the agent knows it is
+     * missing something and cannot reason about what.
+     *
+     * Grouped by the node's own layer, which the compiler now carries. Nodes with
+     * no layer - anything built before this field existed - fall back to `feature`,
+     * so the record degrades to the old behaviour rather than to nonsense.
+     */
+    for (const id of remove) {
+      recordOmission(byId.get(id)?.layer ?? 'feature', 1);
+    }
 
     const live = nodes.filter((n) => keep.has(n.id));
     const liveEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));

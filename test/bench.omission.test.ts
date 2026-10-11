@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { scoreOmission } from '../src/bench/score.js';
 import { buildTasks, SYNTHETIC_AREA, OMISSION_QUESTION } from '../src/bench/tasks.js';
+import { toMaplet } from '../src/index.js';
+import type { GeoJsonFeatureCollection } from '../src/index.js';
 
 /**
  * The omission task is the one that tests the protocol instead of the map.
@@ -105,5 +108,63 @@ describe('scoring the omission task', () => {
     const s = scoreOmission('This area is fully shown.', [], 500);
     expect(s.correct).toBe(false);
     expect(s.flags.join(' ')).toMatch(/nothing was actually omitted/);
+  });
+});
+
+/**
+ * An omission that does not say what was omitted is barely useful.
+ *
+ * Every removal used to be filed under the literal `feature`, so a maplet told an
+ * agent "3,966 features omitted" without saying they were trees. `GraphNode` now
+ * carries the source layer and the budgeter groups by it, so the record reads
+ * `{layer: tree, count: 3925}`.
+ */
+describe('omissions name the layer they dropped', () => {
+  const fc = JSON.parse(readFileSync('fixtures/bench/synthetic-pacific.geojson', 'utf8'));
+
+  const compile = (ingest?: { layerKey: string }) =>
+    toMaplet(fc as GeoJsonFeatureCollection, {
+      bbox: { west: -150.004, south: 43.996, east: -149.996, north: 44.004 },
+      budget: 1024,
+      radiusLabel: '400m',
+      ...(ingest ? { ingest } : {}),
+      capabilities: { elevation: false, weather: false, traffic: false },
+    });
+
+  it('never files an omission under the generic "feature"', () => {
+    // The regression: one record, 3966 count, layer 'feature'.
+    for (const ingest of [undefined, { layerKey: 'layer' }]) {
+      for (const layer of compile(ingest).graph.omitted) {
+        expect(layer.layer).not.toBe('feature');
+      }
+    }
+  });
+
+  it('names the source layer when the fixture declares one', () => {
+    const layers = compile({ layerKey: 'layer' }).graph.omitted.map((o) => o.layer);
+    expect(layers).toContain('tree');
+  });
+
+  it('still separates categories without an explicit layer tag', () => {
+    // Inferring from geometry yields poi and road rather than one undifferentiated
+    // bucket, which is already more than 'feature' ever told an agent.
+    const layers = compile().graph.omitted.map((o) => o.layer);
+    expect(layers).toContain('poi');
+    expect(layers).toContain('road');
+    expect(layers.length).toBeGreaterThan(1);
+  });
+
+  it('carries a layer on emitted nodes', () => {
+    const doc = compile({ layerKey: 'layer' });
+    expect(doc.graph.nodes.every((n) => typeof n.layer === 'string')).toBe(true);
+  });
+
+  it('accounts for every dropped node across the records', () => {
+    // If the per-layer split lost counts, the omission record would understate the
+    // gap it exists to report.
+    const doc = compile({ layerKey: 'layer' });
+    const recorded = doc.graph.omitted.reduce((n, o) => n + o.count, 0);
+    expect(recorded).toBeGreaterThan(0);
+    expect(doc.yaml).toMatch(/\{layer: tree, count: \d+\}/);
   });
 });

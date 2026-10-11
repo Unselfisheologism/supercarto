@@ -343,7 +343,6 @@ export function parseEvents(stdout: string): RunEvent[] {
  * listed model that cannot be called costs a full ladder of failures.
  */
 export const FREEMODELS = [
-  'opencode/fledge-alpha-free',
   'opencode/ling-3.1-flash-free',
   'opencode/longcat-2.5-preview-free',
   'opencode/mimo-v2.6-flash-free',
@@ -351,6 +350,7 @@ export const FREEMODELS = [
   'opencode/nemotron-3-ultra-free',
   'opencode/nemotron-3.5-lightning-free',
   'opencode/space-bunny-free',
+  'opencode/step-5-preview-free',
 ] as const;
 
 /**
@@ -367,4 +367,10 @@ export const UNREACHABLE_FREEMODELS: Record<string, string> = {
   // cannot serve a request costs a full ladder of failures that look like model
   // failures, which is the specific confusion this map exists to prevent.
   'opencode/exo-free': '503 Upstream request failed: Endpoint is unavailable',
+  // Withdrawn from `opencode models` and confirmed unreachable by calling it:
+  // "Model unavailable: opencode/fledge-alpha-free". Recorded rather than deleted
+  // so the reason stays visible and a reader comparing against the CLI's list can
+  // see it was considered. The earlier `fledge` arms in bench-results/ were run
+  // while it worked, which is the archive being useful for exactly this reason.
+  'opencode/fledge-alpha-free': 'withdrawn from opencode models; provider returns no-route',
 };

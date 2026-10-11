@@ -349,6 +349,19 @@ function compileFixture(
     },
     budget,
     radiusLabel: `${task.radiusM}m`,
+    /**
+     * Honour an explicit `layer` tag when the fixture declares one.
+     *
+     * Without it, ingest infers layers from geometry type and every point becomes
+     * `poi`, so an omission could only ever read `layer: poi`. The synthetic
+     * fixture labels its clutter `tree`, and the omission task is more honest when
+     * the record names what was dropped rather than the shape it had.
+     *
+     * Note this belongs under `ingest`, not at the top level. Passing a top-level
+     * `layerKey` is silently ignored, because `MapletRequest` has no such field -
+     * a trap worth knowing about rather than one worth adding a validation for.
+     */
+    ingest: { layerKey: 'layer' },
     // Fixtures carry no derived heat or elevation, and saying so keeps the
     // emitted header honest rather than advertising layers that are absent.
     capabilities: { elevation: false, weather: false, traffic: false },

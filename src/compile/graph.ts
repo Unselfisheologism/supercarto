@@ -32,6 +32,16 @@ export interface GraphNode {
   /** Metres, for buildings. */
   heightM?: number;
   /**
+   * Semantic layer this node came from: `road`, `poi`, `building`, `area`, or
+   * whatever the source declared.
+   *
+   * Present so the budgeter can name what it dropped. Without it every omission
+   * read `layer: feature`, which tells an agent that 3,966 things were removed
+   * without telling it that they were trees - honest about the gap and silent
+   * about its nature, which is the least useful possible form of the statement.
+   */
+  layer?: string;
+  /**
    * Opening hours as a short phrase, e.g. `09:00-17:00` or `closed`.
    *
    * Present because it is ingested anyway and an agent asked whether a place is
