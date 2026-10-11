@@ -657,6 +657,41 @@ export function scoreOmission(
 
   if (total <= 0) return { correct: false, flags: ['nothing was actually omitted'] };
 
+  /**
+   * Does the answer assert the data is complete?
+   *
+   * Checked first, and failing, because it is the claim this task exists to
+   * detect. The scorer was polarity-blind: "nothing in it states that any features
+   * were left out" contains the word "truncation" in a negated frame and was
+   * scored as an acknowledgement. Three of three geojson answers passed while
+   * saying the opposite - two of them "no omission is flagged anywhere in this
+   * data" - and the run reported a clean 100%.
+   *
+   * So the check is for the *assertion*, not for the vocabulary.
+   */
+  const claimsComplete =
+    /\b(?:appears?|seems?|is|was|looks?)\s+(?:to\s+be\s+)?(?:fully\s+)?complet(?:e|ion)\b/i.test(
+      answer,
+    ) ||
+    /\bno\s+(?:omission|omissions|features?\s+(?:were|have\s+been)?\s*(?:left\s+out|omitted|dropped|excluded))\b/i.test(
+      answer,
+    ) ||
+    /\bnothing\b[^.!?]{0,60}\b(?:left\s+out|omitted|dropped|excluded|truncated)\b/i.test(answer) ||
+    /\bfound\s+none\b/i.test(answer) ||
+    /\b(?:runs?|numbering|counts?|sequences?)\b[^.!?]{0,40}\b(?:without\s+gaps?|unbroken|consecutive|contiguous)\b/i.test(
+      answer,
+    ) ||
+    /\ball\b[^.!?]{0,30}\b(?:accounted\s+for|present|there)\b/i.test(answer);
+
+  if (claimsComplete) flags.push('asserted the data is complete despite a declared omission');
+
+  /**
+   * Acknowledging the gap, in a positive frame.
+   *
+   * Now that completeness is handled above, a bare vocabulary match is safe
+   * enough: an answer that says "omitted" and does not claim completeness is
+   * reporting the gap.
+   */
   const acknowledges =
     /\b(omitted|left out|not shown|excluded|dropped|removed|truncated|not included|partial|incomplete|only (?:part|some))\b/i.test(
       answer,
@@ -688,7 +723,7 @@ export function scoreOmission(
     flags.push('acknowledged the gap without sizing it');
   }
 
-  return { correct: !claimsBare && acknowledges, flags };
+  return { correct: !claimsBare && !claimsComplete && acknowledges, flags };
 }
 
 /** Weakly-connected component count over the emitted graph. */

@@ -102,6 +102,72 @@ describe('scoring the omission task', () => {
     expect(s.flags.join(' ')).toMatch(/without sizing/);
   });
 
+  /**
+   * The scorer was polarity-blind, and a real run proved it.
+   *
+   * Three free models answered the omission task against the raw geojson arm. Two
+   * said, in as many words, that nothing indicated anything was missing - "no
+   * omission is flagged anywhere in this data", "nothing in it states that any
+   * features were left out" - and all three were scored as passing.
+   *
+   * The cause: the acknowledgement check matched the word "truncation" inside a
+   * *negated* frame, in a sentence whose whole point was that no truncation note
+   * was present. The run reported a clean 100% on an arm that had said the
+   * opposite three times.
+   */
+  const REAL_OMITTED = [
+    { layer: 'tree', count: 3925 },
+    { layer: 'road', count: 41 },
+  ];
+
+  it('fails an answer that reports no omission note is present', () => {
+    const s = scoreOmission(
+      'The map data appears complete - nothing in it states that any features were left ' +
+        'out. I re-checked for any omission or truncation note (in feature properties, ' +
+        'headers, or trailing text) and found none, and the feature numbering runs without gaps.',
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(false);
+    expect(s.flags.join(' ')).toMatch(/complete/i);
+  });
+
+  it('fails an answer that says no omission is flagged anywhere', () => {
+    const s = scoreOmission(
+      'No omission is flagged anywhere in this data - there is no "features omitted" note, ' +
+        'no truncated geometry, and the feature counts run unbroken.',
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(false);
+    expect(s.flags.join(' ')).toMatch(/complete/i);
+  });
+
+  it('passes an answer that infers truncation from suspiciously round bounds', () => {
+    // The honest pass that is not a record read. Real, and a reminder that the task
+    // measures capability rather than compliance.
+    const s = scoreOmission(
+      'The map is incomplete rather than exhaustive: it covers only a bounded block. The ' +
+        'numbering starting at 0 and stopping conspicuously at 10 on both axes suggests the ' +
+        'extract was clipped and truncated.',
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(true);
+  });
+
+  it('still passes a supercarto answer that reads the omission record', () => {
+    const s = scoreOmission(
+      'Something has been left out. The map data\'s own `omitted` list reports 3,925 tree ' +
+        'features and 41 road features that were dropped, so thousands of them exist but were ' +
+        'dropped to save tokens.',
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(true);
+    expect(s.flags).toEqual([]);
+  });
+
   it('is not scoreable when nothing was actually omitted', () => {
     // Otherwise a budget generous enough to keep everything would hand every arm
     // a free pass on a task with nothing to find.
