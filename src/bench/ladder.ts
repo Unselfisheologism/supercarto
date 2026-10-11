@@ -25,6 +25,7 @@ import type { ModelClient } from './models.js';
 import { scoreNames, distanceCorrect, extractDistanceM, isRefusal, connectedComponents, summarise, failures } from './score.js';
 import type { ScoredTask } from './score.js';
 import type { ModelRequest } from './types.js';
+import type { TaskArea } from './tasks.js';
 
 /** Floor to ceiling. Names verified against arena's picker. */
 export const LADDER = [
@@ -75,6 +76,15 @@ export interface LadderOptions {
    * about whatever the live source served at that moment.
    */
   fixtures?: Record<string, GeoJsonFeatureCollection>;
+  /**
+   * Areas to build tasks from. Defaults to `TASK_AREAS`.
+   *
+   * Needed because the runner rebuilds its own task list from the areas it is
+   * given, so filtering by task id cannot introduce an area outside the default
+   * set - it refuses an `only` list it cannot match, correctly. The synthetic
+   * area is the case that hit this.
+   */
+  areas?: readonly TaskArea[];
   /**
    * Model calls in flight at once. Default 1.
    *
@@ -167,6 +177,7 @@ export async function runLadder(opts: LadderOptions = {}): Promise<LadderResult[
 
     const report = await runBenchmark({
       models: [client],
+      ...(opts.areas ? { areas: opts.areas } : {}),
       budgets: opts.budgets ?? [1024],
       seeds: opts.seeds ?? 3,
       contextCache,

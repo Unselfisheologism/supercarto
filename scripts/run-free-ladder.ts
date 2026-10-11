@@ -18,8 +18,9 @@ import { runLadder } from '../src/bench/ladder.js';
 import { completedCalls } from '../src/bench/cli-run.js';
 import { FREEMODELS } from '../src/bench/driver/opencode.js';
 import { OpencodeDriver } from '../src/bench/driver/opencode.js';
-import { buildTasks, TASK_AREAS } from '../src/bench/tasks.js';
+import { buildTasks, TASK_AREAS, SYNTHETIC_AREA } from '../src/bench/tasks.js';
 import { runMetadata } from '../src/bench/metadata.js';
+import { archiveName, ResponseArchive } from '../src/bench/archive.js';
 import type { GeoJsonFeatureCollection } from '../src/index.js';
 
 const FIXTURE_DIR = 'fixtures/bench';
@@ -69,9 +70,23 @@ const seeds = Number(arg('--seeds', '1'));
 // refusal into a failed row, and a failed row is recorded as a model failure, so
 // raising this is a decision about pressure rather than a free speedup.
 const concurrency = Number(arg('--concurrency', '1'));
+/**
+ * `--dry` used to be ignored: the flag was parsed nowhere and runLadder ran
+ * regardless, so "show me the plan" issued real model calls against a metered
+ * free tier. The archives it produced during a mistaken dry run are still on disk,
+ * which is how it was noticed.
+ */
+const dry = process.argv.includes('--dry');
 
 const models = model ? [model] : [...FREEMODELS];
-const allTasks = buildTasks(TASK_AREAS).map((t) => t.id);
+/**
+ * The synthetic area is included alongside the real ones.
+ *
+ * It is the only area whose omission task can be measured, because it is the only
+ * area a model cannot answer about from memory. Leaving it out of the ladder meant
+ * the one task that tests the protocol rather than the map could never be run.
+ */
+const allTasks = buildTasks([...TASK_AREAS, SYNTHETIC_AREA]).map((t) => t.id);
 const totalCalls = allTasks.length * 3 * seeds * models.length;
 
 console.log(`\nmodels: ${models.length}`);
@@ -113,10 +128,23 @@ if (capped.length < selected.length) {
   console.log('');
 }
 
+if (dry) {
+  console.log('\ndry run - no model will be called. task ids:');
+  for (const t of capped) console.log(`  ${t}`);
+  for (const m of models) {
+    const have = existsSync(join(outDir, archiveName(m)))
+      ? ResponseArchive.keys(join(outDir, archiveName(m))).size
+      : 0;
+    console.log(`  ${m}: ${have} already archived`);
+  }
+  process.exit(0);
+}
+
 const results = await runLadder({
   models,
   outDir,
   seeds,
+  areas: [...TASK_AREAS, SYNTHETIC_AREA],
   only: capped,
   stopOnRateLimit: true,
   fixtures,
