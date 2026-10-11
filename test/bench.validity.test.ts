@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { featuresFromDocument, toMaplet } from '../src/index.js';
 import type { GeoJsonFeatureCollection } from '../src/index.js';
-import { buildTasks, TASK_AREAS, TURN_OFFSET_M } from '../src/bench/tasks.js';
+import { buildTasks, TASK_AREAS, TURN_OFFSET_M, SYNTHETIC_AREA } from '../src/bench/tasks.js';
+import { runBenchmark } from '../src/bench/runner.js';
 import {
   connectedComponents,
   distanceCorrect,
@@ -355,6 +356,47 @@ describe('ground truth matches the prompt', () => {
     expect(scoreNames(inScope, inScope.join(', ')).hallucinations).toEqual([]);
     // And the two sets really do differ, or the test passes for the wrong reason.
     expect(inScope.length).not.toBe(outOfScope.length);
+  });
+
+  it('treats a zero-distance OSRM route as no truth at all', async () => {
+    // OSRM answers `{"code":"Ok","distance":0}` for a point with no road network.
+    // Grading against that scored every arm wrong, including the no-map arm that
+    // correctly identified open ocean. Route truth must be unusable, not zero.
+    class ZeroRouter {
+      readonly name = 'zero';
+      async available() {
+        return true;
+      }
+      async route() {
+        return { route: { dist: 0, time: 0, steps: [] }, source: 'zero', freeFlowOnly: false };
+      }
+    }
+
+    const answered = 'about 400m';
+    const model = {
+      id: 'm',
+      model: 'm',
+      async call() {
+        return { text: answered, inputTokens: 100, outputTokens: 10 };
+      },
+    };
+
+    const report = await runBenchmark({
+      areas: [SYNTHETIC_AREA],
+      only: ['synthetic-pacific/route-distance'],
+      budgets: [1024],
+      seeds: 1,
+      fixtures: { 'synthetic-pacific': fixture },
+      models: [model],
+      router: new ZeroRouter() as never,
+    });
+
+    for (const row of report.detail) {
+      // Unscoreable, not "wrong": the truth does not exist, so the row must not
+      // claim the model got it wrong.
+      expect(row.correct).toBeNull();
+      expect(row.scoredBy).toBe('failed');
+    }
   });
 
   it('scores connectivity against the graph at the shown budget', () => {

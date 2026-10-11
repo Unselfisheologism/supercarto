@@ -500,8 +500,28 @@ export async function groundTruth(
         to,
         mode: task.mode,
       });
+
+      /**
+       * OSRM reports success for a route it did not compute.
+       *
+       * Asked about a point in the open Pacific with no road network, it answers
+       * `{"code":"Ok","routes":[{"distance":0,"duration":0}]}`. Taking that at face
+       * value made ground truth 0m, and every arm was then graded against "the true
+       * distance is 0" - including the no-map arm, which correctly said the
+       * coordinate is in open ocean and was scored wrong for it.
+       *
+       * A zero-metre walk is not a real answer to "how far do you travel along
+       * streets", so the truth is treated as unavailable and the task surfaces as
+       * unscoreable. That is the honest outcome: neither the model nor the
+       * reference router can answer a routing question where there is no network.
+       */
+      const dist = r.route.dist;
+      if (dist === undefined || !Number.isFinite(dist) || dist <= 0) {
+        return {};
+      }
+
       return {
-        distanceM: r.route.dist,
+        distanceM: dist,
         durationS: r.route.time,
         streets: r.route.steps.map((s) => s.turn).filter((t): t is string => Boolean(t)),
       };
