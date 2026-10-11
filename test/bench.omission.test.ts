@@ -143,13 +143,103 @@ describe('scoring the omission task', () => {
     expect(s.flags.join(' ')).toMatch(/complete/i);
   });
 
-  it('passes an answer that infers truncation from suspiciously round bounds', () => {
+  /**
+ * The task does not discriminate unless the answer must name what was omitted.
+ *
+ * Measured: with the loose condition, two of three models answered the `none` arm
+ * correctly - "any features that exist in this area have been left out entirely,
+ * meaning the map is incomplete" - which is a true statement available to an agent
+ * holding no map at all. The capability measured was "notice incompleteness", not
+ * "use the omission record".
+ *
+ * These are the nine actual answers from that run, with the verdicts the tightened
+ * condition should produce.
+ */
+describe('the nine real answers from the three-model run', () => {
+  const T = REAL_OMITTED;
+  const want = (answer: string, expected: boolean): void => {
+    expect(scoreOmission(answer, T, 34).correct, answer.slice(0, 60)).toBe(expected);
+  };
+
+  it('passes all three supercarto answers, which read the record', () => {
+    want(
+      'The map data is incomplete: it explicitly reports omitted features - 3,925 trees ' +
+        'in the tree layer and 41 roads in the road layer were left out, so only the 2 tree ' +
+        'areas shown are actually in the data. Any conclusion that the area lacks trees would ' +
+        'be wrong, since thousands of them exist but were dropped to save tokens.',
+      true,
+    );
+    want(
+      "Something has been left out. The map data's own omitted list reports 3,925 tree " +
+        'features and 41 road features that were dropped, so thousands more trees and dozens ' +
+        'of ways are absent.',
+      true,
+    );
+    want(
+      'The map is incomplete - the data explicitly lists omitted features: roughly 3,925 tree ' +
+        'features and 41 road features were left out of this 400 m-radius view.',
+      true,
+    );
+  });
+
+  it('fails the two geojson answers that denied any omission', () => {
+    want(
+      'The map data appears complete - nothing in it states that any features were left out. ' +
+        'I re-checked for any omission or truncation note and found none, and the feature ' +
+        'numbering runs without gaps.',
+      false,
+    );
+    want(
+      'No omission is flagged anywhere in this data - there is no "features omitted" note, no ' +
+        'truncated geometry, and the feature counts run unbroken.',
+      false,
+    );
+  });
+
+  it('passes the geojson answer that inferred truncation and named what', () => {
+    // An honest pass that is not a record read. The raw file was complete enough to
+    // enumerate and the bounds were suspiciously round, so the model concluded
+    // truncation from the shape of the data. That is a real capability, and it is
+    // the honest limit of "raw GeoJSON cannot signal incompleteness": it never
+    // signals it explicitly, but the data's shape can suggest it.
+    want(
+      'The map is incomplete rather than exhaustive: it covers only a bounded block of roughly ' +
+        '1.2 km. The numbering starting at 0 and stopping conspicuously at 10 suggests the ' +
+        'extract was clipped and truncated. It contains 11 streets, 40 building footprints, ' +
+        '8 cafes and around 4,500 trees.',
+      true,
+    );
+  });
+
+  it('fails all three no-map answers, which cannot name what they never saw', () => {
+    want(
+      'No map data was provided - only a description with no features - so I cannot confirm ' +
+        'what is present; the data is simply absent, and any features that exist in this area ' +
+        'have been left out entirely, meaning the map is incomplete for this question.',
+      false,
+    );
+    want(
+      "No map data has been provided, so I can't describe what's present or confirm what has " +
+        'been omitted. A missing file is not the same as an empty place.',
+      false,
+    );
+    want(
+      "No map data was provided, so I can't tell you whether the area's features are fully " +
+        "shown or partly omitted - the question of completeness can't be answered without the " +
+        "underlying dataset, and I won't guess at what exists there.",
+      false,
+    );
+  });
+});
+
+it('passes an answer that infers truncation from suspiciously round bounds', () => {
     // The honest pass that is not a record read. Real, and a reminder that the task
-    // measures capability rather than compliance.
+    // measures capability rather than compliance - but it still has to name what it
+    // believes was cut, which is the bar.
     const s = scoreOmission(
       'The map is incomplete rather than exhaustive: it covers only a bounded block. The ' +
         'numbering starting at 0 and stopping conspicuously at 10 on both axes suggests the ' +
-        'extract was clipped and truncated.',
+        'extract was clipped and truncated, so the remaining trees beyond it are not shown.',
       REAL_OMITTED,
       34,
     );
@@ -168,7 +258,43 @@ describe('scoring the omission task', () => {
     expect(s.flags).toEqual([]);
   });
 
-  it('is not scoreable when nothing was actually omitted', () => {
+  it('does not accept a coordinate as a count of what was omitted', () => {
+    // The magnitude check first accepted any three-to-five-digit number beside an
+    // omission word, which matched "longitude -150" in an answer that had never
+    // seen a tree. Two of three no-map answers were passing on that alone.
+    const s = scoreOmission(
+      'No map data has been provided for this location (latitude 44, longitude -150), so I ' +
+        "can't describe what's present or confirm what has been omitted. A missing file is " +
+        'not the same as an empty place.',
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(false);
+    expect(s.flags.join(' ')).toMatch(/without naming what/);
+  });
+
+it('does not accept a distance in kilometres as a count of what was omitted', () => {
+    // "1,300 km south-south-east of Attu Island" is four digits and an omission word.
+    const s = scoreOmission(
+      "No map data was provided, so I can't tell you whether the area's features are fully " +
+        "shown or partly omitted. That coordinate sits roughly 1,300 km south of Attu Island, " +
+        "but I won't guess at what might be missing.",
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(false);
+  });
+
+it('accepts an approximate magnitude when the category is unknown to the source', () => {
+    const s = scoreOmission(
+      'Several thousand features were omitted to keep the extract inside its size limit.',
+      [{ layer: 'anonymous', count: 3966 }],
+      34,
+    );
+    expect(s.correct).toBe(true);
+  });
+
+it('is not scoreable when nothing was actually omitted', () => {
     // Otherwise a budget generous enough to keep everything would hand every arm
     // a free pass on a task with nothing to find.
     const s = scoreOmission('This area is fully shown.', [], 500);

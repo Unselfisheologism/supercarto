@@ -723,7 +723,58 @@ export function scoreOmission(
     flags.push('acknowledged the gap without sizing it');
   }
 
-  return { correct: !claimsBare && !claimsComplete && acknowledges, flags };
+  /**
+   * Did the answer name *what* was omitted, not merely that something was?
+   *
+   * Without this the task does not discriminate at all. Measured: given no map
+   * data, two of three models answered it correctly - "any features that exist in
+   * this area have been left out entirely, meaning the map is incomplete" - which
+   * is a true statement available to every arm. The capability measured was
+   * "notice incompleteness", not "use the omission record".
+   *
+   * Requiring a category that appears in the record separates them. The no-map arm
+   * cannot produce "trees" or "roads" or a count of them, because it has never
+   * seen them; only an answer that read the record, or a raw file complete enough
+   * to enumerate them, can.
+   *
+   * A magnitude citation also counts, for a source that reports a count without
+   * naming its category.
+   */
+  const layers = [...new Set(omitted.map((o) => o.layer))];
+  const omissionWord =
+    /\b(omitted|left\s+out|dropped|excluded|not\s+shown|removed|truncated|clipped|missing)\b/i;
+
+  const namesCategory = layers.some((l) =>
+    new RegExp(`\\b${l.replace(/[^A-Za-z0-9]/g, '')}s?\\b`, 'i').test(answer),
+  );
+
+  /**
+   * A count, and it has to be *this* count.
+   *
+   * The first version accepted any three-to-five-digit number next to an omission
+   * word, which matched "longitude -150" in an answer that had never seen a tree
+   * in its life. Two of three no-map answers were passing on that.
+   *
+   * Now the number must be within 20% of the recorded total, or the answer must
+   * say "thousands" outright. A distance in kilometres no longer qualifies.
+   */
+  const totalOmitted = omitted.reduce((n, o) => n + o.count, 0);
+  const lo = totalOmitted * 0.8;
+  const hi = totalOmitted * 1.2;
+  const citesThousands = /\b(?:thousands?|several\s+thousand|many\s+thousand)/i.test(answer);
+  const citesNumber = omissionWord.test(answer) &&
+    [...answer.matchAll(/\b(\d{1,3}(?:,\d{3})+|\d{3,6})\b/g)].some((m) => {
+      const n = Number(m[1]!.replace(/,/g, ''));
+      return n >= lo && n <= hi;
+    });
+
+  const namesWhat = namesCategory || citesThousands || citesNumber;
+
+  if (!namesWhat) {
+    flags.push('acknowledged a gap without naming what was omitted');
+  }
+
+  return { correct: !claimsBare && !claimsComplete && acknowledges && namesWhat, flags };
 }
 
 /** Weakly-connected component count over the emitted graph. */
