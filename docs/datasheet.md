@@ -357,16 +357,37 @@ The last row is the one that matters: the memorisation defence holds.
 
 ### What the synthetic area can and cannot measure
 
-Measured, not assumed. Four kinds were run there; two work and two have no valid
-ground truth.
+Measured, not assumed. Three kinds are generated there now (`route` and `turns`
+were dropped: no valid ground truth), and all three were run on
+`opencode/muse-spark-1.3-contributor-free` — an official, versioned model, not a
+codename — at 3 repeats per arm, 27 calls, 0 failures.
 
-| Kind | Status | Why |
-|---|---|---|
-| `omission` | works | 3/3 supercarto, 1/3 geojson, 0/3 none |
-| `connectivity` | works | 2/2 |
-| `nearest` | works | 2/2 |
-| `route` | **not measurable** | no routable geometry |
-| `turns` | **not measurable** | no routable geometry, and no street names in the maplet |
+| Kind | supercarto | geojson | none |
+|---|---|---|---|
+| `omission` | **3/3** | 1/3 | 0/3 |
+| `nearest` | **3/3** | 0/3 | 0/3 |
+| `connectivity` | **3/3** | 3/3 | 0/3 |
+| **total** | **9/9** | 4/9 | 0/9 |
+
+Three readings of that table, in decreasing order of comfort:
+
+1. **The floor is clean.** The no-map arm scores 0/9 on a fixture nothing can have
+   memorised. Every point the supercarto arm earns above zero is points for the
+   representation, not for training data.
+2. **Omission is the thesis, and it holds.** 3/3 against 1/3 against 0/3, on three
+   uncontrolled repeats. The single geojson pass came from a model reasoning about
+   the data's shape (suspiciously round bounds), not from reading a record — raw
+   GeoJSON never signals incompleteness explicitly.
+3. **`nearest` is where the arms separate hardest.** The geojson arm recalled 80%
+   of the shown names all three times but invented 4 places each time, so it failed
+   all three on hallucination. Burying a model in 173k tokens does not just cost
+   tokens; it makes the model confabulate.
+
+Two caveats that travel with these numbers wherever they go: 3 repeats are 3
+uncontrolled draws, not 3 seeds — no seed reaches the model on the free path, so
+there are no confidence intervals. And the geojson arm completed all 9 calls with no
+timeouts on this model, where it timed out 2/3 on the earlier codename models; arm
+reliability is a property of the model, not just of the fixture size.
 
 The two failures share a root cause worth recording, because it is the worst kind of
 benchmark bug: **a ground-truth source that reports success for a route it did not

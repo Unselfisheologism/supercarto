@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import {
   FREEMODELS,
   UNREACHABLE_FREEMODELS,
+  EXCLUDED_FREEMODELS,
   OpencodeDriver,
   parseEvents,
   resolveBin,
@@ -273,6 +274,14 @@ describe('free model list', () => {
     expect(UNREACHABLE_FREEMODELS['opencode/ling-3.0-flash-fin-free']).toMatch(/route/i);
   });
 
+  it('omits codenames even while they serve', () => {
+    // space-bunny-free answers requests today, but it is a codename with no
+    // public model identity, and fledge-alpha-free showed that kind of name can
+    // be withdrawn without notice - taking every run's reproducibility with it.
+    expect(FREEMODELS.join(' ')).not.toMatch(/space-bunny/);
+    expect(EXCLUDED_FREEMODELS['opencode/space-bunny-free']).toMatch(/codename/i);
+  });
+
   it('lists only free models', () => {
     for (const m of FREEMODELS) expect(m).toMatch(/-free$/);
   });
@@ -317,7 +326,10 @@ describe('free model reachability', () => {
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l.endsWith('-free'));
-    const excluded = new Set(Object.keys(UNREACHABLE_FREEMODELS));
+    const excluded = new Set([
+      ...Object.keys(UNREACHABLE_FREEMODELS),
+      ...Object.keys(EXCLUDED_FREEMODELS),
+    ]);
     const expected = free.filter((m) => !excluded.has(m)).sort();
     expect([...FREEMODELS].sort()).toEqual(expected);
   }, 180_000);

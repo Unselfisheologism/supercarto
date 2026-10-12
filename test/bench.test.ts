@@ -214,6 +214,15 @@ describe('connected components', () => {
     expect(scoreConnectivity(g, 'I cannot determine this')).toBe(false);
     expect(scoreConnectivity(g, 'they are all connected')).toBe(false);
     expect(scoreConnectivity(g, 'one is isolated')).toBe(true);
+    // The measured case: a refusal that names the keyword inside the refusal.
+    // "Whether places are connected or isolated cannot be determined" states no
+    // position, and the word "isolated" occurring in it is not a claim.
+    expect(
+      scoreConnectivity(
+        g,
+        'No map data was provided, so whether places are connected by walkable paths or isolated cannot be determined from the graph.',
+      ),
+    ).toBe(false);
   });
 });
 

@@ -615,6 +615,17 @@ export function acknowledgesOmission(answer: string): boolean {
  * connected components of the real world, which the task does not have.
  */
 export function scoreConnectivity(graph: SpatialGraph, answer: string): boolean {
+  /**
+   * A refusal makes no connectivity claim, even when it names one.
+   *
+   * Measured on the synthetic area: the no-map arm answered "whether places are
+   * connected by walkable paths or isolated cannot be determined", which contains
+   * the word "isolated" inside a refusal and passed against a 20-component graph.
+   * Two of three refusals passed that way; the third failed only because it used
+   * different words. An unstated position is not agreement, in either direction.
+   */
+  if (isRefusal(answer)) return false;
+
   const components = connectedComponents(graph);
   const isolated = components > 1;
   const claimsIsolated = /\b(isolated|not connected|no path|separate)\b/i.test(answer);

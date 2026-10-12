@@ -8,7 +8,7 @@
  */
 
 import { buildTasks, TASK_AREAS, type TaskArea } from './tasks.js';
-import { connectedComponents, failures, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
+import { failures, scoreConnectivity, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
 import { fingerprintPrompt, ResponseArchive, type Exchange } from './archive.js';
 import type { ScoredTask } from './score.js';
 import type { GroundTruth } from './types.js';
@@ -223,11 +223,10 @@ function scoreAgainst(
     }
     case 'connectivity': {
       if (truth.components === undefined) return { correct: null, scoredBy: 'failed' };
-      const g = truth.graph!;
-      const isolated = g ? connectedComponents(g) > 1 : truth.components > 1;
-      const saysIsolated = /\b(isolated|not connected|no path|separate)\b/i.test(answer);
-      const saysAll = /\b(all (are )?connected|every one is|fully connected)\b/i.test(answer);
-      const correct = isolated ? saysIsolated && !saysAll : saysAll && !saysIsolated;
+      // Delegates to the shared scorer. This used to be an inline copy of the
+      // keyword regexes, and inline copies drift: the shared version learned that
+      // a refusal naming the keyword is still a refusal, and this copy did not.
+      const correct = scoreConnectivity(truth.graph!, answer);
       return { correct, scoredBy: 'exact', rationale: `${truth.components} component(s) in graph` };
     }
     case 'omission': {

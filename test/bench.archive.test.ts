@@ -10,6 +10,7 @@ import {
 import { ArchivingClient, type RunIdentity } from '../src/bench/archiving.js';
 import { rescore, scoreArchived } from '../src/bench/rescore.js';
 import { scoreOmission } from '../src/bench/score.js';
+import type { SpatialGraph } from '../src/index.js';
 import type { ModelClient } from '../src/bench/models.js';
 import type { ModelRequest } from '../src/bench/types.js';
 import type { ScoredTask } from '../src/bench/score.js';
@@ -303,9 +304,25 @@ describe('re-scoring offline', () => {
   });
 
   it('requires a positive claim on connectivity', () => {
-    const empty = scoreArchived(exchange({ answer: '' }), 'connectivity', { components: 1 });
+    // Truth always carries the graph in production — groundTruth() sets it
+    // alongside the count — so the scorer takes the graph, not the number.
+    const connected = {
+      components: 1,
+      graph: {
+        nodes: [
+          { id: 'a', kind: 'intersection', features: [] },
+          { id: 'b', kind: 'intersection', features: [] },
+        ],
+        edges: [{ from: 'a', to: 'b' }],
+      } as unknown as SpatialGraph,
+    };
+    const empty = scoreArchived(exchange({ answer: '' }), 'connectivity', connected);
     expect(empty.correct).toBe(false);
-    const claimed = scoreArchived(exchange({ answer: 'they are all connected' }), 'connectivity', { components: 1 });
+    const claimed = scoreArchived(
+      exchange({ answer: 'they are all connected' }),
+      'connectivity',
+      connected,
+    );
     expect(claimed.correct).toBe(true);
   });
 

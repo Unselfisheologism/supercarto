@@ -349,7 +349,6 @@ export const FREEMODELS = [
   'opencode/muse-spark-1.3-contributor-free',
   'opencode/nemotron-3-ultra-free',
   'opencode/nemotron-3.5-lightning-free',
-  'opencode/space-bunny-free',
   'opencode/step-5-preview-free',
 ] as const;
 
@@ -373,4 +372,20 @@ export const UNREACHABLE_FREEMODELS: Record<string, string> = {
   // see it was considered. The earlier `fledge` arms in bench-results/ were run
   // while it worked, which is the archive being useful for exactly this reason.
   'opencode/fledge-alpha-free': 'withdrawn from opencode models; provider returns no-route',
+};
+
+/**
+ * Models the CLI lists as free and which serve requests, but which are out of
+ * the benchmark by policy rather than by failure.
+ *
+ * A separate map from UNREACHABLE because the reason is different: these work,
+ * and conflating "works but excluded" with "cannot serve" would teach the wrong
+ * lesson about what the exclusion means. Same auditability contract otherwise.
+ */
+export const EXCLUDED_FREEMODELS: Record<string, string> = {
+  // A codename with no public model identity. fledge-alpha-free was the same kind
+  // of name and was withdrawn without notice, taking the reproducibility of every
+  // run against it with it. A benchmark number attached to an unidentified model
+  // has a half-life, so codenames are not benchmarked even while they serve.
+  'opencode/space-bunny-free': 'codename; real model identity unknown, withdrawable without notice',
 };
