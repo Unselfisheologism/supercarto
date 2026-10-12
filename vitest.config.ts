@@ -17,8 +17,15 @@ export default defineConfig({
      *
      * Raising the ceiling does not slow anything down. A test that genuinely hangs
      * still fails, just later.
+     *
+     * Raised again from 30s to 60s after `bench.frozen-truth.test.ts` failed once
+     * in four full-suite runs and never again. It compiles a 4,570-feature grid,
+     * and it shares a phone with every other suite in the run, so its per-test cost
+     * is a function of machine speed as much as of code. A flaky suite trains the
+     * reader to distrust the results, which is the specific failure this file exists
+     * to prevent.
      */
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

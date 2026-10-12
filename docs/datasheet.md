@@ -269,16 +269,44 @@ found by reading the code. Each invalidated a run on its own.
 **Present for the fixture path.** `test/bench.validity.test.ts` asserts a solver
 given the ground truth scores 100% on each task. Its absence is why defect 3 shipped.
 
-**Absent for the live path.** Route truth is queried live at run time, so no offline
-oracle can validate it. A systematic OSRM routing bias would pass every task.
+**Absent for the live path.** Route truth was queried live at run time, so no offline
+oracle could validate it. That path is now unreachable in practice: the demo router
+returns impossible distances (§ "The routing oracle is unusable"), so route truth is
+rejected before it can be graded. The live path is not trustworthy and is not used.
+
+## 10a. Truth is frozen and reproducible
+
+Every kind that still measures something derives its truth from the fixture through
+`compileFixture`, a pure function of fixture, area and budget. There is no `Date.now`
+and no `Math.random` anywhere in the truth path — those appear only in metadata and
+timing.
+
+This means a re-score reproduces the original run's truth exactly, not approximately.
+Two runs a month apart cannot disagree, because nothing in the computation reaches
+the network. The fixtures are committed and their sha256 is recorded in the archive
+metadata, so the inputs are pinned as well as the outputs.
+
+`test/bench.frozen-truth.test.ts` pins this by wiring the reference router and the
+live maplet to throw, then asserting truth still comes back populated and identical
+across two calls. It also carries the control that makes the other assertions mean
+something: with the fixture removed, truth *must* come back empty, which proves the
+stubs actually fired rather than the test passing vacuously against silently empty
+truth.
+
+The freeze machinery that would have been written for the live oracle turned out not
+to be needed, because the only kinds that used it are the ones that turned out not to
+be measurable.
 
 ## 11. Known limitations
 
 - **No confidence intervals are possible on the free path.** No seed reaches the
   model. Repeats are not independent samples.
 - **Token counts are estimates**, so only ratios between arms are meaningful.
-- **Ground truth is OSRM, not the real world.** The claim is about token cost and
-  readability, not route optimality.
+- **Route and turn-by-turn are unmeasurable on every area** — the reference router is
+  a shared demo server with an experimental walking profile that returns distances
+  shorter than the straight line. Three of five task kinds measure something.
+- **Ground truth is OSRM, not the real world**, for the two kinds it still applied
+  to. The claim is about token cost and readability, not route optimality.
 - **Distance tolerance is 15%.** A systematic bias inside that band passes.
 - **Hallucination detection is an upper bound.** Messy OSM names are genuinely
   ambiguous in comma-separated prose; on an oracle listing all 181 sf-cbd names it
