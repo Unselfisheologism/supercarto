@@ -1,0 +1,148 @@
+{
+  "generatedAt": "2026-10-13T09:34:40.264Z",
+  "models": [
+    "opencode-step-5-preview-free"
+  ],
+  "archives": 1,
+  "rows": 9,
+  "detail": [
+    {
+      "taskId": "synthetic-expansion/expansion#supercarto@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "supercarto",
+      "seed": 0,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "true 1204m²; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#supercarto@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "supercarto",
+      "seed": 1,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "true 1204m²; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#supercarto@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "supercarto",
+      "seed": 2,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "true 1204m²; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#geojson@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "geojson",
+      "seed": 0,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "true 1204m²; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#geojson@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "geojson",
+      "seed": 1,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "true 1204m²; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#geojson@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "geojson",
+      "seed": 2,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "true 1204m²; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#none@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "none",
+      "seed": 0,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#none@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "none",
+      "seed": 1,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#none@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "none",
+      "seed": 2,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    }
+  ],
+  "fixtures": {
+    "kuala-lumpur": 183,
+    "oslo": 1112,
+    "reykjavik": 1104,
+    "rural-montana": 1,
+    "sf-cbd": 720,
+    "singapore": 301,
+    "sydney": 1167,
+    "synthetic-expansion": 5,
+    "synthetic-pacific": 4570,
+    "tokyo-shimbashi": 443
+  },
+  "summary": [
+    {
+      "model": "opencode-step-5-preview-free",
+      "representation": "supercarto",
+      "accuracy": 1,
+      "completion": 1,
+      "medianInputTokens": 753,
+      "totalInputTokens": 2259,
+      "meanWallMs": 0,
+      "accuracySpread": 0,
+      "failures": 0
+    },
+    {
+      "model": "opencode-step-5-preview-free",
+      "representation": "geojson",
+      "accuracy": 1,
+      "completion": 1,
+      "medianInputTokens": 478,
+      "totalInputTokens": 1434,
+      "meanWallMs": 0,
+      "accuracySpread": 0,
+      "failures": 0
+    },
+    {
+      "model": "opencode-step-5-preview-free",
+      "representation": "none",
+      "accuracy": 0,
+      "completion": 1,
+      "medianInputTokens": 281,
+      "totalInputTokens": 843,
+      "meanWallMs": 0,
+      "accuracySpread": 0,
+      "failures": 0
+    }
+  ],
+  "failures": []
+}

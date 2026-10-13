@@ -1,0 +1,153 @@
+{
+  "generatedAt": "2026-10-13T08:42:57.571Z",
+  "models": [
+    "opencode-step-5-preview-free"
+  ],
+  "archives": 1,
+  "rows": 9,
+  "detail": [
+    {
+      "taskId": "synthetic-expansion/expansion#supercarto@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "supercarto",
+      "seed": 0,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "inside: Cafe Alba; answered without expanding; wrongly included: cafe bex, cafe coro",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#supercarto@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "supercarto",
+      "seed": 1,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "inside: Cafe Alba; answered without expanding; wrongly included: cafe bex, cafe coro",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#supercarto@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "supercarto",
+      "seed": 2,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "inside: Cafe Alba; answered without expanding",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#geojson@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "geojson",
+      "seed": 0,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "inside: Cafe Alba; answered without expanding; wrongly included: cafe bex, cafe coro",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#geojson@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "geojson",
+      "seed": 1,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "inside: Cafe Alba; answered without expanding; wrongly included: cafe bex, cafe coro",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#geojson@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "geojson",
+      "seed": 2,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "inside: Cafe Alba; answered without expanding; wrongly included: cafe bex, cafe coro",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#none@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "none",
+      "seed": 0,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#none@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "none",
+      "seed": 1,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-expansion/expansion#none@1024",
+      "model": "opencode/step-5-preview-free",
+      "representation": "none",
+      "seed": 2,
+      "correct": null,
+      "scoredBy": "failed",
+      "rationale": null,
+      "error": "subject model used tools (question); run voided rather than scored"
+    }
+  ],
+  "fixtures": {
+    "kuala-lumpur": 183,
+    "oslo": 1112,
+    "reykjavik": 1104,
+    "rural-montana": 1,
+    "sf-cbd": 720,
+    "singapore": 301,
+    "sydney": 1167,
+    "synthetic-expansion": 5,
+    "synthetic-pacific": 4570,
+    "tokyo-shimbashi": 443
+  },
+  "summary": [
+    {
+      "model": "opencode-step-5-preview-free",
+      "representation": "supercarto",
+      "accuracy": 0.333,
+      "completion": 1,
+      "medianInputTokens": 769,
+      "totalInputTokens": 2307,
+      "meanWallMs": 0,
+      "accuracySpread": 1,
+      "failures": 0
+    },
+    {
+      "model": "opencode-step-5-preview-free",
+      "representation": "geojson",
+      "accuracy": 0,
+      "completion": 1,
+      "medianInputTokens": 494,
+      "totalInputTokens": 1482,
+      "meanWallMs": 0,
+      "accuracySpread": 0,
+      "failures": 0
+    },
+    {
+      "model": "opencode-step-5-preview-free",
+      "representation": "none",
+      "accuracy": 0,
+      "completion": 0.667,
+      "medianInputTokens": 297,
+      "totalInputTokens": 594,
+      "meanWallMs": 0,
+      "accuracySpread": 0,
+      "failures": 1
+    }
+  ],
+  "failures": [
+    {
+      "cause": "used tools (voided)",
+      "n": 1
+    }
+  ]
+}
