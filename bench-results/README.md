@@ -15,6 +15,10 @@ are wrong in ways the reports themselves now flag.
 | smoke-full.report.json | Scores for the above, re-derivable with scripts/report-free-ladder.ts |
 | smoke2.opencode-fledge-alpha-free.jsonl | 14 rows, same shape, a second smoke run |
 | smoke2.report.json | Scores for the above |
+| synthetic-muse.opencode-muse-spark-1.3-contributor-free.jsonl | 27 rows: synthetic-pacific, omission/nearest/connectivity x 3 arms x 3 repeats |
+| synthetic-muse.report.json | supercarto 9/9, geojson 4/9, none 0/9 |
+| synthetic-step5.opencode-step-5-preview-free.jsonl | 27 rows, same shape, second official model, clean config home |
+| synthetic-step5.report.json | supercarto 9/9, geojson 3/9, none 0/9 |
 
 Each JSONL line is one model call: the exact system and user prompts, a SHA-256
 over them, the raw answer, token counts, and the timestamp. Nothing is summarised
@@ -27,6 +31,21 @@ npx tsx scripts/report-free-ladder.ts --out bench-results --report recheck.json
 That is the point of the archive format, and it is why these files are committed
 rather than regenerated: the model behind a free-tier alias can be withdrawn, and
 re-running would then measure something else.
+
+## Reproducibility check, 2026-10-13
+
+All four archives in this directory re-score under the current harness to the
+numbers in their committed reports, in one blended run:
+
+- synthetic-muse: supercarto 100%, geojson 44%, none 0%
+- synthetic-step5: supercarto 100%, geojson 33%, none 0%
+- smoke-full / smoke2: unchanged from their committed reports
+
+Command: `npx tsx scripts/report-free-ladder.ts --out bench-results --report
+recheck.json`. No model calls; truth is recomputed from the committed fixtures
+and the archived answers are re-graded. The per-model rows separate cleanly
+because every row carries its own task, arm, seed and prompt hash — blending
+archives does not blend claims.
 
 ## Read these before quoting any number
 
