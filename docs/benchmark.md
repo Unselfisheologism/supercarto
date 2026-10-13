@@ -161,6 +161,32 @@ protocol section, because it cannot be checked.
 
 ---
 
+## Reproducing the published numbers
+
+Free path only. Every published number comes from `scripts/run-free-ladder.ts`
+against committed fixtures, with raw archives under `bench-results/`.
+
+```bash
+# The representation comparison (3 kinds x 3 arms x 3 repeats, 27 calls)
+npx tsx scripts/run-free-ladder.ts \
+  --only "synthetic-pacific/omission-awareness,synthetic-pacific/nearest-poi,synthetic-pacific/connectivity" \
+  --model opencode/muse-spark-1.3-contributor-free \
+  --seeds 3 --budget 30 --out .bench/my-run \
+  --report .bench/my-run-report.json
+
+# Agentic tracks (expansion needs the MCP server; heat and diff do not)
+npx tsx scripts/run-free-ladder.ts --only "synthetic-expansion/expansion" \
+  --model opencode/muse-spark-1.3-contributor-free --seeds 3 --agentic \
+  --out .bench/my-expand --report .bench/my-expand-report.json
+
+# Re-score any archive with current code, spending no model calls
+npx tsx scripts/report-free-ladder.ts --out bench-results --report recheck.json
+```
+
+Rules that keep a rerun honest: `--budget` caps calls per invocation;
+resume reuses archived rows by key and refuses prompt-hash mismatches (use
+a fresh `--out` after any prompt change); default models exclude codenames
+(`EXCLUDED_FREEMODELS`) and unreachable endpoints (`UNREACHABLE_FREEMODELS`).
 ## The areas
 
 Chosen to be awkward rather than representative.

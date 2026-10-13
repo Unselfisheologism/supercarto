@@ -116,10 +116,13 @@ maintainers and anyone choosing how to feed map data to an agent.
 Apache-2.0, same as the code. `fixtures/bench/*.geojson` and `bench-results/*.jsonl`
 are committed.
 
-Not yet done, and required before release: Croissant dataset metadata, a persistent
-identifier, and a stated licence for the underlying OSM extract (ODbL, which
-obliges attribution and share-alike for derived databases — **this has not been
-checked and is a real compliance question, not a formality**).
+Licences, answered per file in `fixtures/bench/ATTRIBUTION.md` (2026-10-13):
+code and the five synthetic fixtures are Apache-2.0 and original; the eight
+city fixtures are Overpass-derived and stay under ODbL 1.0 with ©
+OpenStreetMap contributors attribution, including share-alike on the database
+itself. The Apache licence was never capable of relicensing OSM data, and no
+longer claims to.
+Not yet done: Croissant dataset metadata and a persistent identifier.
 
 ## 7. Maintenance
 
@@ -485,6 +488,15 @@ not started. The single-turn numbers already carry the headline: fusing a
 summary with a two-line diff answers correctly on both models, at a
 fraction of a full resend.
 
+Phase 3 is parked by design decision, not by backlog. Multi-turn state
+accumulation belongs to the agent harness - the thing that decides when to
+ask, holds the conversation, and maintains spatial memory across moves -
+not to the map tool. Supercarto contract ends at offering correct, cheap
+diffs; exploiting them across turns is the harness author’s job.
+Benchmarking accumulation would test the agent, not the tool, and this
+benchmark measures the tool. The single-turn reading task is the complete
+half: it proves the protocol half that is ours to prove.
+
 ## 12. The `omission` task: measuring the protocol instead of the map
 
 Every other task kind is satisfiable by a sufficiently good map of the area. The
@@ -704,8 +716,18 @@ done; the rest stand, one of them unmeetable.
 4. ⚠️ **A panel spanning model families.** Two official models (Muse Spark 1.3,
    step-5-preview), agreeing 9/9 vs ~3/9 vs 0/9. No small local model — the docs'
    "mandatory" item is unmet, and free-tier-only running is the reason.
-5. ❌ **The ODbL question**, still assumed, not answered.
-6. ❌ **Croissant metadata and a persistent identifier**, still missing.
+5. ✅ **The ODbL question**, answered per file in
+   `fixtures/bench/ATTRIBUTION.md` (2026-10-13): code and five synthetic
+   fixtures Apache-2.0; eight Overpass-derived city fixtures ODbL 1.0 with
+   © OpenStreetMap contributors attribution and database share-alike.
+6. ⚠️ **Croissant metadata written (`croissant.json`), identifier not minted.**
+   Minting needs a Zenodo deposit, which needs a human with an account -
+   not doable from here. The file is ready to deposit.
+7. ✅ **Contamination guards (ABC R.3/R.4).** BIG-bench-style canary GUIDs
+   in all 13 fixtures plus unique task ids per instance. Verdict: fixtures
+   load identically with canaries present (65 fixture-touching tests green).
+8. ✅ **Changelog and rerun quick-start.** `CHANGELOG.md` and a
+   `docs/benchmark.md` reproduction section with the exact commands.
 7. ❌ **Seed control / confidence intervals.** Unmeetable on the free path:
    `opencode run` accepts no seed, so repeats are uncontrolled draws. This is a
    platform limit, not a to-do, and it caps how strongly any number here can be

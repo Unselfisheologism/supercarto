@@ -1,0 +1,56 @@
+{
+  "@context": {
+    "@language": "en",
+    "@vocab": "https://schema.org/"
+  },
+  "@type": "Dataset",
+  "name": "supercarto-bench",
+  "description": "Benchmark fixtures and raw runs for comparing map-data representations for LLM agents (compiled topological graph vs raw GeoJSON vs no map) on accuracy and context-token cost. Fixtures: unmemorizable synthetic micro-areas plus eight Overpass-derived city extracts. See docs/datasheet.md for the full datasheet and docs/benchmark-sop.txt for the methodology checklist it was worked from.",
+  "version": "0.4.8",
+  "license": [
+    "https://www.apache.org/licenses/LICENSE-2.0",
+    "https://opendatacommons.org/licenses/odbl/1-0/"
+  ],
+  "creator": [
+    {
+      "@type": "Person",
+      "name": "Unselfisheologism"
+    }
+  ],
+  "keywords": ["benchmark", "large language models", "agents", "maps", "geospatial", "context efficiency"],
+  "distribution": [
+    {
+      "@type": "FileObject",
+      "name": "synthetic-fixtures-apache-2.0",
+      "description": "Original synthetic fixtures (fake coordinates, fake names). Apache-2.0.",
+      "contentUrl": "fixtures/bench/synthetic-pacific.geojson",
+      "encodingFormat": "application/geo+json"
+    },
+    {
+      "@type": "FileObject",
+      "name": "osm-derived-fixtures-odbl",
+      "description": "Overpass-derived city extracts. ODbL 1.0, © OpenStreetMap contributors. See fixtures/bench/ATTRIBUTION.md.",
+      "contentUrl": "fixtures/bench/sf-cbd.geojson",
+      "encodingFormat": "application/geo+json"
+    },
+    {
+      "@type": "FileObject",
+      "name": "raw-run-archives",
+      "description": "Raw model-call archives (prompts, answers, token counts) behind every published number. Re-score with scripts/report-free-ladder.ts.",
+      "contentUrl": "bench-results/",
+      "encodingFormat": "application/jsonlines"
+    }
+  ],
+  "recordSet": [
+    {
+      "@type": "RecordSet",
+      "name": "benchmark-tasks",
+      "description": "One row per (task, arm, seed): task id, representation shown, model answer, programmatic verdict. See bench-results/*.report.json.",
+      "field": [
+        { "@type": "Field", "name": "taskId", "description": "Area and kind, e.g. synthetic-pacific/omission-awareness." },
+        { "@type": "Field", "name": "representation", "description": "supercarto, geojson, or none." },
+        { "@type": "Field", "name": "correct", "description": "True, false, or null when unscoreable." }
+      ]
+    }
+  ]
+}
