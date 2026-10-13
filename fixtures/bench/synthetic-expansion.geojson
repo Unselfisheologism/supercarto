@@ -1,0 +1,52 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 100,
+      "properties": { "layer": "building", "building": "yes" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-150.01025, 44.009864],
+            [-150.00975, 44.009864],
+            [-150.00975, 44.010136],
+            [-150.01025, 44.010136],
+            [-150.01025, 44.009864]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 101,
+      "properties": { "layer": "poi", "name": "Cafe Alba" },
+      "geometry": { "type": "Point", "coordinates": [-150.01, 44.01] }
+    },
+    {
+      "type": "Feature",
+      "id": 102,
+      "properties": { "layer": "poi", "name": "Cafe Bex" },
+      "geometry": { "type": "Point", "coordinates": [-150.009438, 44.01] }
+    },
+    {
+      "type": "Feature",
+      "id": 103,
+      "properties": { "layer": "poi", "name": "Cafe Coro" },
+      "geometry": { "type": "Point", "coordinates": [-150.0106, 44.0095] }
+    },
+    {
+      "type": "Feature",
+      "id": 104,
+      "properties": { "layer": "road", "name": "Meridian Walk" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-150.0106, 44.0097],
+          [-150.0094, 44.0097]
+        ]
+      }
+    }
+  ]
+}

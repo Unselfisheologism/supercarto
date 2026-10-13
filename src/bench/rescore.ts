@@ -8,7 +8,7 @@
  */
 
 import { buildTasks, TASK_AREAS, type TaskArea } from './tasks.js';
-import { failures, scoreConnectivity, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
+import { failures, scoreConnectivity, scoreExpansion, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
 import { fingerprintPrompt, ResponseArchive, type Exchange } from './archive.js';
 import type { ScoredTask } from './score.js';
 import type { GroundTruth } from './types.js';
@@ -151,7 +151,7 @@ export function scoreArchived(
     return { ...base, correct: null, scoredBy: 'failed' as const, error: e.error };
   }
 
-  const verdict = scoreAgainst(kind, e.answer, truth);
+  const verdict = scoreAgainst(kind, e.answer, truth, e.toolsUsed);
   return { ...base, ...verdict };
 }
 
@@ -159,6 +159,7 @@ function scoreAgainst(
   kind: string,
   answer: string,
   truth: GroundTruth,
+  toolsUsed?: string[],
 ): { correct: boolean | null; scoredBy: ScoredTask['scoredBy']; rationale?: string } {
   /**
    * Refusal short-circuits the rest of the switch.
@@ -242,6 +243,21 @@ function scoreAgainst(
         rationale:
           `omitted ${truth.omitted.map((o) => `${o.count} ${o.layer}`).join(', ') || 'nothing'}; ` +
           `${v.flags.length ? v.flags.join('; ') : 'acknowledged'}`,
+      };
+    }
+    case 'expand': {
+      // Shared scorer, not a copy. See the omission note above: this file has
+      // hosted drifted duplicates, and a fourth one starts here if the rules
+      // are written out instead of called.
+      if (!truth.inside || !truth.candidates) return { correct: null, scoredBy: 'failed' };
+      const expanded = toolsUsed?.includes('expand_feature') ?? false;
+      const v = scoreExpansion(answer, truth.inside, truth.candidates, expanded);
+      return {
+        correct: v.correct,
+        scoredBy: 'exact',
+        rationale:
+          `inside: ${truth.inside.join(', ') || 'none'}; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'exact set'}`,
       };
     }
     default:

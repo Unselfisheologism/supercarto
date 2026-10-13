@@ -13,12 +13,12 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runLadder } from '../src/bench/ladder.js';
 import { completedCalls } from '../src/bench/cli-run.js';
 import { FREEMODELS } from '../src/bench/driver/opencode.js';
 import { OpencodeDriver } from '../src/bench/driver/opencode.js';
-import { buildTasks, TASK_AREAS, SYNTHETIC_AREA } from '../src/bench/tasks.js';
+import { buildTasks, FREE_LADDER_AREAS } from '../src/bench/tasks.js';
 import { runMetadata } from '../src/bench/metadata.js';
 import { archiveName, ResponseArchive } from '../src/bench/archive.js';
 import type { GeoJsonFeatureCollection } from '../src/index.js';
@@ -90,6 +90,17 @@ const concurrency = Number(arg('--concurrency', '1'));
  * which is how it was noticed.
  */
 const dry = process.argv.includes('--dry');
+/**
+ * The agentic track: subjects are offered the benchmark MCP server and may
+ * call `expand_feature` without voiding the run. Anything else still voids.
+ *
+ * A separate invocation flag rather than per-task config, because clients are
+ * constructed per model, not per task. An agentic invocation runs only
+ * expansion tasks (via `--only`); running old tracks with a server offered
+ * would change their dynamics, since the maplet advertises tools the subject
+ * could previously never reach. Old tracks byte-identical by default.
+ */
+const agentic = process.argv.includes('--agentic');
 
 const models = modelFlags.length > 0 ? modelFlags : [...FREEMODELS];
 /**
@@ -99,7 +110,7 @@ const models = modelFlags.length > 0 ? modelFlags : [...FREEMODELS];
  * area a model cannot answer about from memory. Leaving it out of the ladder meant
  * the one task that tests the protocol rather than the map could never be run.
  */
-const allTasks = buildTasks([...TASK_AREAS, SYNTHETIC_AREA]).map((t) => t.id);
+const allTasks = buildTasks(FREE_LADDER_AREAS).map((t) => t.id);
 const totalCalls = allTasks.length * 3 * seeds * models.length;
 
 console.log(`\nmodels: ${models.length}`);
@@ -167,12 +178,27 @@ const results = await runLadder({
   models,
   outDir,
   seeds,
-  areas: [...TASK_AREAS, SYNTHETIC_AREA],
+  areas: FREE_LADDER_AREAS,
   only: capped,
   stopOnRateLimit: true,
   fixtures,
   concurrency,
-  makeClient: (m: string) => new OpencodeDriver({ model: m }),
+  makeClient: (m: string) =>
+    agentic
+      ? new OpencodeDriver({
+          model: m,
+          mcpServer: { command: [process.execPath, resolve('dist/cli/main.js'), 'mcp'] },
+          // expand_feature is the capability under test. read/grep/glob are
+          // tolerated because the subject runs in an empty scratch directory:
+          // exploration there cannot reach ground truth, and killing
+          // explorers aborts the capability under test before it starts
+          // (measured: 8/9 rows voided on first contact with the filesystem,
+          // zero expansions attempted). shell, write, execute-with-payload
+          // and every live-data tool still void: the network is the boundary
+          // that matters, and the scratch dir is not it.
+          allowedTools: ['expand_feature', 'read', 'grep', 'glob'],
+        })
+      : new OpencodeDriver({ model: m }),
   onProgress: (m: string) => console.log(m),
 });
 

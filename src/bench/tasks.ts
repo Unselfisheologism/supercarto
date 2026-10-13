@@ -22,7 +22,7 @@
 
 import type { LatLon } from './types.js';
 
-export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission';
+export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission' | 'expand';
 
 export interface BenchmarkTask {
   id: string;
@@ -51,7 +51,7 @@ export interface BenchmarkTask {
    * Recorded rather than assumed, because a score without a stated provenance
    * is a score nobody can audit.
    */
-  groundTruth: 'osrm' | 'source-data' | 'self-consistent' | 'omission-record';
+  groundTruth: 'osrm' | 'source-data' | 'self-consistent' | 'omission-record' | 'fixture-geometry';
 }
 
 export interface TaskArea {
@@ -186,6 +186,57 @@ export const SYNTHETIC_AREA: TaskArea = {
   adversarial: true,
 };
 
+/**
+ * The expansion area: one building, three cafes, one street.
+ *
+ * A separate micro-fixture rather than a corner of the dense synthetic area,
+ * because the task needs a designed configuration - one cafe inside the
+ * footprint, two outside, all near enough that proximity does not answer it -
+ * and none exists in the generated grid (measured: zero cafes inside any of
+ * its 40 buildings). Extending the dense fixture instead would re-freeze it
+ * and invalidate the committed archives scored against it.
+ */
+export const SYNTHETIC_EXPANSION_AREA: TaskArea = {
+  id: 'synthetic-expansion',
+  label: 'Synthetic micro-area for the expansion task',
+  center: { lat: 44.01, lon: -150.01 },
+  radiusM: 400,
+  rationale:
+    'Same ocean, different coordinates, same unmemorisability. Five features: ' +
+    'a 40x30m unnamed building footprint (wire id 100), one cafe inside it ' +
+    '(Cafe Alba, 101), two outside it (Cafe Bex 25m east of the edge, Cafe ' +
+    'Coro further southwest), and a street for context (Meridian Walk, 104). ' +
+    'The maplet names the cafes but carries no coordinates, so the only path ' +
+    'to the answer runs through expand_feature.',
+  adversarial: true,
+};
+
+/**
+ * Every area the free ladder runs.
+ *
+ * One list, because the alternative has now failed four times: the ladder
+ * driver, the ladder summary, and the report script each kept their own copy
+ * of `[...TASK_AREAS, SYNTHETIC_AREA]`, and each new area silently vanished
+ * from whichever copy was forgotten. The fourth copy dropped every expansion
+ * row and printed a table of dashes that looked like "nothing archived".
+ */
+export const FREE_LADDER_AREAS: readonly TaskArea[] = [
+  ...TASK_AREAS,
+  SYNTHETIC_AREA,
+  SYNTHETIC_EXPANSION_AREA,
+];
+
+/** The expansion task: answerable only from exact geometry, via the tool. */
+export const EXPANSION_QUESTION =
+  'Building footprint feature 100 is summarised in this map but its exact ' +
+  'shape is not shown. The three cafes below are named but their coordinates ' +
+  'are not shown either. Which of Cafe Alba, Cafe Bex, Cafe Coro lie inside ' +
+  'the footprint of feature 100? Answer with the names, and nothing else ' +
+  'determines it: call expand_feature with the document below to inspect ' +
+  'exact geometry before answering. Work with the expand_feature tool. ' +
+  'Filesystem, shell and execution tools will void your answer, and the task ' +
+  'directory is empty: there is nothing to find by exploring it.';
+
 /** The question the omission task asks. */
 export const OMISSION_QUESTION =
   'Does the map data you were given show everything that is present in this ' +
@@ -267,6 +318,31 @@ export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTa
         radiusM: area.radiusM,
         mode: 'walk',
         groundTruth: 'self-consistent',
+      });
+
+      continue;
+    }
+
+    if (area.id === SYNTHETIC_EXPANSION_AREA.id) {
+      /**
+       * The expansion task is the only kind here.
+       *
+       * The fixture is five features with a designed configuration, not a
+       * neighbourhood, so nearest/connectivity/omission would measure nothing:
+       * nearest would be trivially complete, connectivity is one street,
+       * omission has nothing worth dropping. Generating them anyway would pad
+       * the benchmark with free points - the same class of error as scoring a
+       * refusal as agreement, in that the number goes up for reasons unrelated
+       * to the capability.
+       */
+      out.push({
+        id: `${area.id}/expansion`,
+        kind: 'expand',
+        question: EXPANSION_QUESTION,
+        center: area.center,
+        radiusM: area.radiusM,
+        mode: 'walk',
+        groundTruth: 'fixture-geometry',
       });
 
       continue;

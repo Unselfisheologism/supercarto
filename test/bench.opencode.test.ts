@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -8,6 +8,7 @@ import {
   UNREACHABLE_FREEMODELS,
   EXCLUDED_FREEMODELS,
   OpencodeDriver,
+  matchesAllowlist,
   parseEvents,
   resolveBin,
 } from '../src/bench/driver/opencode.js';
@@ -114,6 +115,119 @@ describe('opencode driver', () => {
       );
       const driver = new OpencodeDriver({ model: 'opencode/fledge-alpha-free', bin, args });
       await expect(driver.call(REQ)).rejects.toThrow(/used tools \(websearch\)/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('voids a tool_use event, not just the legacy tool shape', async () => {    // The stream changed under the harness: current CLIs emit `type:
+    // 'tool_use'` with the provider tool in `part.tool`. Matching only the
+    // legacy `type: 'tool'` left voiding silently inert - every tool call
+    // passed through and was scored. A subject reading files must void even
+    // when the event wears the new shape.
+    try {
+      const { bin, args } = stub(
+        line({ type: 'tool_use', part: { tool: 'read', state: { status: 'completed' } } }) +
+          line({ type: 'text', part: { text: 'file contents here' } }),
+      );
+      const driver = new OpencodeDriver({ model: 'opencode/fledge-alpha-free', bin, args });
+      await expect(driver.call(REQ)).rejects.toThrow(/used tools \(read\)/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads MCP calls nested inside the execute carrier', async () => {
+    // MCP calls arrive as `part.tool: 'execute'` with the real name nested in
+    // `state.metadata.toolCalls`. Judging by the carrier alone would void the
+    // very call the expansion track exists to observe - and did, in effect,
+    // for the whole first agentic run.
+    try {
+      const { bin, args } = stub(
+        line({
+          type: 'tool_use',
+          part: {
+            tool: 'execute',
+            state: {
+              status: 'completed',
+              metadata: { toolCalls: [{ tool: 'supercarto-bench_expand_feature', status: 'completed' }] },
+            },
+          },
+        }) + line({ type: 'text', part: { text: 'Cafe Alba' } }),
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin,
+        args,
+        allowedTools: ['expand_feature'],
+      });
+      const res = await driver.call(REQ);
+      expect(res.text).toBe('Cafe Alba');
+      expect(res.toolsUsed).toEqual(['expand_feature']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('voids a nested call the allowlist does not cover', async () => {    try {
+      const { bin, args } = stub(
+        line({
+          type: 'tool_use',
+          part: {
+            tool: 'execute',
+            state: {
+              status: 'completed',
+              metadata: { toolCalls: [{ tool: 'supercarto-bench_route', status: 'completed' }] },
+            },
+          },
+        }) + line({ type: 'text', part: { text: 'a plausible answer' } }),
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin,
+        args,
+        allowedTools: ['expand_feature'],
+      });
+      await expect(driver.call(REQ)).rejects.toThrow(/supercarto-bench_route/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('matches allowlisted tools under either separator', () => {
+    // Measured: the same expand call arrived underscore-prefixed in one path
+    // and dot-prefixed in another. The first agentic run voided the one
+    // correct expansion for wearing the wrong separator while doing the
+    // right thing.
+    expect(matchesAllowlist('expand_feature', ['expand_feature'])).toBe(true);
+    expect(matchesAllowlist('supercarto-bench_expand_feature', ['expand_feature'])).toBe(true);
+    expect(matchesAllowlist('default.expand_feature', ['expand_feature'])).toBe(true);
+    expect(matchesAllowlist('supercarto-bench_route', ['expand_feature'])).toBe(false);
+    expect(matchesAllowlist('execute', ['expand_feature'])).toBe(false);
+    expect(matchesAllowlist('read', [])).toBe(false);
+  });
+  it('permits a bare carrier on the agentic track and voids it elsewhere', async () => {
+    // An execute with no nested calls is pure local computation. Permitted
+    // where tools exist by allowlist, voided where no tool may run at all.
+    const stream =
+      line({ type: 'tool_use', part: { tool: 'execute', state: { status: 'completed' } } }) +
+      line({ type: 'text', part: { text: 'done' } });
+    try {
+      const a = stub(stream);
+      const agentic = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin: a.bin,
+        args: a.args,
+        allowedTools: ['expand_feature'],
+      });
+      await expect(agentic.call(REQ)).resolves.toMatchObject({ text: 'done' });
+    } finally {
+      cleanup();
+    }
+    try {
+      const b = stub(stream);
+      const strict = new OpencodeDriver({ model: 'opencode/fledge-alpha-free', bin: b.bin, args: b.args });
+      await expect(strict.call(REQ)).rejects.toThrow(/used tools \(execute\)/);
     } finally {
       cleanup();
     }
@@ -252,7 +366,83 @@ describe('opencode driver', () => {
     }
   });
 
-  it('gives the child a clean config home, not the operator’s', async () => {
+  it('permits an allowlisted tool and records its use', async () => {
+    // The expansion track: expand_feature is the capability under test, so
+    // calling it must neither void the run nor abort it mid-answer.
+    try {
+      const { bin, args } = stub(
+        line({ type: 'tool', part: { tool: 'expand_feature', state: { status: 'completed' } } }) +
+          line({ type: 'text', part: { text: 'Cafe Alba' } }),
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin,
+        args,
+        allowedTools: ['expand_feature'],
+      });
+      const res = await driver.call(REQ);
+      expect(res.text).toBe('Cafe Alba');
+      expect(res.toolsUsed).toEqual(['expand_feature']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('still voids a non-allowlisted tool when an allowlist exists', async () => {
+    // The allowlist is permission for one tool, not a relaxation for the rest.
+    // A subject that calls get_maplet reaches live data the frozen truth does
+    // not describe, so the row is voided exactly as on the older tracks.
+    try {
+      const { bin, args } = stub(
+        line({ type: 'tool', part: { tool: 'get_maplet', state: { status: 'completed' } } }) +
+          line({ type: 'text', part: { text: 'a plausible answer' } }),
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin,
+        args,
+        allowedTools: ['expand_feature'],
+      });
+      await expect(driver.call(REQ)).rejects.toThrow(/used tools \(get_maplet\)/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('offers only the benchmark MCP server, in the clean config home', async () => {
+    // The subject must reach exactly one server - the benchmark's own, serving
+    // a document-scoped expand_feature - and nothing the operator configured.
+    // The stub reports its config home; the test reads the file the driver
+    // wrote there rather than trusting the constructor.
+    try {
+      const dir = mkdtempSync(join(tmpdir(), 'oc-stub-'));
+      dirs.push(dir);
+      const script = join(dir, 'cfg.js');
+      writeFileSync(
+        script,
+        'process.stdout.write(JSON.stringify({type:"text",part:{text:process.env.XDG_CONFIG_HOME||"(unset)"}}));',
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin: process.execPath,
+        args: [script],
+        mcpServer: { command: ['node', '/repo/dist/cli/main.js', 'mcp'] },
+      });
+      const res = await driver.call(REQ);
+      const cfg = JSON.parse(readFileSync(join(res.text, 'opencode.jsonc'), 'utf8'));
+      expect(Object.keys(cfg.mcp)).toEqual(['supercarto-bench']);
+      expect(cfg.mcp['supercarto-bench'].command).toEqual([
+        'node',
+        '/repo/dist/cli/main.js',
+        'mcp',
+      ]);
+      expect(cfg.mcp['supercarto-bench'].enabled).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("gives the child a clean config home, not the operator's", async () => {
     // The leak this prevents: the subject inherits the operator's environment,
     // and through it the operator's opencode config - plugins, skills, MCP
     // servers, AGENTS.md, and memory recall. Measured: 5 of 27 answers in one

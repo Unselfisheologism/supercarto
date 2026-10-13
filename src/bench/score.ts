@@ -28,6 +28,8 @@ export interface ScoredTask {
   error?: string;
   /** Judge's reasoning, when there was one. */
   rationale?: string;
+  /** Allowlisted tools the subject called. Absent on tracks without tools. */
+  toolsUsed?: string[];
 }
 
 /**
@@ -641,6 +643,67 @@ export function scoreConnectivity(graph: SpatialGraph, answer: string): boolean 
   // the text "I cannot determine this" makes no connectivity claim at all, and
   // an unstated position is not agreement.
   return claimsAllConnected && !claimsIsolated;
+}
+
+/**
+ * Ray-casting point-in-ring, in whatever planar space the coordinates share.
+ *
+ * One implementation, used by both the runner's ground truth and the tests.
+ * The wire format has no containment primitive, so the alternative is two
+ * copies of this loop disagreeing on edge cases - the duplicated-rules defect
+ * class that has already bitten four times in this harness.
+ */
+export function pointInRing(ring: readonly (readonly [number, number])[], p: readonly [number, number]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]!;
+    const b = ring[j]!;
+    const [xi, yi] = a;
+    const [xj, yj] = b;
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Whether the answer names exactly the places inside the footprint.
+ *
+ * Set equality over normalised names: order-insensitive, case-insensitive,
+ * extra prose tolerated, missing or extra names fatal. A subset ("Cafe Alba"
+ * when two are inside) is the confident-wrong-answer shape - it claims the
+ * question is answered while leaving half of it out - so partial credit is
+ * not a thing here, same as the turns scorer.
+ *
+ * `expanded` rides along as a reported axis, not a gate. A model that reads
+ * the coordinates out of the SCR document directly and answers correctly has
+ * still reasoned over the protocol's data; failing it for not performing tool
+ * theatre would measure compliance rather than capability. But the axis tells
+ * the story the score alone hides: whether the agentic loop did the work.
+ */
+export function scoreExpansion(
+  answer: string,
+  inside: readonly string[],
+  candidates: readonly string[],
+  expanded: boolean,
+): { correct: boolean; flags: string[] } {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const hay = norm(answer);
+  const claimed = candidates.filter((c) => hay.includes(norm(c)));
+  const want = new Set(inside.map(norm));
+  const got = new Set(claimed.map(norm));
+  const flags: string[] = [];
+  if (!expanded) flags.push('answered without expanding');
+  if (want.size === got.size && [...want].every((n) => got.has(n))) {
+    return { correct: true, flags };
+  }
+  const missing = [...want].filter((n) => !got.has(n));
+  const extra = [...got].filter((n) => !want.has(n));
+  if (missing.length > 0) flags.push(`missed: ${missing.join(', ')}`);
+  if (extra.length > 0) flags.push(`wrongly included: ${extra.join(', ')}`);
+  if (claimed.length === 0) flags.push('named none of the candidates');
+  return { correct: false, flags };
 }
 
 /**

@@ -84,7 +84,7 @@ export class ArchivingClient implements ModelClient {
     return this.skipped;
   }
 
-  async call(req: ModelRequest): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  async call(req: ModelRequest): Promise<{ text: string; inputTokens: number; outputTokens: number; toolsUsed?: string[] }> {
     // Identity comes off the request when the runner supplied it, and falls back
     // to the caller's resolver otherwise. A driver cannot work this out from the
     // prompt text alone without breaking whenever a question is reworded.
@@ -125,6 +125,7 @@ export class ArchivingClient implements ModelClient {
         text: prior?.answer ?? '',
         inputTokens: prior?.inputTokens ?? 0,
         outputTokens: prior?.outputTokens ?? 0,
+        ...(prior?.toolsUsed && prior.toolsUsed.length > 0 ? { toolsUsed: prior.toolsUsed } : {}),
       };
     }
     try {
@@ -144,6 +145,7 @@ export class ArchivingClient implements ModelClient {
         inputTokens: res.inputTokens,
         outputTokens: res.outputTokens,
         at: new Date().toISOString(),
+        ...(res.toolsUsed && res.toolsUsed.length > 0 ? { toolsUsed: res.toolsUsed } : {}),
       };
       this.archive.write(record);
       return res;

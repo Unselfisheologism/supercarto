@@ -318,6 +318,49 @@ be measurable.
   failed outright while the same query via CLI succeeded seconds later. Any external
   harness will see flaky failures that read as model errors. `SUPERCARTO_PMTILES`
   is the intended fix and is not configured.
+- **The expansion track is new and unmeasured at the time of writing.** §12a
+  describes the design; numbers land when the runs do.
+
+## 12a. The `expand` task: the first agentic track (benefit #4)
+
+Everything before this was single-turn: the harness showed data, the model
+answered, tool use voided the run. The planning doc's core loop is agentic -
+compact summary now, exact geometry on demand through `expand_feature` - and no
+single-turn task can measure it. So the expansion track offers the subject a
+live MCP server (the benchmark's own, serving a document-scoped
+`expand_feature`) and permits that one tool without voiding.
+
+The task needs a designed configuration - one cafe inside a building footprint,
+two outside, all near enough that proximity does not answer it - and none
+exists in the dense synthetic grid (measured: zero cafes inside any of its 40
+buildings). Extending that fixture would re-freeze it and invalidate the
+committed archives, so the task carries its own five-feature micro-fixture
+(`fixtures/bench/synthetic-expansion.geojson`): a 40x30m unnamed building (wire
+id 100), Cafe Alba inside it, Cafe Bex 25m east of the edge, Cafe Coro further
+southwest, and Meridian Walk for context. Truth is ray casting over the source
+geometry (shared `pointInRing`, one implementation), the maplet names the cafes
+but carries no coordinates, and the prompt bundles the 699-byte SCR document
+for the subject to pass back to the tool.
+
+Scoring is exact set equality over the three names, with expansion riding as a
+reported axis rather than a gate: a model that decodes the bundle directly and
+answers correctly has still reasoned over the protocol's data, and failing it
+for skipping tool theatre would measure compliance, not capability.
+
+Three harness findings came out of building the track, before any score:
+
+1. **`get_maplet` advertises a loop it cannot run.** It returns YAML with a
+   note saying "call expand_feature for exact geometry", but the tool requires
+   an `scr` argument the subject was never given. No subject, in production or
+   benchmark, can expand anything through the advertised path today. The
+   benchmark bundles the document directly, which models the intended protocol
+   and pressures the production fix (scoped-SCR or server-side refs).
+2. **Full-fixture SCR is ~82k tokens**, which is why the bundle only works on
+   a purpose-built micro-fixture - and why production cannot paste it either.
+3. **Tool detection was inert.** The stream emits `tool_use`, the driver
+   matched only legacy `tool`, so no tool use had ever been voided on this CLI
+   version; MCP calls nest inside the `execute` carrier, so judging by the
+   carrier alone voids the very call under test. All fixed, all pinned.
 
 ## 12. The `omission` task: measuring the protocol instead of the map
 

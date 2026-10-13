@@ -41,6 +41,15 @@ export interface ModelResponse {
   /** As reported by the provider, or estimated from character count. */
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Tools the subject called that the harness permitted.
+   *
+   * Populated only by drivers with an allowlist (the expansion track). A
+   * non-allowlisted tool still voids the run rather than appearing here: a
+   * subject that reached for live data has the ground truth available to it,
+   * so its answer cannot be attributed to the maplet.
+   */
+  toolsUsed?: string[];
 }
 
 export interface GroundTruth {
@@ -96,4 +105,13 @@ export interface GroundTruth {
   sourceFeatures?: number;
   /** Features that survived into the emitted graph. */
   emittedNodes?: number;
+  /**
+   * Names inside the footprint, for the `expand` task.
+   *
+   * Computed from the fixture geometry by ray casting, not from any maplet:
+   * the maplet carries no coordinates, so scoring against it would be circular.
+   */
+  inside?: string[];
+  /** Candidate names the expansion question offers. */
+  candidates?: string[];
 }

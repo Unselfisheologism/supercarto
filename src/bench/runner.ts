@@ -24,7 +24,9 @@ import {
   distanceCorrect,
   extractDistanceM,
   isRefusal,
+  pointInRing,
   scoreConnectivity,
+  scoreExpansion,
   scoreNames,
   scoreOmission,
   summarise,
@@ -403,7 +405,7 @@ function geoJsonFromSource(features: GeoJsonFeature[]): string {
   return `Map data:\n${JSON.stringify({ type: 'FeatureCollection', features })}`;
 }
 
-async function buildContext(
+export async function buildContext(
   task: BenchmarkTask,
   representation: Representation,
   budget: number,
@@ -443,6 +445,28 @@ async function buildContext(
     const doc = compileFixture(fixture, task, budget);
     const text = representation === 'geojson' ? geoJsonText(fixture) : `Map data:\n${doc.yaml}`;
     const built = { text };
+    if (representation === 'supercarto' && task.kind === 'expand') {
+      /**
+       * The machine-readable half of the protocol, alongside the readable half.
+       *
+       * This is the architecture the planning doc prescribes: the LLM reads the
+       * YAML summary, and the exact geometry travels as an SCR document the
+       * model passes back to expand_feature without needing to parse it. The
+       * micro-fixture keeps it small (hundreds of bytes); bundling the full
+       * dense fixture's SCR would cost ~82k tokens and is why the production
+       * get_maplet cannot do this yet - recorded, not solved here.
+       *
+       * Only the supercarto arm gets the bundle. Handing it to the geojson arm
+       * would smuggle the framework's data into the baseline, and the none arm
+       * gets nothing by design.
+       */
+      built.text +=
+        '\nExact geometry for the features above is available through the ' +
+        'expand_feature tool. Pass this document back to it unchanged; do not ' +
+        'try to parse it yourself:\n<scr>\n' +
+        doc.scr +
+        '\n</scr>';
+    }
     cache?.set(cacheKey, built);
     return built;
   }
@@ -649,6 +673,54 @@ export async function groundTruth(
       };
     }
 
+    if (task.kind === 'expand') {
+      /**
+       * Truth is computed from the fixture geometry, not from any maplet.
+       *
+       * The maplet carries no coordinates by design - that absence is the
+       * information gap the task exists to test - so scoring against the maplet
+       * would be circular. Ray casting over the source polygons is independent
+       * of the whole compile/emit path, which additionally cross-validates the
+       * pipeline: if the wire encoding moved a vertex, truth and expansion
+       * disagree and the task fails for a harness reason, visibly.
+       *
+       * Fixture only, no live fallback. Without the designed configuration
+       * there is no question: a live fetch cannot supply an unmemorisable
+       * building with known inside/outside cafes.
+       */
+      const areaFixture = fixtures?.[areaIdOf(task)];
+      if (!areaFixture) return {};
+      const numPair = (v: unknown): [number, number] | null =>
+        Array.isArray(v) && typeof v[0] === 'number' && typeof v[1] === 'number'
+          ? [v[0], v[1]]
+          : null;
+      const polys = areaFixture.features.filter(
+        (f) => f.geometry?.type === 'Polygon' && (f.properties as any)?.building === 'yes',
+      );
+      const ringSrc = polys[0]?.geometry?.coordinates;
+      const ring = Array.isArray(ringSrc)
+        ? (ringSrc[0] as unknown[]).flatMap((p) => {
+            const q = numPair(p);
+            return q ? [q] : [];
+          })
+        : [];
+      if (ring.length === 0) return {};
+      const cafes = areaFixture.features.filter(
+        (f) =>
+          f.geometry?.type === 'Point' && typeof (f.properties as any)?.name === 'string',
+      );
+      const inside = cafes
+        .filter((f) => {
+          const p = numPair(f.geometry?.coordinates);
+          return p !== null && pointInRing(ring, p);
+        })
+        .map((f) => (f.properties as any).name as string);
+      return {
+        inside,
+        candidates: cafes.map((f) => (f.properties as any).name as string),
+      };
+    }
+
     if (task.kind === 'connectivity') {
       // From the fixture when there is one. The graph has to be the same graph
       // the model was shown: connectivity truth taken from a live fetch while
@@ -712,7 +784,8 @@ async function runOne(
   const started = Date.now();
   try {
     const res = await model.call(req);
-    const scored = scoreAnswer(task, res.text, truth);
+    const expanded = res.toolsUsed?.includes('expand_feature') ?? false;
+    const scored = scoreAnswer(task, res.text, truth, expanded);
     return {
       taskId: `${task.id}#${representation}@${budget}`,
       representation,
@@ -725,6 +798,7 @@ async function runOne(
       wallMs: Date.now() - started,
       answer: res.text,
       ...(scored.rationale ? { rationale: scored.rationale } : {}),
+      ...(res.toolsUsed && res.toolsUsed.length > 0 ? { toolsUsed: res.toolsUsed } : {}),
     };
   } catch (err) {
     return {
@@ -754,6 +828,7 @@ function scoreAnswer(
   task: BenchmarkTask,
   answer: string,
   truth: GroundTruth,
+  expanded = false,
 ): { correct: boolean | null; by: ScoredTask['scoredBy']; rationale?: string } {
   if (isRefusal(answer) && representationNeedsData(task)) {
     // A refusal is not incorrect, but it is not an answer either. It is recorded
@@ -858,6 +933,18 @@ function scoreAnswer(
         rationale:
           `omitted ${truth.omitted.map((o) => `${o.count} ${o.layer}`).join(', ') || 'nothing'}; ` +
           `${v.flags.length ? v.flags.join('; ') : 'acknowledged'}`,
+      };
+    }
+
+    case 'expand': {
+      if (!truth.inside || !truth.candidates) return { correct: null, by: 'failed' };
+      const v = scoreExpansion(answer, truth.inside, truth.candidates, expanded);
+      return {
+        correct: v.correct,
+        by: 'exact',
+        rationale:
+          `inside: ${truth.inside.join(', ') || 'none'}; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'exact set'}`,
       };
     }
   }

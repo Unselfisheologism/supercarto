@@ -59,6 +59,8 @@ export interface Exchange {
   at: string;
   /** Set when the call failed. `answer` is then empty. */
   error?: string;
+  /** Allowlisted tools the subject called. Absent on tracks without tools. */
+  toolsUsed?: string[];
 }
 
 /**

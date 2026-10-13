@@ -36,7 +36,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelClient } from '../models.js';
@@ -65,6 +65,28 @@ export interface OpencodeDriverOptions {
    */
   cwd?: string;
   /**
+   * An MCP server the subject is offered, written into its clean config home
+   * as the only configured server.
+   *
+   * Absent by default: every track so far voids tool use, because a subject
+   * that reaches for tools may reach ground truth. The expansion track needs
+   * the opposite - the capability under test IS calling expand_feature - so
+   * the runner passes the benchmark MCP server here and an allowlist below.
+   * The server command must be self-contained (no credentials, no network for
+   * the permitted tools): expansion decodes the document the prompt already
+   * carries, so it works offline.
+   */
+  mcpServer?: { command: string[] };
+  /**
+   * Tool names the subject may call without voiding the run.
+   *
+   * Empty or absent preserves the old behaviour: any tool event voids. Listed
+   * tools are collected into `toolsUsed` and returned with the answer instead.
+   * Anything else still voids, because a subject that calls get_maplet reaches
+   * live data the frozen truth does not describe.
+   */
+  allowedTools?: string[];
+  /**
    * Replaces the whole argument list.
    *
    * Present so tests can substitute a stub program for the real CLI. A stub
@@ -83,7 +105,13 @@ interface RunEvent {
     type?: string;
     text?: string;
     tool?: string;
-    state?: { status?: string; error?: string; input?: unknown };
+    state?: {
+      status?: string;
+      error?: string;
+      input?: unknown;
+      /** MCP calls nested inside a carrier (e.g. `execute`). */
+      metadata?: { toolCalls?: { tool?: string; status?: string }[] };
+    };
   };
 }
 
@@ -106,6 +134,8 @@ export class OpencodeDriver implements ModelClient {
 private readonly timeoutMs: number;
   private readonly cwd: string;
   private readonly configHome: string;
+  private readonly mcpServer: { command: string[] } | undefined;
+  private readonly allowedTools: readonly string[];
   private readonly args: string[] | undefined;
 
   constructor(opts: OpencodeDriverOptions) {
@@ -134,12 +164,42 @@ private readonly timeoutMs: number;
     // credentials live in the data home, not the config home, and a probe call
     // under the clean config succeeded.
     this.configHome = mkdtempSync(join(tmpdir(), 'supercarto-subject-config-'));
+    this.mcpServer = opts.mcpServer;
+    this.allowedTools = opts.allowedTools ?? [];
+    if (this.mcpServer) {
+      // Placement and schema both matter. `run` does not read project
+      // `opencode.json` (only `mcp add` writes it, and even `mcp list` does
+      // not read it back), so the server goes in the clean global config
+      // home. The global schema nests the server directly under `mcp`
+      // (matching the operator's own file, which `mcp list` parses) - not
+      // under `mcp.servers`, which is the project-file schema. Either
+      // mistake silently offers no tools, and the subject answers from snap
+      // judgment instead - which is what the first agentic run measured
+      // (1/3, zero tool calls).
+      //
+      // `timeout` is raised from the 5s default: under phone load a node
+      // server start can exceed it, and a lapse silently offers no tools -
+      // the same silent failure as a wrong schema, indistinguishable from it.
+      writeFileSync(
+        join(this.configHome, 'opencode.jsonc'),
+        JSON.stringify({
+          mcp: {
+            'supercarto-bench': {
+              type: 'local',
+              command: this.mcpServer.command,
+              enabled: true,
+              timeout: 60_000,
+            },
+          },
+        }),
+      );
+    }
     this.args = opts.args;
   }
 
-  async call(req: ModelRequest): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
-    const { text, inputTokens, outputTokens } = await this.invoke(req);
-    return { text, inputTokens, outputTokens };
+  async call(req: ModelRequest): Promise<{ text: string; inputTokens: number; outputTokens: number; toolsUsed?: string[] }> {
+    const { text, inputTokens, outputTokens, toolsUsed } = await this.invoke(req);
+    return { text, inputTokens, outputTokens, ...(toolsUsed.length > 0 ? { toolsUsed } : {}) };
   }
 
   /**
@@ -167,20 +227,78 @@ private readonly timeoutMs: number;
       throw new Error(`opencode ${failure.error.status ?? ''} ${failure.error.message}`.trim());
     }
 
-    // Voided, not scored. A subject that reached for a tool had the ground truth
-    // available to it, so its answer cannot be attributed to reading the maplet.
-    const toolsUsed = [
-      ...new Set(
-        events
-          .filter((e) => e.type === 'tool' && e.part?.tool)
-          .map((e) => e.part!.tool!),
-      ),
-    ];
-    if (toolsUsed.length > 0) {
+    // Partitioned, not blanket-voided. A subject that reached for a
+    // non-allowlisted tool had live data available to it, so its answer cannot
+    // be attributed to the maplet and the run is voided. An allowlisted tool
+    // is the capability under test on the expansion track, so its use is
+    // recorded and the answer stands.
+    //
+    // Two shapes, because the stream changed under the harness. Older CLI
+    // versions emit `type: 'tool'` with the name in `part.tool`; the current
+    // one emits `type: 'tool_use'` with a provider tool in `part.tool`
+    // (`execute`, `read`, `shell`...) and MCP calls nested in
+    // `part.state.metadata.toolCalls[].tool`. Matching only the old shape
+    // meant the voiding apparatus was silently inert: every tool call passed
+    // through unscored-against. Both shapes are matched now.
+    //
+    // `execute` is the carrier MCP calls arrive in, so it is judged by its
+    // nested names rather than by itself: an execute carrying only allowlisted
+    // (or no) nested calls is permitted on the agentic track. On tracks with
+    // an empty allowlist every tool event still voids, as before - except now
+    // it actually fires.
+    const namesOf = (e: RunEvent): string[] => {
+      const out: string[] = [];
+      if (e.part?.tool) out.push(e.part.tool);
+      const nested = e.part?.state?.metadata?.toolCalls;
+      if (Array.isArray(nested)) {
+        for (const c of nested) {
+          if (c && typeof c.tool === 'string') out.push(c.tool);
+        }
+      }
+      return out;
+    };
+    // MCP tools register server-prefixed, and the separator varies by path:
+    // `supercarto-bench_expand_feature` (underscore) from one, yet the same
+    // call arrived as `default.expand_feature` (dot) in a measured run - and
+    // was voided for wearing the wrong separator while doing the right thing.
+    // An entry matches exactly or as a suffixed name under either separator.
+    // A bare `execute` never matches an entry: the carrier is judged by what
+    // it carried.
+    const matches = (n: string): string | undefined =>
+      this.allowedTools.find((a) => matchesAllowlist(n, [a]));
+    const toolEvents = events.filter(
+      (e) => (e.type === 'tool' || e.type === 'tool_use') && namesOf(e).length > 0,
+    );
+    const matched = new Set<string>();
+    const forbidden = new Set<string>();
+    for (const e of toolEvents) {
+      const ns = namesOf(e);
+      const hit = ns.map(matches).find((m): m is string => m !== undefined);
+      if (hit !== undefined) {
+        matched.add(hit);
+        continue;
+      }
+      // An execute carrying nothing nested is pure local computation. On the
+      // agentic track that is permitted (its fetch equivalent would leave
+      // nested calls); on tool-less tracks it voids like everything else.
+      // Residual hole, stated plainly: fetch-via-execute with its traces
+      // removed would pass as computation. Isolation here is layered (empty
+      // cwd, clean config, frozen fixture truth), and at synthetic coordinates
+      // there is no live data worth fetching - the ocean has no cafes.
+      const bareCarrier =
+        this.allowedTools.length > 0 &&
+        ns.length === 1 &&
+        ns[0] === 'execute';
+      if (!bareCarrier) {
+        for (const n of ns) forbidden.add(n);
+      }
+    }
+    if (forbidden.size > 0) {
       throw new Error(
-        `subject model used tools (${toolsUsed.join(', ')}); run voided rather than scored`,
+        `subject model used tools (${[...forbidden].join(', ')}); run voided rather than scored`,
       );
     }
+    const toolsUsed = [...matched];
 
     const text = events
       .filter((e) => e.type === 'text' && e.part?.text)
@@ -208,11 +326,11 @@ private readonly timeoutMs: number;
   /**
    * Run the CLI, watching the stream for a tool call.
    *
-   * `onTool` fires as soon as a tool event appears so the child can be killed
+   * `onTool` fires as soon as a voiding tool event appears so the child can be killed
    * immediately. Waiting the turn out instead is expensive and, worse, reports
    * the wrong reason: a subject that reaches for a tool often keeps working for
    * minutes afterwards, and the failure then surfaces as a timeout. That hides
-   * the one thing the run was supposed to report.
+   * the one thing the run was supposed to report. Allowlisted tools do not trigger the kill: they are legitimate mid-answer steps, and killing on them would abort the expansion under test.
    */
   private spawnCli(
     message: string,
@@ -245,12 +363,29 @@ private readonly timeoutMs: number;
         if (toolSeen !== undefined) return;
         // Cheap scan on a rolling tail: a tool event may be split across chunks.
         for (const e of parseEvents(stdout.slice(-4096))) {
-          if (e.type === 'tool' && e.part?.tool) {
-            toolSeen = e.part.tool;
-            onTool(toolSeen);
-            child.kill();
-            break;
+          const isTool = e.type === 'tool' || e.type === 'tool_use';
+          if (!isTool || !e.part?.tool) continue;
+          // Same matching as the final parse below, with one asymmetry: an
+          // `execute` carrier has no nested names until it completes, so it
+          // can never be judged mid-stream and is left to run. Everything
+          // else decidable here is killed now, so a voided run reports the
+          // tool rather than timing out after minutes of continued work.
+          const nested: string[] = [];
+          const meta = e.part?.state?.metadata?.toolCalls;
+          if (Array.isArray(meta)) {
+            for (const c of meta) {
+              if (c && typeof c.tool === 'string') nested.push(c.tool);
+            }
           }
+          const names = [e.part.tool, ...nested];
+          const ok =
+            names.some((n) => matchesAllowlist(n, this.allowedTools)) ||
+            (e.part.tool === 'execute' && nested.length === 0);
+          if (ok) continue;
+          toolSeen = names.join('+');
+          onTool(toolSeen);
+          child.kill();
+          break;
         }
       });
       child.stderr.on('data', (d) => (stderr += String(d)));
@@ -321,6 +456,23 @@ export function resolveBin(): string {
  */
 function defaultArgs(model: string): string[] {
   return ['run', '--standalone', '--format', 'json', '--model', model];
+}
+
+/**
+ * Whether an observed tool name satisfies an allowlist entry.
+ *
+ * One function because the rule is consulted twice per call - the mid-stream
+ * kill predicate and the final parse - and two copies already disagreed once:
+ * the kill path matched `_`-suffixed names while the event arrived
+ * dot-prefixed (`default.expand_feature`), voiding the one correct expansion
+ * the first agentic run produced. An entry matches exactly or as a name
+ * suffixed under either separator. A bare `execute` never matches: the
+ * carrier is judged by what it carried.
+ */
+export function matchesAllowlist(name: string, allowed: readonly string[]): boolean {
+  return allowed.some(
+    (a) => name === a || (a !== 'execute' && (name.endsWith('_' + a) || name.endsWith('.' + a))),
+  );
 }
 
 /**
@@ -404,4 +556,8 @@ export const EXCLUDED_FREEMODELS: Record<string, string> = {
   // run against it with it. A benchmark number attached to an unidentified model
   // has a half-life, so codenames are not benchmarked even while they serve.
   'opencode/space-bunny-free': 'codename; real model identity unknown, withdrawable without notice',
+  // Appeared in `opencode models` after the list was last reviewed. Reachable
+  // (probe call returned "ok"), but transparently a codename, so the same
+  // policy applies. Recorded the day it appeared so the review date is visible.
+  'opencode/cat-jam-free': 'codename, listed from 2026-10-13; real model identity unknown',
 };
