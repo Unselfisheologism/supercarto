@@ -22,7 +22,7 @@
 
 import type { LatLon } from './types.js';
 
-export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission' | 'expand';
+export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission' | 'expand' | 'heat';
 
 export interface BenchmarkTask {
   id: string;
@@ -212,6 +212,30 @@ export const SYNTHETIC_EXPANSION_AREA: TaskArea = {
 };
 
 /**
+ * The heat area: three cafes and one scalar layer.
+ *
+ * Vector fixtures cannot express the planning doc's unified vector+scalar
+ * stream - GeoJSON has no heat concept - so this fixture carries a top-level
+ * `heat` member (8x8 crowd grid, peak 200 at cell (5,2), read by the ingest
+ * heat convention). Same ocean, new coordinates, same unmemorisability.
+ * The maplet renders the layer as max/mean/hotspots; the question asks for
+ * the peak value and location, which the summary states and the raw grid
+ * requires computing. Expected outcome is parity with a token ratio, not
+ * separation: unlike omission, nothing here is unsayable in raw form.
+ */
+export const SYNTHETIC_HEAT_AREA: TaskArea = {
+  id: 'synthetic-heat',
+  label: 'Synthetic micro-area for the heat task',
+  center: { lat: 44.02, lon: -150.02 },
+  radiusM: 400,
+  rationale:
+    'Peak crowd 200 at one cell, 90/40/20 elsewhere, zeros dropped. ' +
+    'The yaml states max and hotspot lat/lon; the geojson arm parses four ' +
+    'cells and converts indices to coordinates.',
+  adversarial: true,
+};
+
+/**
  * Every area the free ladder runs.
  *
  * One list, because the alternative has now failed four times: the ladder
@@ -224,6 +248,7 @@ export const FREE_LADDER_AREAS: readonly TaskArea[] = [
   ...TASK_AREAS,
   SYNTHETIC_AREA,
   SYNTHETIC_EXPANSION_AREA,
+  SYNTHETIC_HEAT_AREA,
 ];
 
 /** The expansion task: answerable only from exact geometry, via the tool. */
@@ -236,6 +261,13 @@ export const EXPANSION_QUESTION =
   'with the expand_feature tool. Filesystem, shell and execution tools will ' +
   'void your answer, and the task directory is empty: there is nothing to ' +
   'find by exploring it.';
+
+/** The heat task: read the scalar stream. */
+export const HEAT_QUESTION =
+  'A crowd-density heat layer is included in this data. What is its peak ' +
+  'value, and where is the peak? Answer with the number and the coordinates ' +
+  'as latitude,longitude. Do not use any tools: the task directory is empty, ' +
+  'and everything needed is in the data above.';
 
 /** The question the omission task asks. */
 export const OMISSION_QUESTION =
@@ -343,6 +375,23 @@ export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTa
         radiusM: area.radiusM,
         mode: 'walk',
         groundTruth: 'fixture-geometry',
+      });
+
+      continue;
+    }
+
+    if (area.id === SYNTHETIC_HEAT_AREA.id) {
+      // Same reasoning as above: one designed micro-fixture, one kind. The
+      // heat question needs the scalar layer; the other kinds would be free
+      // points on three cafes.
+      out.push({
+        id: `${area.id}/heat`,
+        kind: 'heat',
+        question: HEAT_QUESTION,
+        center: area.center,
+        radiusM: area.radiusM,
+        mode: 'walk',
+        groundTruth: 'self-consistent',
       });
 
       continue;

@@ -27,6 +27,7 @@ import {
   polygonAreaM2,
   scoreConnectivity,
   scoreExpansion,
+  scoreHeat,
   scoreNames,
   scoreOmission,
   summarise,
@@ -729,6 +730,21 @@ export async function groundTruth(
       });
       return { components: connectedComponents(m.graph), graph: m.graph };
     }
+
+    if (task.kind === 'heat') {
+      // From the emitted summary, like connectivity truth from the emitted
+      // graph. The alternative - independent cell-to-coordinate math - risks
+      // disagreeing with the emitter over rounding (hotspots print at 5
+      // decimals, deduped) and failing correct readings for harness reasons.
+      // Fixture only: without the designed scalar layer there is no question.
+      const areaFixture = fixtures?.[areaIdOf(task)];
+      if (!areaFixture) return {};
+      const compiled = compileFixture(areaFixture, task, budget);
+      const layer = compiled.graph.heat[0];
+      const peak = layer?.hotspots[0];
+      if (!layer || !peak) return {};
+      return { peak: peak.value, peakAt: { lat: peak.lat, lon: peak.lon } };
+    }
   } catch {
     // A task whose ground truth cannot be established is dropped rather than
     // scored against a guess. Counting it wrong would penalise a model for the
@@ -928,6 +944,18 @@ function scoreAnswer(
         rationale:
           `true ${Math.round(truth.areaM2)}m²; ` +
           `${v.flags.length ? v.flags.join('; ') : 'within tolerance'}`,
+      };
+    }
+
+    case 'heat': {
+      if (truth.peak === undefined || !truth.peakAt) return { correct: null, by: 'failed' };
+      const v = scoreHeat(answer, truth.peak, truth.peakAt);
+      return {
+        correct: v.correct,
+        by: 'exact',
+        rationale:
+          `peak ${truth.peak} at ${truth.peakAt.lat},${truth.peakAt.lon}; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'value and location'}`,
       };
     }
   }

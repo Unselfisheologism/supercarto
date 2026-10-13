@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 201,
+      "properties": { "layer": "poi", "name": "Cafe Duna" },
+      "geometry": { "type": "Point", "coordinates": [-150.02, 44.02] }
+    },
+    {
+      "type": "Feature",
+      "id": 202,
+      "properties": { "layer": "poi", "name": "Cafe Elvo" },
+      "geometry": { "type": "Point", "coordinates": [-150.0195, 44.0203] }
+    },
+    {
+      "type": "Feature",
+      "id": 203,
+      "properties": { "layer": "poi", "name": "Cafe Faro" },
+      "geometry": { "type": "Point", "coordinates": [-150.0204, 44.0196] }
+    }
+  ],
+  "heat": [
+    {
+      "name": "crowd",
+      "resolution": 8,
+      "min": 0,
+      "max": 255,
+      "cells": [
+        { "x": 5, "y": 2, "value": 200 },
+        { "x": 1, "y": 6, "value": 90 },
+        { "x": 3, "y": 3, "value": 40 },
+        { "x": 6, "y": 1, "value": 20 }
+      ]
+    }
+  ]
+}

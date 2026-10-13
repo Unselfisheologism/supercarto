@@ -39,6 +39,24 @@ export interface GeoJsonFeature {
 export interface GeoJsonFeatureCollection {
   type: 'FeatureCollection';
   features: GeoJsonFeature[];
+  /**
+   * Scalar layers, in each layer's own resolution grid.
+   *
+   * GeoJSON has no heat concept, so a vector-only fixture cannot express the
+   * planning doc's unified vector+scalar stream. This member carries it:
+   * cells are `{x, y, value}` in `[0, resolution)` indices, converted to map
+   * coordinates at compile time. Synthetic fixtures only, by convention.
+   */
+  heat?: GeoJsonHeatLayer[];
+}
+
+/** One scalar layer on a feature collection. */
+export interface GeoJsonHeatLayer {
+  name: string;
+  resolution: number;
+  min: number;
+  max: number;
+  cells: { x: number; y: number; value: number }[];
 }
 
 export interface IngestOptions {
@@ -135,6 +153,7 @@ export function fromGeoJson(
   opts: IngestOptions = {},
 ): ScrDocument {
   const features: GeoJsonFeature[] = Array.isArray(input) ? input : input.features;
+  const collectionHeat = Array.isArray(input) ? undefined : input.heat;
   const maxFeatures = opts.maxFeatures ?? 200_000;
   const extent = opts.extent ?? DEFAULT_EXTENT;
   const buffer = opts.buffer ?? 64;
@@ -256,6 +275,36 @@ export function fromGeoJson(
   }
 
   for (const [id, s] of alloc.strings) doc.strings.set(id, s);
+
+  for (const [i, h] of (collectionHeat ?? []).entries()) {
+    // Malformed heat fails loudly rather than silently dropping a layer the
+    // benchmark then grades against. A missing hotspot reads as a model
+    // failure otherwise, which is the exact confusion this file exists to
+    // prevent.
+    const valid =
+      typeof h?.name === 'string' &&
+      Number.isFinite(h?.resolution) &&
+      (h.resolution as number) > 0 &&
+      Number.isFinite(h?.min) &&
+      Number.isFinite(h?.max) &&
+      Array.isArray(h?.cells) &&
+      (h.cells as unknown[]).every(
+        (c: any) =>
+          c && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.value),
+      );
+    if (!valid) {
+      throw new Error(`invalid heat layer at index ${i}: expected {name, resolution, min, max, cells[]}`);
+    }
+    doc.heat.push({
+      id: i + 1,
+      name: h.name,
+      resolution: h.resolution,
+      minValue: h.min,
+      maxValue: h.max,
+      encoding: 'sparse',
+      cells: h.cells.map((c) => ({ x: c.x, y: c.y, value: c.value })),
+    });
+  }
 
   return doc;
 }

@@ -8,7 +8,7 @@
  */
 
 import { buildTasks, TASK_AREAS, type TaskArea } from './tasks.js';
-import { failures, scoreConnectivity, scoreExpansion, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
+import { failures, scoreConnectivity, scoreExpansion, scoreHeat, scoreNames, scoreOmission, median, summarise, extractDistanceM, distanceCorrect, isRefusal } from './score.js';
 import { fingerprintPrompt, ResponseArchive, type Exchange } from './archive.js';
 import type { ScoredTask } from './score.js';
 import type { GroundTruth } from './types.js';
@@ -258,6 +258,17 @@ function scoreAgainst(
         rationale:
           `true ${Math.round(truth.areaM2)}m²; ` +
           `${v.flags.length ? v.flags.join('; ') : 'within tolerance'}`,
+      };
+    }
+    case 'heat': {
+      if (truth.peak === undefined || !truth.peakAt) return { correct: null, scoredBy: 'failed' };
+      const v = scoreHeat(answer, truth.peak, truth.peakAt);
+      return {
+        correct: v.correct,
+        scoredBy: 'exact',
+        rationale:
+          `peak ${truth.peak} at ${truth.peakAt.lat},${truth.peakAt.lon}; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'value and location'}`,
       };
     }
     default:

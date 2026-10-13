@@ -422,6 +422,39 @@ offered" are indistinguishable after the fact. Step-5's answers claim the
 tool was never exposed; muse s1 demonstrably reached one. The axis records
 use, not opportunity.
 
+## 12b. The `heat` task: unified vector+scalar (benefit #3)
+
+GeoJSON has no heat concept, so a vector-only fixture cannot express the
+scalar half of the stream. The fixture carries a top-level `heat` member
+(8x8 crowd grid, peak 200, read by a new ingest convention with fail-loud
+validation); the maplet renders it as max/mean/hotspots; the question asks
+for the peak value and location. Truth is the emitted summary itself, the
+connectivity precedent: the alternative - independent cell-to-coordinate
+math - risks disagreeing with the emitter over rounding and failing correct
+readings for harness reasons.
+
+| | supercarto | geojson | none |
+|---|---|---|---|
+| muse-spark | **3/3** | 0/3 | 0/3 |
+| step-5 | **2/3** | 0/3 | 0/3 |
+
+Expected outcome was parity with a token ratio; measured outcome is
+separation, and the mechanism is instructive. The yaml states the hotspot
+coordinates outright, so the supercarto arm reads them. The raw grid states
+cell indices, so the geojson arm must convert - and all six geojson answers
+find the value 200 but decline the conversion, one calling the map outright
+incomplete for locating the peak. Raw grids are silently incomplete for
+derived facts: the translator did the index-to-coordinate math once, and
+every model reading the summary gets the answer every model parsing raw
+must redo and will not.
+
+Three runs shaped the task. The first voided 6/9: quantitative questions
+trigger calculator instinct (shell) and exploration (read), both void on the
+strict track. The question now scopes effort honestly. A first-match
+coordinate bug then failed a correct step-5 answer for quoting the map
+centre alongside the hotspot (224m off); any stated pair within tolerance
+now counts, pinned with the measured answer.
+
 ## 12. The `omission` task: measuring the protocol instead of the map
 
 Every other task kind is satisfiable by a sufficiently good map of the area. The

@@ -1,0 +1,116 @@
+{
+  "metadata": {
+    "at": "2026-10-13T10:17:20.350Z",
+    "commit": "c526256657d99414af1ba48787356c6884bd6da3",
+    "dirty": true,
+    "opencodeVersion": "opencode v2.0.22",
+    "harnessVersion": "0.4.8",
+    "models": [
+      "opencode/muse-spark-1.3-contributor-free"
+    ],
+    "fixtures": {
+      "kuala-lumpur": {
+        "features": 183,
+        "sha256": "b55f981cc7b22165"
+      },
+      "oslo": {
+        "features": 1112,
+        "sha256": "145a42c60c29771f"
+      },
+      "reykjavik": {
+        "features": 1104,
+        "sha256": "ecb0880257982ae6"
+      },
+      "rural-montana": {
+        "features": 1,
+        "sha256": "4f4dd8f7a58df331"
+      },
+      "sf-cbd": {
+        "features": 720,
+        "sha256": "53d1ad84ad02b439"
+      },
+      "singapore": {
+        "features": 301,
+        "sha256": "c286de1b21dbb6dd"
+      },
+      "sydney": {
+        "features": 1167,
+        "sha256": "87a0b2a79617141b"
+      },
+      "synthetic-expansion": {
+        "features": 5,
+        "sha256": "cbda194d8ee4103f"
+      },
+      "synthetic-heat": {
+        "features": 3,
+        "sha256": "3a665e8b33ea370a"
+      },
+      "synthetic-pacific": {
+        "features": 4570,
+        "sha256": "7a0d071d8e857509"
+      },
+      "tokyo-shimbashi": {
+        "features": 443,
+        "sha256": "b879d88b59934776"
+      }
+    },
+    "limits": [
+      "opencode run exposes no --temperature and no --seed flag, so neither reaches the model. Repeated seeds are repeats, not independent samples, and a spread of 0.00 is not an error bar.",
+      "The free tier reports no usage block. Token counts are chars/4 estimates, not provider tokenizer output. Ratios between arms remain meaningful because both use the same estimator; absolute figures are not provider figures.",
+      "Caches inside the provider cannot be disabled or measured from here. --standalone removes the shared opencode session cache only.",
+      "Tool use cannot be prevented on this CLI; a run that invoked a tool is voided rather than scored, so the guarantee is detection, not prevention."
+    ]
+  },
+  "protocol": {
+    "repeats": 3,
+    "temperature": null,
+    "seed": null,
+    "note": "Free-tier models reached through `opencode run --standalone`. The CLI has no --temperature and no --seed flag, so neither reaches the model: `repeats` are repeats, not independent seeds, and a spread of 0 is not an error bar. Token counts are chars/4 estimates because the free tier reports no usage block.",
+    "toolPolicy": "A run that invoked any tool is voided, not scored. Tool use cannot be prevented on this CLI, so a cheating model produces a failed run rather than a prevented one."
+  },
+  "budget": {
+    "callsThisInvocation": 12,
+    "totalPlanned": 333,
+    "concurrency": 1
+  },
+  "models": [
+    {
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "rows": 9,
+      "failures": 6,
+      "rateLimited": false,
+      "summary": [
+        {
+          "representation": "supercarto",
+          "model": "opencode/muse-spark-1.3-contributor-free",
+          "accuracy": null,
+          "completion": 0,
+          "medianInputTokens": 0,
+          "totalInputTokens": 0,
+          "meanWallMs": 28017,
+          "accuracySpread": 0
+        },
+        {
+          "representation": "geojson",
+          "model": "opencode/muse-spark-1.3-contributor-free",
+          "accuracy": null,
+          "completion": 0,
+          "medianInputTokens": 0,
+          "totalInputTokens": 0,
+          "meanWallMs": 12723,
+          "accuracySpread": 0
+        },
+        {
+          "representation": "none",
+          "model": "opencode/muse-spark-1.3-contributor-free",
+          "accuracy": 0,
+          "completion": 1,
+          "medianInputTokens": 198,
+          "totalInputTokens": 594,
+          "meanWallMs": 20098,
+          "accuracySpread": 0
+        }
+      ]
+    }
+  ]
+}

@@ -23,6 +23,11 @@ are wrong in ways the reports themselves now flag.
 | expansion-muse-area.report.json | supercarto 2/3 (1 via tool, 1 via direct decode), geojson 0/3, none 0/3 |
 | expansion-step5-area.opencode-step-5-preview-free.jsonl | 9 rows, same shape, second model |
 | expansion-step5-area.report.json | supercarto 3/3, geojson 3/3, none 0/3 (all by direct decode) |
+| heat-muse.opencode-muse-spark-1.3-contributor-free.jsonl | 9 rows: heat task (peak value + location), 3 arms x 3 seeds |
+| heat-muse.report.json | supercarto 3/3, geojson 0/3 (value found, conversion declined), none 0/3 |
+| heat-step5.opencode-step-5-preview-free.jsonl | 9 rows, same shape, second model |
+| heat-step5.report.json | supercarto 2/3, geojson 0/3, none 0/3 |
+| expansion-step5-area.report.json | supercarto 3/3, geojson 3/3, none 0/3 (all by direct decode) |
 
 Each JSONL line is one model call: the exact system and user prompts, a SHA-256
 over them, the raw answer, token counts, and the timestamp. Nothing is summarised
@@ -56,6 +61,7 @@ archives does not blend claims.
 | expansion-muse-containment.* | 9 rows, first formulation (which cafe inside?) without tool availability |
 | expansion-muse-containment-agentic.* | 9 rows, same question with the MCP server offered (1/3 attempted, voided on a separator) |
 | expansion-step5-containment.* | 9 rows, second model, same question, memory-contaminated run (5/27 markers, all failed) |
+| heat-muse-voided.* | 9 rows, first heat wording: 6 voided (calculator instinct + exploration on the strict track). Superseded by heat-muse; kept as evidence behind the effort-scoping sentence. |
 
 Kept because the datasheet's verdict section cites them, not because they are
 citable results. The question proved guessable (a 1-in-3 name pick), so all

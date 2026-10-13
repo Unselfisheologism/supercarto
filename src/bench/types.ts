@@ -115,4 +115,8 @@ export interface GroundTruth {
    * number.
    */
   areaM2?: number;
+  /** Peak scalar value, for the `heat` task. */
+  peak?: number;
+  /** Where the peak is, for the `heat` task. */
+  peakAt?: { lat: number; lon: number };
 }

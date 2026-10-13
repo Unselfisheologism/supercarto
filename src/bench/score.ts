@@ -733,6 +733,55 @@ export function scoreExpansion(
 }
 
 /**
+ * Whether the answer reports the heat peak's value and location.
+ *
+ * Both required: a value without a location (or the reverse) is the partial
+ * answer shape, and partial credit is not a thing here. Coordinates within
+ * 100m - generous for cells ~100m across, tight enough that a wrong cell
+ * fails. The value is exact: peak intensities are small integers, and
+ * near-misses are not a thing.
+ */
+export function scoreHeat(
+  answer: string,
+  peak: number,
+  at: { lat: number; lon: number },
+): { correct: boolean; flags: string[] } {
+  const flags: string[] = [];
+  // Standalone integers only: "44.02" must not read as 44 or 02. The comma
+  // lesson applies in reverse here - decimals are split by periods, and a
+  // naive \d+ would mine the coordinates for a fake value.
+  const ints = [...answer.matchAll(/(?<!\d\.)\b(\d+)\b(?!\.\d)/g)].map((m) => Number(m[1]));
+  const value = ints.length > 0 ? ints[0] : undefined;
+  if (value === undefined) flags.push('no peak value stated');
+  else if (value !== peak) flags.push(`stated peak ${value}, true ${peak}`);
+  let near = false;
+  const coords = [...answer.matchAll(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/g)].map((m) => ({
+    lat: Number(m[1]),
+    lon: Number(m[2]),
+  }));
+  if (coords.length === 0) {
+    flags.push('no coordinates stated');
+  } else {
+    // Any pair within tolerance counts. Answers routinely restate context
+    // coordinates (the map centre) alongside the claim, and first-match
+    // grading failed a correct step-5 answer for quoting the centre first:
+    // it stated the hotspot exactly and was failed as 224m off. A spray of
+    // guesses does not exploit this - the value must also match, and ocean
+    // is mostly empty.
+    const ds = coords.map((c) => metresApart(c, at));
+    near = ds.some((d) => d <= 100);
+    if (!near) flags.push(`peak ${Math.round(Math.min(...ds))}m from truth`);
+  }  return { correct: value === peak && near, flags };
+}
+/** Equirectangular metres between two points. Adequate well under a kilometre. */
+export function metresApart(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+  const dx = (a.lon - b.lon) * 111320 * Math.cos(lat0);
+  const dy = (a.lat - b.lat) * 110574;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
  * Whether an answer reported what the maplet left out.
  *
  * This is the only task that tests the protocol rather than the map, and the only
