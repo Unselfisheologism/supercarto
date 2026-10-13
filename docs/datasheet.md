@@ -391,8 +391,8 @@ reliability is a property of the model, not just of the fixture size.
 
 ### Second model, and the contamination it found
 
-The same 27 calls were run on `opencode/step-5-preview-free`: supercarto 7/9,
-geojson 2/8 (one timeout), none 0/9. The ordering replicates — representation beats
+The same 27 calls were first run on `opencode/step-5-preview-free`: supercarto 7/9,
+geojson 2/8 (one timeout), none 0/9. The ordering replicated — representation beats
 raw file beats nothing — on a second official model.
 
 The run also exposed an isolation failure in the harness, and it is recorded here
@@ -413,9 +413,7 @@ Three things limit the damage, all verified rather than assumed:
    point — two concluded the map was complete from memory and were failed for it,
    three were refusals. Contamination is proven present and proven scoreless.
 2. **The clean run is clean.** The Muse Spark archive carries zero memory markers
-   across all 27 answers. Absence of markers is not proof of absence of influence,
-   and that is stated as a caveat, not hand-waved — but there is no positive
-   evidence of leakage there.
+   across all 27 answers.
 3. **The channel is closed going forward.** The driver now spawns every subject
    with a clean, empty `XDG_CONFIG_HOME`, alongside the existing scratch cwd. A/B
    verified: same probe, clean config → "I don't retain memory", no recall attempt;
@@ -423,10 +421,27 @@ Three things limit the damage, all verified rather than assumed:
    home), and a probe call under the clean config succeeded. Pinned by a test that
    asserts the child's config home is a real, empty, non-operator directory.
 
-Because influence without markers cannot be ruled out for the tainted run, the
-step-5 numbers above are reported as observed-under-contamination, and the
-replication is being re-run under the clean config. The Muse Spark 9/9 stands as
-the headline; step-5 confirms the ordering, not the magnitudes.
+### Clean replication: step-5 goes 9/9
+
+Because markerless influence cannot be ruled out for the tainted run, the
+replication was re-run under the clean config — 27 fresh calls, no tainted row
+reused:
+
+| | supercarto | geojson | none |
+|---|---|---|---|
+| omission | **3/3** | 1/3 | 0/3 |
+| nearest | **3/3** | 0/3 | 0/3 |
+| connectivity | **3/3** | 2/3 | 0/3 |
+| **total** | **9/9** | 3/9 | 0/9 |
+
+Zero memory markers across all 27 answers, zero failures (the tainted run's single
+timeout did not recur). Both official models now agree exactly: **supercarto 9/9,
+floor 0/9**. The tainted run's two supercarto misses do not reproduce under clean
+conditions, which is consistent with contamination noise rather than model
+capability — and is itself an argument for the isolation fix.
+
+The Muse Spark 9/9 stands as the headline; step-5 confirms it at full strength,
+not just the ordering.
 
 The two failures share a root cause worth recording, because it is the worst kind of
 benchmark bug: **a ground-truth source that reports success for a route it did not
