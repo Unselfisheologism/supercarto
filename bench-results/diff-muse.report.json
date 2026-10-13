@@ -1,0 +1,156 @@
+{
+  "generatedAt": "2026-10-13T13:30:12.149Z",
+  "models": [
+    "opencode-muse-spark-1.3-contributor-free"
+  ],
+  "archives": 1,
+  "rows": 9,
+  "detail": [
+    {
+      "taskId": "synthetic-diff/diff#supercarto@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "supercarto",
+      "seed": 0,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "recall 100% of 2 current, 0 not in data",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-diff/diff#supercarto@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "supercarto",
+      "seed": 1,
+      "correct": null,
+      "scoredBy": "failed",
+      "rationale": null,
+      "error": "subject model used tools (read); run voided rather than scored"
+    },
+    {
+      "taskId": "synthetic-diff/diff#supercarto@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "supercarto",
+      "seed": 2,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "recall 100% of 2 current, 0 not in data",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-diff/diff#geojson@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "geojson",
+      "seed": 0,
+      "correct": null,
+      "scoredBy": "failed",
+      "rationale": null,
+      "error": "subject model used tools (shell); run voided rather than scored"
+    },
+    {
+      "taskId": "synthetic-diff/diff#geojson@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "geojson",
+      "seed": 1,
+      "correct": null,
+      "scoredBy": "failed",
+      "rationale": null,
+      "error": "subject model used tools (shell); run voided rather than scored"
+    },
+    {
+      "taskId": "synthetic-diff/diff#geojson@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "geojson",
+      "seed": 2,
+      "correct": true,
+      "scoredBy": "exact",
+      "rationale": "recall 100% of 2 current, 0 not in data",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-diff/diff#none@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "none",
+      "seed": 0,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-diff/diff#none@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "none",
+      "seed": 1,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    },
+    {
+      "taskId": "synthetic-diff/diff#none@1024",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "representation": "none",
+      "seed": 2,
+      "correct": false,
+      "scoredBy": "exact",
+      "rationale": "refused or said it could not tell",
+      "error": null
+    }
+  ],
+  "fixtures": {
+    "kuala-lumpur": 183,
+    "oslo": 1112,
+    "reykjavik": 1104,
+    "rural-montana": 1,
+    "sf-cbd": 720,
+    "singapore": 301,
+    "sydney": 1167,
+    "synthetic-diff-a": 3,
+    "synthetic-diff-b": 3,
+    "synthetic-expansion": 5,
+    "synthetic-heat": 3,
+    "synthetic-pacific": 4570,
+    "tokyo-shimbashi": 443
+  },
+  "summary": [
+    {
+      "model": "opencode-muse-spark-1.3-contributor-free",
+      "representation": "supercarto",
+      "accuracy": 1,
+      "completion": 0.667,
+      "medianInputTokens": 425,
+      "totalInputTokens": 850,
+      "meanWallMs": 0,
+      "accuracySpread": 1,
+      "failures": 1
+    },
+    {
+      "model": "opencode-muse-spark-1.3-contributor-free",
+      "representation": "geojson",
+      "accuracy": 1,
+      "completion": 0.333,
+      "medianInputTokens": 437,
+      "totalInputTokens": 437,
+      "meanWallMs": 0,
+      "accuracySpread": 1,
+      "failures": 2
+    },
+    {
+      "model": "opencode-muse-spark-1.3-contributor-free",
+      "representation": "none",
+      "accuracy": 0,
+      "completion": 1,
+      "medianInputTokens": 204,
+      "totalInputTokens": 612,
+      "meanWallMs": 0,
+      "accuracySpread": 0,
+      "failures": 0
+    }
+  ],
+  "failures": [
+    {
+      "cause": "used tools (voided)",
+      "n": 3
+    }
+  ]
+}

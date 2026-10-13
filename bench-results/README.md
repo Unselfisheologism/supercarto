@@ -27,6 +27,10 @@ are wrong in ways the reports themselves now flag.
 | heat-muse.report.json | supercarto 3/3, geojson 0/3 (value found, conversion declined), none 0/3 |
 | heat-step5.opencode-step-5-preview-free.jsonl | 9 rows, same shape, second model |
 | heat-step5.report.json | supercarto 3/3, geojson 0/3, none 0/3 |
+| diff-muse.opencode-muse-spark-1.3-contributor-free.jsonl | 9 rows: diff task (previous map + 2-line diff), 3 arms x 3 seeds |
+| diff-muse.report.json | supercarto 2/2 answered (1 voided), geojson 1/1 (2 voided), none 0/3 |
+| diff-step5.opencode-step-5-preview-free.jsonl | 9 rows, same shape, second model |
+| diff-step5.report.json | supercarto 3/3, geojson 3/3, none 0/3 |
 | expansion-step5-area.report.json | supercarto 3/3, geojson 3/3, none 0/3 (all by direct decode) |
 
 Each JSONL line is one model call: the exact system and user prompts, a SHA-256

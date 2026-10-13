@@ -455,6 +455,36 @@ coordinate bug then failed a correct step-5 answer for quoting the map
 centre alongside the hotspot (224m off); any stated pair within tolerance
 now counts, pinned with the measured answer. A second parser gap surfaced on recheck: word-separated coordinates ("latitude X, longitude Y") never matched the comma pattern at all, failing another correct answer; both phrasings now feed the same pairs, also pinned.
 
+## 12c. The `diff` task: state diffs, single-turn (benefit #5, phases 1+2)
+
+The library gained `src/diff/`: `diffDocuments` compares two wire documents
+by stable feature id (`+` added, `-` removed, `~` with aspects), and
+`renderDiff` prints the planning doc's lines. Two cross-document hazards
+shaped the implementation: interned layer/class/attribute ids never compare
+equal across independently ingested docs (names and resolved content do),
+and per-doc envelopes quantize identically only under a shared bbox (the
+benchmark ingests both fixtures with the task bbox; verified: the compiled
+A-to-B diff is exactly `- 401` / `+ 403` with no spurious changes).
+
+The task pastes map-A plus the two-line diff and asks about the current
+map; the raw arm re-reads both snapshots in full - the cost the protocol
+exists to avoid. Truth is B's POI names; hallucination vocabulary spans
+both snapshots, because a correct diff answer must name what left. Two
+scorer defects were found by running: Duna-as-removed was flagged invented,
+and the street was required although edges carry no names (recall is POIs,
+roads stay vocabulary). Both fixed, both pinned, both archives re-scored
+with zero new calls.
+
+| | supercarto | geojson | none |
+|---|---|---|---|
+| muse-spark | **2/2 answered** (1 voided) | 1/1 (2 voided) | 0/3 |
+| step-5 | **3/3** | 3/3 | 0/3 |
+
+Phase 3 (multi-turn accumulation: sessions, archive turns) is scoped but
+not started. The single-turn numbers already carry the headline: fusing a
+summary with a two-line diff answers correctly on both models, at a
+fraction of a full resend.
+
 ## 12. The `omission` task: measuring the protocol instead of the map
 
 Every other task kind is satisfiable by a sufficiently good map of the area. The

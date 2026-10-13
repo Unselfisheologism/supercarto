@@ -22,7 +22,7 @@
 
 import type { LatLon } from './types.js';
 
-export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission' | 'expand' | 'heat';
+export type TaskKind = 'route' | 'nearest' | 'connectivity' | 'turns' | 'omission' | 'expand' | 'heat' | 'diff';
 
 export interface BenchmarkTask {
   id: string;
@@ -51,7 +51,7 @@ export interface BenchmarkTask {
    * Recorded rather than assumed, because a score without a stated provenance
    * is a score nobody can audit.
    */
-  groundTruth: 'osrm' | 'source-data' | 'self-consistent' | 'omission-record' | 'fixture-geometry';
+  groundTruth: 'osrm' | 'source-data' | 'self-consistent' | 'omission-record' | 'fixture-geometry' | 'diff-applied';
 }
 
 export interface TaskArea {
@@ -244,11 +244,32 @@ export const SYNTHETIC_HEAT_AREA: TaskArea = {
  * from whichever copy was forgotten. The fourth copy dropped every expansion
  * row and printed a table of dashes that looked like "nothing archived".
  */
+/**
+ * The diff area: two snapshots of one micro-neighbourhood.
+ *
+ * Benefit #5 needs a before and an after. Snapshot A holds Cafe Duna and
+ * Cafe Elvo; snapshot B holds Elvo and Faro. Same wire ids across both
+ * files (explicit, stable), same ocean, new coordinates. The compiled
+ * A-to-B diff is exactly two lines (-Duna, +Faro) with no spurious changes,
+ * verified through the real pipeline - which is what makes grid comparison
+ * meaningful rather than noise.
+ */
+export const SYNTHETIC_DIFF_AREA: TaskArea = {
+  id: 'synthetic-diff',
+  label: 'Synthetic micro-area pair for the diff task',
+  center: { lat: 44.03, lon: -150.03 },
+  radiusM: 400,
+  rationale:
+    'Two 3-feature snapshots sharing wire ids. A yaml of A plus a two-line diff '+
+    'answers the current-map question; the raw arm re-reads both snapshots.',
+  adversarial: true,
+};
 export const FREE_LADDER_AREAS: readonly TaskArea[] = [
   ...TASK_AREAS,
   SYNTHETIC_AREA,
   SYNTHETIC_EXPANSION_AREA,
   SYNTHETIC_HEAT_AREA,
+  SYNTHETIC_DIFF_AREA,
 ];
 
 /** The expansion task: answerable only from exact geometry, via the tool. */
@@ -262,6 +283,11 @@ export const EXPANSION_QUESTION =
   'void your answer, and the task directory is empty: there is nothing to ' +
   'find by exploring it.';
 
+/** The diff question: answerable from the previous map plus the changes. */
+export const DIFF_QUESTION =
+  'You were shown the map below. Since then the area changed as follows. ' +
+  'List the named places in the CURRENT map, with the type of thing each one is. ' +
+  'Do not invent any that are not in the data.';
 /** The heat task: read the scalar stream. */
 export const HEAT_QUESTION =
   'A crowd-density heat layer is included in this data. What is its peak ' +
@@ -380,6 +406,21 @@ export function buildTasks(areas: readonly TaskArea[] = TASK_AREAS): BenchmarkTa
       continue;
     }
 
+    if (area.id === SYNTHETIC_DIFF_AREA.id) {
+      // One designed pair, one kind. nearest/connectivity/omission on three
+      // cafes would be free points; the heat/expansion areas document why.
+      out.push({
+        id: `${area.id}/diff`,
+        kind: 'diff',
+        question: DIFF_QUESTION,
+        center: area.center,
+        radiusM: area.radiusM,
+        mode: 'walk',
+        groundTruth: 'diff-applied',
+      });
+
+      continue;
+    }
     if (area.id === SYNTHETIC_HEAT_AREA.id) {
       // Same reasoning as above: one designed micro-fixture, one kind. The
       // heat question needs the scalar layer; the other kinds would be free

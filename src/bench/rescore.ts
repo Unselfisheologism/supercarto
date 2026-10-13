@@ -271,6 +271,18 @@ function scoreAgainst(
           `${v.flags.length ? v.flags.join('; ') : 'value and location'}`,
       };
     }
+    case 'diff': {
+      if (!truth.names) return { correct: null, scoredBy: 'failed' };
+      const v = scoreNames(Object.assign([...truth.names], { aliases: truth.aliases ?? [] }), answer);
+      const ok = v.recall === 1 && v.hallucinations.length === 0;
+      return {
+        correct: ok,
+        scoredBy: 'exact',
+        rationale:
+          `recall ${Math.round(v.recall * 100)}% of ${truth.names.length} current, ` +
+          `${v.hallucinations.length} not in data`,
+      };
+    }
     default:
       return { correct: null, scoredBy: 'failed' };
   }

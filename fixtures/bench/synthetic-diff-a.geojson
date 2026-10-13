@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 401,
+      "properties": { "layer": "poi", "name": "Cafe Duna" },
+      "geometry": { "type": "Point", "coordinates": [-150.031, 44.031] }
+    },
+    {
+      "type": "Feature",
+      "id": 402,
+      "properties": { "layer": "poi", "name": "Cafe Elvo" },
+      "geometry": { "type": "Point", "coordinates": [-150.029, 44.031] }
+    },
+    {
+      "type": "Feature",
+      "id": 404,
+      "properties": { "layer": "road", "name": "Drift Lane" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-150.032, 44.0305],
+          [-150.028, 44.0305]
+        ]
+      }
+    }
+  ]
+}

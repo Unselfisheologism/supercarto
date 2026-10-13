@@ -30,6 +30,8 @@ export {
   PART_SEPARATOR,
 } from './wire/geometry.js';
 export * from './wire/types.js';
+export { diffDocuments, renderDiff } from './diff/diff.js';
+export type { ChangeOp, FeatureChange } from './diff/diff.js';
 
 // --- Ingestion --------------------------------------------------------------
 export { fromGeoJson, KEY_IDS as INGEST_KEY_IDS } from './ingest/geojson.js';

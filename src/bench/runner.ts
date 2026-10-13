@@ -4,6 +4,8 @@ import {
   estimateTokens,
   featuresFromDocument,
   toMaplet,
+  diffDocuments,
+  renderDiff,
   type GeoJsonFeature,
   type GeoJsonFeatureCollection,
   type MapletResult,
@@ -436,6 +438,42 @@ export async function buildContext(
   // answering about live data while being scored against a recording of it. That
   // is the worst of both - a comparison against data nobody can reproduce, and a
   // ground truth that may describe a different day.
+  // Paired snapshots for the diff kind. The loader keys fixtures by filename,
+  // so synthetic-diff-a/b arrive as their own keys beside the area id.
+  // File naming is the convention; a task field for it would be plumbing for
+  // one task.
+  if (task.kind === 'diff') {
+    const prev = fixtures?.[areaIdOf(task) + '-a'];
+    const curr = fixtures?.[areaIdOf(task) + '-b'];
+    if (!prev || !curr) return { text: '' };
+    log(`using fixture pair for ${task.id}`);
+    if (representation === 'geojson') {
+      // The honest baseline: re-fetch everything. No diff, both snapshots in
+      // full - the cost the protocol exists to avoid.
+      const built = { text: `Previous snapshot:
+${geoJsonText(prev)}
+
+Current snapshot:
+${geoJsonText(curr)}` };
+      cache?.set(cacheKey, built);
+      return built;
+    }
+    // Same task bbox for both compiles, so both docs share envelope, extent
+    // and projection - the precondition grid comparison needs. Verified by
+    // test: the compiled A-to-B diff is exactly the designed two lines.
+    const docA = compileFixture(prev, task, budget);
+    const docB = compileFixture(curr, task, budget);
+    const diff = renderDiff(diffDocuments(docA.doc, docB.doc), docA.doc, docB.doc);
+    const built = {
+      text: `Previous map:
+${docA.yaml}
+Changes since that map:
+${diff}
+`,
+    };
+    cache?.set(cacheKey, built);
+    return built;
+  }
   const fixture = fixtures?.[areaIdOf(task)];
   if (fixture) {
     log(`using fixture for ${task.id}`);
@@ -705,6 +743,31 @@ export async function groundTruth(
       return { areaM2: polygonAreaM2(ring) };
     }
 
+    if (task.kind === 'diff') {
+      // Recall over current POI names; hallucination vocabulary over every
+      // name in either snapshot. Two corrections baked in from measurement:
+      //
+      // 1. A correct diff answer names the removed place ("Duna has been
+      //    removed"). Scoring that as invented punishes the capability under
+      //    test, so A-names are legitimate vocabulary, not hallucinations.
+      // 2. The yaml carries no street names (edges show path type only), so
+      //    requiring Drift Lane in recall demands what the arm was never
+      //    shown. Recall is POIs; the road stays vocab for arms that list it.
+      const curr = fixtures?.[areaIdOf(task) + '-b'];
+      const prev = fixtures?.[areaIdOf(task) + '-a'];
+      if (!curr || !prev) return {};
+      const poiNames = (fc: GeoJsonFeatureCollection) => (fc.features
+        .filter((f) => (f.properties as any)?.layer === 'poi')
+        .map((f) => (f.properties as any)?.name as string)
+        .filter((n): n is string => typeof n === 'string' && n.length > 0));
+      const allNames = (fc: GeoJsonFeatureCollection) => (fc.features
+        .map((f) => (f.properties as any)?.name as string)
+        .filter((n): n is string => typeof n === 'string' && n.length > 0));
+      const names = [...new Set(poiNames(curr))];
+      if (names.length === 0) return {};
+      const vocab = [...new Set([...allNames(prev), ...allNames(curr)])].filter((n) => !names.includes(n));
+      return { names, aliases: vocab };
+    }
     if (task.kind === 'connectivity') {
       // From the fixture when there is one. The graph has to be the same graph
       // the model was shown: connectivity truth taken from a live fetch while
@@ -944,6 +1007,19 @@ function scoreAnswer(
         rationale:
           `true ${Math.round(truth.areaM2)}m²; ` +
           `${v.flags.length ? v.flags.join('; ') : 'within tolerance'}`,
+      };
+    }
+
+    case 'diff': {
+      if (!truth.names) return { correct: null, by: 'failed' };
+      const v = scoreNames(Object.assign([...truth.names], { aliases: truth.aliases ?? [] }), answer);
+      const ok = v.recall === 1 && v.hallucinations.length === 0;
+      return {
+        correct: ok,
+        by: 'exact',
+        rationale:
+          `recall ${Math.round(v.recall * 100)}% of ${truth.names.length} current, ` +
+          `${v.hallucinations.length} not in data`,
       };
     }
 
