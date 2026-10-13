@@ -9,7 +9,7 @@ import {
   SYNTHETIC_EXPANSION_AREA,
   TASK_AREAS,
 } from '../src/bench/tasks.js';
-import { pointInRing, scoreExpansion } from '../src/bench/score.js';
+import { pointInRing, polygonAreaM2, scoreExpansion } from '../src/bench/score.js';
 import { scoreArchived } from '../src/bench/rescore.js';
 import type { GeoJsonFeatureCollection } from '../src/ingest/geojson.js';
 import type { Exchange } from '../src/bench/archive.js';
@@ -18,10 +18,15 @@ import type { Exchange } from '../src/bench/archive.js';
  * The expansion track: benefit #4 of the planning doc, the first agentic task.
  *
  * The capability under test is the protocol's signature move - compact summary
- * now, exact geometry on demand through expand_feature. The maplet names the
- * cafes but carries no coordinates; the only path to the answer runs through
- * the tool. A raw GeoJSON dump answers the same question at two orders of
- * magnitude more tokens, which is the comparison the benchmark exists to make.
+ * now, exact geometry on demand through expand_feature. The maplet states no
+ * area and carries no coordinates; the only path to the number runs through
+ * the tool. A raw GeoJSON dump answers the same question at far higher token
+ * cost, which is the comparison the benchmark exists to make.
+ *
+ * The question asks for an area rather than a name deliberately. The first
+ * formulation (which cafe lies inside the footprint) proved guessable without
+ * the tool: a 1-in-3 name pick scores a third of the time by chance, and both
+ * models' passes came from guessing. An area has no guessable answer.
  */
 const fixture = JSON.parse(
   readFileSync('fixtures/bench/synthetic-expansion.geojson', 'utf8'),
@@ -49,6 +54,9 @@ const offlineCart = {
 const fixtures = { 'synthetic-expansion': fixture };
 const task = buildTasks([SYNTHETIC_EXPANSION_AREA])[0]!;
 
+// Source rectangle: 0.0005° lon x 0.000272° lat at 44.01° ≈ 40.0m x 30.1m.
+const TRUTH_M2 = 1204;
+
 describe('the expansion task exists, and only where it is measurable', () => {
   it('generates exactly one kind for the micro-area', () => {
     expect(buildTasks([SYNTHETIC_EXPANSION_AREA]).map((t) => t.kind)).toEqual(['expand']);
@@ -73,36 +81,47 @@ describe('the expansion task exists, and only where it is measurable', () => {
 });
 
 describe('expansion ground truth', () => {
-  it('finds Cafe Alba inside and the others outside, with no network', async () => {
+  it('computes the footprint area from source geometry, with no network', async () => {
     const truth = await groundTruth(task, deadRouter, offlineCart, fixtures, 'supercarto', 1024);
-    expect(truth.inside).toEqual(['Cafe Alba']);
-    expect(truth.candidates?.sort()).toEqual(['Cafe Alba', 'Cafe Bex', 'Cafe Coro']);
+    expect(truth.areaM2).toBeDefined();
+    expect(Math.abs(truth.areaM2! - TRUTH_M2)).toBeLessThan(1);
   });
 
-  it('shares one point-in-ring implementation with the tests', () => {
+  it('shares one projection between truth and tests', () => {
     const rect: [number, number][] = [
-      [0, 0],
-      [4, 0],
-      [4, 3],
-      [0, 3],
-      [0, 0],
+      [-150.01025, 44.009864],
+      [-150.00975, 44.009864],
+      [-150.00975, 44.010136],
+      [-150.01025, 44.010136],
+      [-150.01025, 44.009864],
     ];
-    expect(pointInRing(rect, [2, 1])).toBe(true);
-    expect(pointInRing(rect, [5, 1])).toBe(false);
-    expect(pointInRing(rect, [2, 4])).toBe(false);
+    expect(Math.abs(polygonAreaM2(rect) - TRUTH_M2)).toBeLessThan(1);
+    expect(pointInRing(
+      [
+        [0, 0],
+        [4, 0],
+        [4, 3],
+        [0, 3],
+        [0, 0],
+      ],
+      [2, 1],
+    )).toBe(true);
   });
 });
 
 describe('the expansion prompt', () => {
-  it('carries no coordinates but bundles the expandable document', async () => {
+  it('states no area and carries no coordinates, but bundles the document', async () => {
+    // The question is appended by runOne, not buildContext, so it is checked
+    // on the task: it must demand units, because the scorer requires them
+    // (a bare "1200" would read "feature 100" as the answer).
+    expect(task.question).toMatch(/square metres/);
     const ctx = await buildContext(task, 'supercarto', 1024, offlineCart, () => {}, undefined, fixtures);
-    expect(ctx.text).toMatch(/Cafe Alba/);
-    // The area centre (44.01) is fine to show; the feature coordinates are
-    // not. Each of these decimals is distinctive to one feature.
     const yaml = ctx.text.split('<scr>')[0]!;
     for (const coord of ['44.01005', '44.0095', '-150.0106', '-150.009438', '44.009864']) {
       expect(yaml).not.toContain(coord);
     }
+    // And no area figure leaks through the summary either.
+    expect(yaml).not.toMatch(/1204|1,204|31,?416/);
     expect(ctx.text).toMatch(/<scr>/);
     const scr = ctx.text.split('<scr>\n')[1]!.split('\n</scr>')[0]!;
     const doc = fromScr(scr).doc;
@@ -120,32 +139,51 @@ describe('the expansion prompt', () => {
 });
 
 describe('scoring expansion', () => {
-  const inside = ['Cafe Alba'];
-  const candidates = ['Cafe Alba', 'Cafe Bex', 'Cafe Coro'];
-
-  it('passes the exact set, in any order and case, and reports the axis', () => {
-    const s = scoreExpansion('Cafe Alba is inside.', inside, candidates, true);
+  it('passes a computed area within tolerance and reports the axis', () => {
+    // Grid-derived area is ~1127 (6.4% under truth from quantization); a
+    // correct method with sloppy rounding still clears 20%.
+    const s = scoreExpansion('The footprint is about 1150 square metres.', TRUTH_M2, true);
     expect(s.correct).toBe(true);
     expect(s.flags).toEqual([]);
   });
 
-  it('fails a subset: the confident partial answer', () => {
-    // Naming one of two inside cafes claims the question answered while
-    // leaving half out. Partial credit would reward stopping early.
-    const s = scoreExpansion('Cafe Alba', ['Cafe Alba', 'Cafe Bex'], candidates, true);
-    expect(s.correct).toBe(false);
-    expect(s.flags.join(' ')).toMatch(/missed/);
+  it('reads through thousands separators', () => {
+    // Measured: four correct step-5 answers ("1,200" / "1,198" / "1,130" /
+    // "1,210" m²) were failed as "200" / "198" / "130" / "210" because the
+    // number pattern matched after the comma. A separator is formatting.
+    const s = scoreExpansion('about 1,200 m².', TRUTH_M2, true);
+    expect(s.correct).toBe(true);
+    expect(s.flags).toEqual([]);
   });
 
-  it('fails an extra name and an empty answer', () => {
-    expect(scoreExpansion('Cafe Alba and Cafe Bex', inside, candidates, true).correct).toBe(false);
-    const s = scoreExpansion('The cafes are nearby.', inside, candidates, false);
+  it('fails a guess nowhere near truth', () => {
+    // The point of asking for a number: the answer space is every positive
+    // number, so there is no 1-in-3 pick. A guess cannot land here by chance
+    // in any strategy worth the name.
+    const s = scoreExpansion('Roughly 5000 m².', TRUTH_M2, true);
     expect(s.correct).toBe(false);
-    expect(s.flags.join(' ')).toMatch(/none of the candidates/);
+    expect(s.flags.join(' ')).toMatch(/stated 5000/);
+  });
+
+  it('fails an answer with no area figure, including a bare name', () => {
+    // The old formulation's winning move - naming a cafe - states no area
+    // and must not pass the new one.
+    const s = scoreExpansion('Cafe Alba', TRUTH_M2, false);
+    expect(s.correct).toBe(false);
+    expect(s.flags.join(' ')).toMatch(/no area stated/);
+  });
+
+  it('does not mistake feature 100 for an area', () => {
+    // "feature 100" contains digits; without units after the number it must
+    // not read as 100 m² (which would fail anyway, but for the wrong reason
+    // and with a confusing rationale).
+    const s = scoreExpansion('Feature 100 is the building.', TRUTH_M2, false);
+    expect(s.correct).toBe(false);
+    expect(s.flags.join(' ')).toMatch(/no area stated/);
   });
 
   it('records answering-without-expanding without failing for it', () => {
-    const s = scoreExpansion('Cafe Alba', inside, candidates, false);
+    const s = scoreExpansion('1204 m²', TRUTH_M2, false);
     expect(s.correct).toBe(true);
     expect(s.flags.join(' ')).toMatch(/without expanding/);
   });
@@ -161,17 +199,16 @@ describe('scoring expansion', () => {
       system: '',
       user: '',
       promptHash: 'h',
-      answer: 'Cafe Alba',
+      answer: 'About 1150 m²',
       inputTokens: 1,
       outputTokens: 1,
       at: '',
       toolsUsed: ['expand_feature'],
     } as Exchange;
-    const row = scoreArchived(exchange, 'expand', { inside, candidates });
+    const row = scoreArchived(exchange, 'expand', { areaM2: TRUTH_M2 });
     expect(row.correct).toBe(true);
     const untracked = scoreArchived({ ...exchange, toolsUsed: undefined }, 'expand', {
-      inside,
-      candidates,
+      areaM2: TRUTH_M2,
     });
     expect(untracked.correct).toBe(true);
     expect(untracked.rationale).toMatch(/without expanding/);

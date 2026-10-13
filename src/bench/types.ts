@@ -106,12 +106,13 @@ export interface GroundTruth {
   /** Features that survived into the emitted graph. */
   emittedNodes?: number;
   /**
-   * Names inside the footprint, for the `expand` task.
+   * Footprint area in square metres, for the `expand` task.
    *
-   * Computed from the fixture geometry by ray casting, not from any maplet:
-   * the maplet carries no coordinates, so scoring against it would be circular.
+   * Shoelace over the source ring, equirectangular about its own latitude.
+   * Replaces the earlier inside/outside formulation, which proved guessable
+   * without the tool (a 1-in-3 name pick scores a third of the time by
+   * chance). An area has no guessable answer: the space is every positive
+   * number.
    */
-  inside?: string[];
-  /** Candidate names the expansion question offers. */
-  candidates?: string[];
+  areaM2?: number;
 }

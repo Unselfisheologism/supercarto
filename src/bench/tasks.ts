@@ -228,14 +228,14 @@ export const FREE_LADDER_AREAS: readonly TaskArea[] = [
 
 /** The expansion task: answerable only from exact geometry, via the tool. */
 export const EXPANSION_QUESTION =
-  'Building footprint feature 100 is summarised in this map but its exact ' +
-  'shape is not shown. The three cafes below are named but their coordinates ' +
-  'are not shown either. Which of Cafe Alba, Cafe Bex, Cafe Coro lie inside ' +
-  'the footprint of feature 100? Answer with the names, and nothing else ' +
-  'determines it: call expand_feature with the document below to inspect ' +
-  'exact geometry before answering. Work with the expand_feature tool. ' +
-  'Filesystem, shell and execution tools will void your answer, and the task ' +
-  'directory is empty: there is nothing to find by exploring it.';
+  'What is the footprint area of building feature 100, in square metres? Its ' +
+  'exact shape is not shown in this map, and no area figure is stated ' +
+  'anywhere in it: call expand_feature with the document below to inspect ' +
+  'exact geometry, compute the area, and answer with the area as a number ' +
+  'followed by its units (m² or square metres). Work ' +
+  'with the expand_feature tool. Filesystem, shell and execution tools will ' +
+  'void your answer, and the task directory is empty: there is nothing to ' +
+  'find by exploring it.';
 
 /** The question the omission task asks. */
 export const OMISSION_QUESTION =

@@ -390,6 +390,38 @@ hidden, so the task confounds tool-seeking with spatial math. And a none-arm
 subject called a tool literally named `question` - asking the harness for
 clarification mid-run, and correctly voided for it.
 
+### Expansion verdict v2: the area formulation
+
+The containment question was replaced: it proved guessable (a 1-in-3 name pick
+scores by chance, and both models' passes came from guessing). The new question
+asks for the footprint area in m² - unguessable, with truth at 1204 m² from
+source geometry and a ±20% band that admits correct methods (grid quantization
+costs ~6%) but never a guess.
+
+| | supercarto | geojson | none | expanded? |
+|---|---|---|---|---|
+| muse-spark | **2/3** | 0/3 | 0/3 | s1 via tool (1206), s2 via direct decode (1203) |
+| step-5 | **3/3** | 3/3 | 0/3 | 0 attempts - all six decoded by hand |
+
+Three readings. First, the task is solvable and the floor holds on both
+models. Second, step-5 decoded delta-encoded SCR, derived the grid scale two
+independent ways (road-length calibration and bbox arithmetic), and computed
+correct areas six times without touching the tool - the protocol data
+sufficing is itself the finding. Third, the one genuine tool loop (muse s1,
+with error recovery) remains the only observation of expansion-in-action;
+everything else is direct reasoning over the bundle.
+
+A scorer defect flipped four of these passes before it was caught: the number
+pattern matched "200" inside "1,200", failing correct answers as confident
+wrong numbers. Fixed, pinned with the measured answers, and both archives
+re-scored with zero new model calls - the payoff of committing raw outputs.
+
+Open limitation: per-row tool *availability* is unverifiable from the event
+stream (no inventory event exists), so "offered but unused" and "never
+offered" are indistinguishable after the fact. Step-5's answers claim the
+tool was never exposed; muse s1 demonstrably reached one. The axis records
+use, not opportunity.
+
 ## 12. The `omission` task: measuring the protocol instead of the map
 
 Every other task kind is satisfiable by a sufficiently good map of the area. The

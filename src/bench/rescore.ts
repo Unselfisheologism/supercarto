@@ -249,15 +249,15 @@ function scoreAgainst(
       // Shared scorer, not a copy. See the omission note above: this file has
       // hosted drifted duplicates, and a fourth one starts here if the rules
       // are written out instead of called.
-      if (!truth.inside || !truth.candidates) return { correct: null, scoredBy: 'failed' };
+      if (truth.areaM2 === undefined) return { correct: null, scoredBy: 'failed' };
       const expanded = toolsUsed?.includes('expand_feature') ?? false;
-      const v = scoreExpansion(answer, truth.inside, truth.candidates, expanded);
+      const v = scoreExpansion(answer, truth.areaM2, expanded);
       return {
         correct: v.correct,
         scoredBy: 'exact',
         rationale:
-          `inside: ${truth.inside.join(', ') || 'none'}; ` +
-          `${v.flags.length ? v.flags.join('; ') : 'exact set'}`,
+          `true ${Math.round(truth.areaM2)}m²; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'within tolerance'}`,
       };
     }
     default:

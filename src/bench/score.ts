@@ -668,41 +668,67 @@ export function pointInRing(ring: readonly (readonly [number, number])[], p: rea
 }
 
 /**
- * Whether the answer names exactly the places inside the footprint.
+ * Polygon area in square metres, equirectangular about the ring's own
+ * latitude. Shared so truth and tests cannot disagree on the projection.
+ */
+export function polygonAreaM2(ring: readonly (readonly [number, number])[]): number {
+  const lat0 = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
+  const ky = 110574;
+  let twice = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]!;
+    const b = ring[j]!;
+    twice += a[0] * kx * b[1] * ky - b[0] * kx * a[1] * ky;
+  }
+  return Math.abs(twice) / 2;
+}
+
+/**
+ * Whether the answer states the footprint area.
  *
- * Set equality over normalised names: order-insensitive, case-insensitive,
- * extra prose tolerated, missing or extra names fatal. A subset ("Cafe Alba"
- * when two are inside) is the confident-wrong-answer shape - it claims the
- * question is answered while leaving half of it out - so partial credit is
- * not a thing here, same as the turns scorer.
+ * A number with area units, within 20% of truth. The band is wider than the
+ * 15% distance tolerance for a measured reason: grid quantization alone costs
+ * ~6% (the wire rounds coordinates to integers), so 15% would fail correct
+ * methods with sloppy rounding. 20% still admits no guess: the answer space
+ * is every positive number, and landing within a fifth of 1204 by chance is
+ * not a strategy.
  *
- * `expanded` rides along as a reported axis, not a gate. A model that reads
- * the coordinates out of the SCR document directly and answers correctly has
- * still reasoned over the protocol's data; failing it for not performing tool
- * theatre would measure compliance rather than capability. But the axis tells
- * the story the score alone hides: whether the agentic loop did the work.
+ * `expanded` rides along as a reported axis, not a gate. A model that decodes
+ * the bundle directly and computes correctly has still reasoned over the
+ * protocol's data; failing it for skipping tool theatre would measure
+ * compliance rather than capability. But the axis tells the story the score
+ * alone hides: whether the agentic loop did the work.
  */
 export function scoreExpansion(
   answer: string,
-  inside: readonly string[],
-  candidates: readonly string[],
+  areaM2: number,
   expanded: boolean,
+  tolerance = 0.2,
 ): { correct: boolean; flags: string[] } {
-  const norm = (s: string) => s.trim().toLowerCase();
-  const hay = norm(answer);
-  const claimed = candidates.filter((c) => hay.includes(norm(c)));
-  const want = new Set(inside.map(norm));
-  const got = new Set(claimed.map(norm));
   const flags: string[] = [];
   if (!expanded) flags.push('answered without expanding');
-  if (want.size === got.size && [...want].every((n) => got.has(n))) {
+  const m = /\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:m\^2|m2|m\u00B2|sqm|sq\.?\s*m(?:et(?:er|re)s?)?|square\s*met(?:er|re)s?)(?![A-Za-z])/i.exec(
+    answer,
+  );
+  if (!m?.[1]) {
+    flags.push('no area stated');
+    return { correct: false, flags };
+  }
+  // A thousands separator is formatting, not precision: "1,200" is one number.
+  // Without this the regex matches "200" after the comma - which failed four
+  // correct step-5 answers (1,200 / 1,198 / 1,130 / 1,210) in a real run while
+  // reporting each as a confident wrong number.
+  const stated = Number(m[1].replace(/,/g, ''));
+  if (!Number.isFinite(stated) || stated <= 0) {
+    flags.push('no area stated');
+    return { correct: false, flags };
+  }
+  const ratio = stated / areaM2;
+  if (ratio >= 1 - tolerance && ratio <= 1 + tolerance) {
     return { correct: true, flags };
   }
-  const missing = [...want].filter((n) => !got.has(n));
-  const extra = [...got].filter((n) => !want.has(n));
-  if (missing.length > 0) flags.push(`missed: ${missing.join(', ')}`);
-  if (extra.length > 0) flags.push(`wrongly included: ${extra.join(', ')}`);
-  if (claimed.length === 0) flags.push('named none of the candidates');
+  flags.push(`stated ${Math.round(stated)}m², true ${Math.round(areaM2)}m²`);
   return { correct: false, flags };
 }
 

@@ -24,7 +24,7 @@ import {
   distanceCorrect,
   extractDistanceM,
   isRefusal,
-  pointInRing,
+  polygonAreaM2,
   scoreConnectivity,
   scoreExpansion,
   scoreNames,
@@ -675,50 +675,33 @@ export async function groundTruth(
 
     if (task.kind === 'expand') {
       /**
-       * Truth is computed from the fixture geometry, not from any maplet.
+       * Truth is the source polygon's area, not anything the maplet says.
        *
-       * The maplet carries no coordinates by design - that absence is the
-       * information gap the task exists to test - so scoring against the maplet
-       * would be circular. Ray casting over the source polygons is independent
-       * of the whole compile/emit path, which additionally cross-validates the
-       * pipeline: if the wire encoding moved a vertex, truth and expansion
-       * disagree and the task fails for a harness reason, visibly.
+       * The maplet carries no coordinates and states no area by design - both
+       * absences are the information gap the task exists to test - so scoring
+       * against the maplet would be circular. Shoelace over the source ring,
+       * projected equirectangularly, is independent of the whole
+       * compile/emit path.
        *
        * Fixture only, no live fallback. Without the designed configuration
        * there is no question: a live fetch cannot supply an unmemorisable
-       * building with known inside/outside cafes.
+       * building with a known area.
        */
       const areaFixture = fixtures?.[areaIdOf(task)];
       if (!areaFixture) return {};
-      const numPair = (v: unknown): [number, number] | null =>
-        Array.isArray(v) && typeof v[0] === 'number' && typeof v[1] === 'number'
-          ? [v[0], v[1]]
-          : null;
       const polys = areaFixture.features.filter(
         (f) => f.geometry?.type === 'Polygon' && (f.properties as any)?.building === 'yes',
       );
-      const ringSrc = polys[0]?.geometry?.coordinates;
-      const ring = Array.isArray(ringSrc)
-        ? (ringSrc[0] as unknown[]).flatMap((p) => {
-            const q = numPair(p);
-            return q ? [q] : [];
-          })
+      const coords = polys[0]?.geometry?.coordinates;
+      const ring = Array.isArray(coords)
+        ? (coords[0] as unknown[]).flatMap((p) =>
+            Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number'
+              ? [[p[0], p[1]] as [number, number]]
+              : [],
+          )
         : [];
       if (ring.length === 0) return {};
-      const cafes = areaFixture.features.filter(
-        (f) =>
-          f.geometry?.type === 'Point' && typeof (f.properties as any)?.name === 'string',
-      );
-      const inside = cafes
-        .filter((f) => {
-          const p = numPair(f.geometry?.coordinates);
-          return p !== null && pointInRing(ring, p);
-        })
-        .map((f) => (f.properties as any).name as string);
-      return {
-        inside,
-        candidates: cafes.map((f) => (f.properties as any).name as string),
-      };
+      return { areaM2: polygonAreaM2(ring) };
     }
 
     if (task.kind === 'connectivity') {
@@ -937,14 +920,14 @@ function scoreAnswer(
     }
 
     case 'expand': {
-      if (!truth.inside || !truth.candidates) return { correct: null, by: 'failed' };
-      const v = scoreExpansion(answer, truth.inside, truth.candidates, expanded);
+      if (truth.areaM2 === undefined) return { correct: null, by: 'failed' };
+      const v = scoreExpansion(answer, truth.areaM2, expanded);
       return {
         correct: v.correct,
         by: 'exact',
         rationale:
-          `inside: ${truth.inside.join(', ') || 'none'}; ` +
-          `${v.flags.length ? v.flags.join('; ') : 'exact set'}`,
+          `true ${Math.round(truth.areaM2)}m²; ` +
+          `${v.flags.length ? v.flags.join('; ') : 'within tolerance'}`,
       };
     }
   }
