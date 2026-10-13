@@ -7,7 +7,7 @@ There are excellent machine-readable map formats, but they are usually binary or
 2. A token-budget-aware “maplet” format for agents.
 3. Tools the agent can call to expand details only when needed.
 
-Below I’ll compare existing options, then invent a practical LLM-native format: **AM1 / AgentMap 1**.
+Below I’ll compare existing options, then invent a practical LLM-native format: **Supercarto / AgentMap 1**.
 
 ---
 
@@ -66,12 +66,12 @@ That is the right architecture.
 
 ---
 
-# 3. Inventing a format: AM1 / AgentMap 1
+# 3. Inventing a format: Supercarto / AgentMap 1
 
 I would define a format called:
 
 ```text
-AM1 / AgentMap 1
+Supercarto / AgentMap 1
 ```
 
 Goals:
@@ -84,20 +84,20 @@ Goals:
 6. Supports level-of-detail and omission.
 7. Allows external binary payloads for heavy data.
 
-AM1 has two modes:
+Supercarto has two modes:
 
 ```text
-AM1/text    for LLM context
-AM1/binary  for machine-to-machine efficiency
+Supercarto/text    for LLM context
+Supercarto/binary  for machine-to-machine efficiency
 ```
 
-The LLM usually sees AM1/text or a summary of AM1/binary.
+The LLM usually sees Supercarto/text or a summary of Supercarto/binary.
 
 ---
 
-# 4. AM1/text design
+# 4. Supercarto/text design
 
-AM1/text is whitespace-separated, line-based, and dictionary-encoded.
+Supercarto/text is whitespace-separated, line-based, and dictionary-encoded.
 
 It avoids repeating keys like GeoJSON does.
 
@@ -119,10 +119,10 @@ Instead of this:
 	    	        	                    	      }
 	    	        	                    	      ```
 
-	    	        	                    	      AM1 does this:
+	    	        	                    	      Supercarto does this:
 
 	    	        	                    	      ```text
-	    	        	                    	      AM1 1
+	    	        	                    	      Supercarto 1
 	    	        	                    	      TILE 15 5240 12661
 	    	        	                    	      Q 4096
 	    	        	                    	      L 1 road
@@ -137,12 +137,12 @@ Instead of this:
 
 	    	        	                    	      ---
 
-	    	        	                    	      # 5. AM1/text records
+	    	        	                    	      # 5. Supercarto/text records
 
 	    	        	                    	      ## Header
 
 	    	        	                    	      ```text
-	    	        	                    	      AM1 1
+	    	        	                    	      Supercarto 1
 	    	        	                    	      ```
 
 	    	        	                    	      Means: AgentMap version 1.
@@ -516,7 +516,7 @@ Instead of this:
 
 	    	        	                    	              # 7. Delta-encoded geometry
 
-	    	        	                    	              To save tokens, AM1 supports delta encoding.
+	    	        	                    	              To save tokens, Supercarto supports delta encoding.
 
 	    	        	                    	              Prefix a path with:
 
@@ -582,7 +582,7 @@ Instead of this:
 
 	    	        	                    	              Heatmaps should not usually be sent as dense grids unless the area is tiny.
 
-	    	        	                    	              AM1 supports three heatmap styles:
+	    	        	                    	              Supercarto supports three heatmap styles:
 
 	    	        	                    	              1. Sparse points.
 	    	        	                    	              2. Row run-length encoding.
@@ -670,7 +670,7 @@ Instead of this:
 
 	    	        	                    	              # 9. Omission records
 
-	    	        	                    	              A very important feature: AM1 should explicitly say what was left out.
+	    	        	                    	              A very important feature: Supercarto should explicitly say what was left out.
 
 	    	        	                    	              ```text
 	    	        	                    	              O <layer_id> <omitted_count> [centroid=x,y] [note=string_id]
@@ -708,9 +708,9 @@ Instead of this:
 	    	        	                    	              Example:
 
 	    	        	                    	              ```text
-	    	        	                    	              REF buildings am1://tile/15/5240/12661/buildings.bin mime=application/vnd.am1.binary
-	    	        	                    	              REF mesh am1://tile/15/5240/12661/buildings.glb mime=model/gltf-binary
-	    	        	                    	              REF terrain am1://tile/15/5240/12661/terrain.quantized-mesh mime=application/vnd.quantized-mesh
+	    	        	                    	              REF buildings supercarto://tile/15/5240/12661/buildings.bin mime=application/vnd.supercarto.binary
+	    	        	                    	              REF mesh supercarto://tile/15/5240/12661/buildings.glb mime=model/gltf-binary
+	    	        	                    	              REF terrain supercarto://tile/15/5240/12661/terrain.quantized-mesh mime=application/vnd.quantized-mesh
 	    	        	                    	              ```
 
 	    	        	                    	              The agent can call a tool to fetch or decode the reference.
@@ -724,12 +724,12 @@ Instead of this:
 
 	    	        	                    	              ---
 
-	    	        	                    	              # 11. Full AM1/text example
+	    	        	                    	              # 11. Full Supercarto/text example
 
 	    	        	                    	              Here is a small urban maplet.
 
 	    	        	                    	              ```text
-	    	        	                    	              AM1 1
+	    	        	                    	              Supercarto 1
 	    	        	                    	              TILE 15 5240 12661
 	    	        	                    	              Q 4096
 	    	        	                    	              META source osm
@@ -772,7 +772,7 @@ Instead of this:
 
 	    	        	                    	              O 3 137 centroid=2048,2048
 
-	    	        	                    	              REF buildings am1://tile/15/5240/12661/buildings.bin mime=application/vnd.am1.binary
+	    	        	                    	              REF buildings supercarto://tile/15/5240/12661/buildings.bin mime=application/vnd.supercarto.binary
 	    	        	                    	              ```
 
 	    	        	                    	              This gives the agent:
@@ -788,9 +788,9 @@ Instead of this:
 
 	    	        	                    	              ---
 
-	    	        	                    	              # 12. AM1 coordinate conversion
+	    	        	                    	              # 12. Supercarto coordinate conversion
 
-	    	        	                    	              For `TILE z/x/y`, local AM1 coordinates map to Web Mercator tile space.
+	    	        	                    	              For `TILE z/x/y`, local Supercarto coordinates map to Web Mercator tile space.
 
 	    	        	                    	              If:
 
@@ -828,7 +828,7 @@ Instead of this:
 	    	        	                    	                                      return west, south, east, north
 
 
-	    	        	                    	                                      def am1_tile_to_latlon(z, x, y, local_x, local_y, q=4096):
+	    	        	                    	                                      def supercarto_tile_to_latlon(z, x, y, local_x, local_y, q=4096):
 	    	        	                    	                                          west, south, east, north = tile_bounds(z, x, y)
 
 	    	        	                    	                                              # Longitude interpolates linearly.
@@ -851,16 +851,16 @@ Instead of this:
 
 	    	        	                    	                                                                              ---
 
-	    	        	                    	                                                                              # 13. AM1/binary
+	    	        	                    	                                                                              # 13. Supercarto/binary
 
-	    	        	                    	                                                                              For real efficiency, define AM1/binary using Protobuf or FlatBuffers.
+	    	        	                    	                                                                              For real efficiency, define Supercarto/binary using Protobuf or FlatBuffers.
 
 	    	        	                    	                                                                              A rough Protobuf schema:
 
 	    	        	                    	                                                                              ```protobuf
 	    	        	                    	                                                                              syntax = "proto3";
 
-	    	        	                    	                                                                              package am1;
+	    	        	                    	                                                                              package supercarto;
 
 	    	        	                    	                                                                              message Maplet {
 	    	        	                    	                                                                              	  Header header = 1;
@@ -976,7 +976,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        }
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        For transport, compress AM1/binary with:
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        For transport, compress Supercarto/binary with:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        zstd
@@ -987,18 +987,18 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Recommended:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        AM1/binary + zstd
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Supercarto/binary + zstd
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        MIME type:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        application/vnd.am1.binary+zstd
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        application/vnd.supercarto.binary+zstd
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        If your agent framework supports binary attachments, give the LLM a small summary and attach the binary maplet.
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        If your agent framework only supports text, use AM1/text.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        If your agent framework only supports text, use Supercarto/text.
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ---
 
@@ -1009,13 +1009,13 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Your map server should accept a request like:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```http
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        GET /am1?tile=15/5240/12661&layers=road,poi&budget=1024&format=text
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        GET /supercarto?tile=15/5240/12661&layers=road,poi&budget=1024&format=text
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Or:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```http
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        GET /am1?bbox=-122.412,37.772,-122.408,37.776&layers=road,poi,building&budget=2048&format=text
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        GET /supercarto?bbox=-122.412,37.772,-122.408,37.776&layers=road,poi,building&budget=2048&format=text
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        The server then decides:
@@ -1031,7 +1031,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Example response:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        AM1 1
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Supercarto 1
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        TILE 15 5240 12661
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Q 4096
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        L 1 road
@@ -1043,7 +1043,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        A 1 10=s20
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        F 1 1 1 L 1 d:0,2048,4096,0
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        O 2 43 centroid=2048,2048
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        REF full am1://tile/15/5240/12661/full.bin mime=application/vnd.am1.binary
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        REF full supercarto://tile/15/5240/12661/full.bin mime=application/vnd.supercarto.binary
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        The LLM gets enough to reason. The machine can fetch the rest.
@@ -1095,13 +1095,13 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Geometry:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        AM1 lines and polygons
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Supercarto lines and polygons
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Best format:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        AM1/text for prompt
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Supercarto/text for prompt
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        MVT/PMTiles for backend
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
@@ -1178,7 +1178,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        quantized-mesh
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        But expose AM1 semantics to the LLM.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        But expose Supercarto semantics to the LLM.
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ---
 
@@ -1216,7 +1216,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        But better:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        REF graph am1://building/123/navigation_graph.bin
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        REF graph supercarto://building/123/navigation_graph.bin
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Then provide tools:
@@ -1291,7 +1291,7 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```text
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        encoded polyline
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        AM1 line
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        Supercarto line
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        turn-by-turn instructions
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        ```
 
@@ -1337,7 +1337,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	            "radius_m": 300,
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                "layers": ["road", "poi", "building"],
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                    "budget_tokens": 2048,
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                        "format": "am1/text"
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                        "format": "supercarto/text"
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          }
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          }
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ```
@@ -1345,7 +1345,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Example response:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          AM1 1
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Supercarto 1
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          TILE 15 5241 12661
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Q 4096
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ...
@@ -1367,7 +1367,7 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          1. Atlas, an AI agent, needs to find a cafe near a route.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          2. He calls `get_maplet` with a token budget.
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          3. The server returns AM1/text.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          3. The server returns Supercarto/text.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          4. Atlas sees a road and three POIs.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          5. He asks for a route.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          6. The route tool returns a compact route summary.
@@ -1377,12 +1377,12 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ---
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          # 19. Minimal viable AM1 implementation
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          # 19. Minimal viable Supercarto implementation
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          If you want the simplest useful version, implement only this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          AM1
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Supercarto
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          TILE
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Q
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          L
@@ -1434,7 +1434,7 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          For LLM context: no single dominant standard.
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          For AI agents: build an AM1-style maplet protocol over vector tiles.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          For AI agents: build an Supercarto-style maplet protocol over vector tiles.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ```
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          The winning design is:
@@ -1442,8 +1442,8 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ```text
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          global tiled map backend
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          + token-budgeted simplification
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          + AM1/text for LLM context
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          + AM1/binary for precise geometry
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          + Supercarto/text for LLM context
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          + Supercarto/binary for precise geometry
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          + tool calls for expansion
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ```
 
@@ -1452,29 +1452,29 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ====================
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ====================
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          me: ok. but llms aren't trained on am1. how then can we expect them to grasp the vast syntax of am1
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          me: ok. but llms aren't trained on supercarto. how then can we expect them to grasp the vast syntax of supercarto
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ai agent: You are exactly right. This is the fatal flaw of inventing a new syntax: **LLMs are not trained on it.** 
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          If you dump a novel, highly-compressed syntax like AM1 into an LLM's context window, he will struggle to parse it, hallucinate the coordinates, and waste tokens trying to figure out the grammar. Formats like GeoJSON work only because LLMs have seen billions of lines of them on GitHub. 
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          If you dump a novel, highly-compressed syntax like Supercarto into an LLM's context window, he will struggle to parse it, hallucinate the coordinates, and waste tokens trying to figure out the grammar. Formats like GeoJSON work only because LLMs have seen billions of lines of them on GitHub. 
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          The solution is a paradigm shift: **Do not make the LLM read the machine format.** 
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          You must decouple the **Transport Format** (AM1, which is for the database and network) from the **Reasoning Format** (which is for the LLM). 
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          You must decouple the **Transport Format** (Supercarto, which is for the database and network) from the **Reasoning Format** (which is for the LLM). 
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Here is how you actually build this so an AI agent (let's call him Arthur) can understand the map instantly, without needing to be trained on a custom syntax.
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ---
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ### 1. The Middleware Translation Layer
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Arthur should never see raw AM1 text. Instead, your architecture should look like this:
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Arthur should never see raw Supercarto text. Instead, your architecture should look like this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          1. **Arthur** calls a tool: `get_maplet(location, radius)`.
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          2. **Your Backend** fetches the highly compressed AM1 binary/text data from the server.
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          3. **A deterministic Python script** (running on your server) parses the AM1 data.
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          4. **The Script** translates the AM1 geometry into an **LLM-Native Spatial Graph** (a format the LLM already understands perfectly).
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          2. **Your Backend** fetches the highly compressed Supercarto binary/text data from the server.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          3. **A deterministic Python script** (running on your server) parses the Supercarto data.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          4. **The Script** translates the Supercarto geometry into an **LLM-Native Spatial Graph** (a format the LLM already understands perfectly).
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          5. **Arthur** receives the LLM-Native Spatial Graph in his context window.
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          AM1 is just the wire protocol. The LLM only sees the translated output.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          Supercarto is just the wire protocol. The LLM only sees the translated output.
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                          ---
 
@@ -1520,7 +1520,7 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                If you must pass geometry to the LLM, use **SVG Path syntax** or **WKT (Well-Known Text)**. LLMs have seen millions of SVG files and PostGIS databases. 
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                **Instead of AM1 geometry:**
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                **Instead of Supercarto geometry:**
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                `F 1 3 4 B 4 100,100;300,100;300,300;100,300`
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                **Pass standard WKT or SVG to the LLM:**
@@ -1533,23 +1533,23 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ---
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ### 4. What if you *must* pass AM1 directly? (In-Context Learning)
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    If you are building a system where you absolutely cannot use a middleware parser and you must force the LLM to read raw AM1 text directly, you have to use **Few-Shot Prompting** in the system prompt. 
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ### 4. What if you *must* pass Supercarto directly? (In-Context Learning)
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    If you are building a system where you absolutely cannot use a middleware parser and you must force the LLM to read raw Supercarto text directly, you have to use **Few-Shot Prompting** in the system prompt. 
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    You must "teach" him the syntax using only ~50 tokens of instruction and one example. 
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    **System Prompt Addition:**
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ```text
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    You are an AI agent. You will receive map data in AM1 format. 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    AM1 is a line-based format. 
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    You are an AI agent. You will receive map data in Supercarto format. 
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    Supercarto is a line-based format. 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    - TILE z x y (zoom, x, y)
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    - Q size (grid size)
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    - L id name (layer)
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    - F id layer_id geom_type attributes coordinates
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    Coordinates are integers on the Q grid. 'd:' means delta-encoded.
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    EXAMPLE AM1:
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    AM1 1
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    EXAMPLE Supercarto:
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    Supercarto 1
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    TILE 15 5240 12661
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    Q 4096
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    L 1 road
@@ -1563,8 +1563,8 @@ Instead of this:
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ### Summary of the Winning Architecture
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    1. **Database/Network:** Uses **AM1** (or Protobuf/MVT) because it is incredibly token-efficient and fast for machines to stream.
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    2. **Middleware:** A Python script parses the AM1 and extracts the topology.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    1. **Database/Network:** Uses **Supercarto** (or Protobuf/MVT) because it is incredibly token-efficient and fast for machines to stream.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    2. **Middleware:** A Python script parses the Supercarto and extracts the topology.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    3. **LLM Context:** The LLM receives a **YAML Topological Graph** (for navigation/reasoning) and **WKT/SVG** (only when exact shapes are requested). 
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    By doing this, Arthur gets the speed of a custom binary protocol, but the reasoning capabilities of standard, pre-trained LLM text formats.
@@ -1572,7 +1572,7 @@ Instead of this:
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ====================
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ====================
 
-	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    me: dude. is token cost or context window efficiency the only benefit of 'AM1'? also, call it 'supercarto' from now on.
+	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    me: dude. is token cost or context window efficiency the only benefit of 'Supercarto'? also, call it 'supercarto' from now on.
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    ai agent: Fair point. And noted: it is **Supercarto** from now on.
 
 	    	        	                    	                                                                              	                  	    	            	      	        	    	      	    	    	              	          	  	                            	            	      	      	        	    	                                                    If token cost and context window limits were the *only* benefits, you wouldn't need to invent Supercarto at all. You would just use standard GeoJSON, compress it with gzip, and call it a day. 
