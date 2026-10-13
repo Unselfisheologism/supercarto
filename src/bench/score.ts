@@ -711,7 +711,14 @@ export function scoreOmission(
   const claimsBare =
     /\b(bare|deserted|nothing (?:else )?(?:here|nearby)|no (?:other )?(?:features|buildings|places|trees)|empty of)\b/i.test(
       answer,
-    );
+    ) &&
+    // "The area is clearly not bare" is the opposite of a bareness claim. The
+    // completeness check above already learned this lesson about polarity - "no
+    // omission is flagged anywhere" matched "truncation" in a negated frame and
+    // passed three answers that said the opposite - and the bare check repeated
+    // it: one supercarto omission answer named the exact omitted counts and was
+    // failed for containing the word "bare" inside "not bare".
+    !/\b(?:not|never|no longer|isn['’]t|aren['’]t|wasn['’]t)\s+bare\b/i.test(answer);
 
   if (!acknowledges) flags.push('did not acknowledge anything was left out');
   if (claimsBare) flags.push('described the area as bare despite a declared omission');

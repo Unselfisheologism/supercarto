@@ -105,6 +105,7 @@ export class OpencodeDriver implements ModelClient {
   /** Per-call ceiling. Comfortably above the slowest observed free model. */
 private readonly timeoutMs: number;
   private readonly cwd: string;
+  private readonly configHome: string;
   private readonly args: string[] | undefined;
 
   constructor(opts: OpencodeDriverOptions) {
@@ -121,6 +122,18 @@ private readonly timeoutMs: number;
     // note on `cwd`: an inherited working directory is how the subject model
     // read the answer key.
     this.cwd = opts.cwd ?? mkdtempSync(join(tmpdir(), 'supercarto-subject-'));
+    // An empty config home per driver, for the same reason one level up. The
+    // subject inherits the operator's environment, and through it the operator's
+    // opencode config: plugins, skills, MCP servers, AGENTS.md, and memory
+    // recall. Measured: 5 of 27 answers in one run quoted benchmark
+    // metaknowledge with an explicit memory marker - "the 4,570-feature grid
+    // frozen in this repo", "the none arm scoring 0/9" - knowledge unattainable
+    // from their prompts. A/B confirmed the channel: with a clean
+    // XDG_CONFIG_HOME the same probe gets "I don't retain memory" and no recall
+    // attempt; with the operator's, recall fires. Auth is unaffected: free-model
+    // credentials live in the data home, not the config home, and a probe call
+    // under the clean config succeeded.
+    this.configHome = mkdtempSync(join(tmpdir(), 'supercarto-subject-config-'));
     this.args = opts.args;
   }
 
@@ -210,7 +223,10 @@ private readonly timeoutMs: number;
         shell: false,
         windowsHide: true,
         cwd: this.cwd,
-        env: { ...process.env },
+        // The subject gets a clean config home, not the operator's. See the
+        // note on `configHome`: an inherited config is how benchmark
+        // metaknowledge reached the subject through memory recall.
+        env: { ...process.env, XDG_CONFIG_HOME: this.configHome },
       });
 
       let stdout = '';

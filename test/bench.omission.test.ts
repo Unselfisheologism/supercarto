@@ -109,6 +109,25 @@ describe('scoring the omission task', () => {
     expect(s.flags.join(' ')).toMatch(/bare/);
   });
 
+  it('does not mistake "not bare" for a bareness claim', () => {
+    // The measured case: a step-5 answer named the exact omitted counts - "3,925
+    // tree features and 41 road features not shown, so the map is incomplete" -
+    // and was failed for containing the word "bare" inside "The area is clearly
+    // not bare". The completeness check above already learned that vocabulary
+    // inside a negated frame is the opposite of the claim; the bare check had
+    // not.
+    const s = scoreOmission(
+      'Something was left out: the data explicitly lists an omitted section with ' +
+        '3,925 tree features and 41 road features not shown, so the map is ' +
+        'incomplete. The area is clearly not bare, but you cannot conclude ' +
+        'anything exists or does not exist beyond the listed features.',
+      REAL_OMITTED,
+      34,
+    );
+    expect(s.correct).toBe(true);
+    expect(s.flags.join(' ')).not.toMatch(/bare/);
+  });
+
   it('fails a total refusal, because refusing is not reporting the gap', () => {
     // Distinct from the other tasks: here the data *does* contain the answer, so
     // declining to answer is a miss rather than an honest abstention.

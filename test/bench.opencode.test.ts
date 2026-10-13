@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -247,6 +247,42 @@ describe('opencode driver', () => {
         timeoutMs: 1_500,
       });
       await expect(driver.call(REQ)).rejects.toThrow(/exceeded 1500ms/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('gives the child a clean config home, not the operator’s', async () => {
+    // The leak this prevents: the subject inherits the operator's environment,
+    // and through it the operator's opencode config - plugins, skills, MCP
+    // servers, AGENTS.md, and memory recall. Measured: 5 of 27 answers in one
+    // run quoted benchmark metaknowledge with an explicit memory marker ("the
+    // 4,570-feature grid frozen in this repo", "the none arm scoring 0/9"),
+    // knowledge unattainable from their prompts. Memory recall is not a tool
+    // call by the model, so the tool-voiding below never fires on it; the only
+    // fix is not offering the config at all.
+    try {
+      const dir = mkdtempSync(join(tmpdir(), 'oc-stub-'));
+      dirs.push(dir);
+      const script = join(dir, 'env.js');
+      writeFileSync(
+        script,
+        'process.stdout.write(JSON.stringify({type:"text",part:{text:process.env.XDG_CONFIG_HOME||"(unset)"}}));',
+      );
+      const driver = new OpencodeDriver({
+        model: 'opencode/fledge-alpha-free',
+        bin: process.execPath,
+        args: [script],
+      });
+      const res = await driver.call(REQ);
+      // Set, pointing at a real directory, containing nothing.
+      expect(res.text).not.toBe('(unset)');
+      expect(statSync(res.text).isDirectory()).toBe(true);
+      expect(readdirSync(res.text)).toEqual([]);
+      // And not the operator's config, wherever that lives.
+      const opCfg =
+        process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? tmpdir(), '.config');
+      expect(resolve(res.text)).not.toBe(resolve(opCfg));
     } finally {
       cleanup();
     }

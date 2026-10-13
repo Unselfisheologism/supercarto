@@ -389,6 +389,45 @@ there are no confidence intervals. And the geojson arm completed all 9 calls wit
 timeouts on this model, where it timed out 2/3 on the earlier codename models; arm
 reliability is a property of the model, not just of the fixture size.
 
+### Second model, and the contamination it found
+
+The same 27 calls were run on `opencode/step-5-preview-free`: supercarto 7/9,
+geojson 2/8 (one timeout), none 0/9. The ordering replicates — representation beats
+raw file beats nothing — on a second official model.
+
+The run also exposed an isolation failure in the harness, and it is recorded here
+rather than quietly fixed because it affects how the earlier numbers must be read.
+**5 of the 27 step-5 answers quote benchmark metaknowledge with an explicit memory
+marker**: "the ~4,570-feature grid ◪ from supermemory that was compiled and frozen
+in this repo", "the benchmark context recalled from supermemory shows the none arm
+scoring 0/9", "the connectivity kind is the one this map can actually measure (3/3
+in the benchmark)". None of that is attainable from the prompts — the fixture
+details, the skipped-test count, the prior scores. The subject inherited the
+operator's opencode config through the environment, and with it the memory plugin
+with recall allowed. Memory recall is not a tool call by the model, so the
+tool-voiding that guards every run never fired on it.
+
+Three things limit the damage, all verified rather than assumed:
+
+1. **All five contaminated answers failed.** The metaknowledge did not buy a single
+   point — two concluded the map was complete from memory and were failed for it,
+   three were refusals. Contamination is proven present and proven scoreless.
+2. **The clean run is clean.** The Muse Spark archive carries zero memory markers
+   across all 27 answers. Absence of markers is not proof of absence of influence,
+   and that is stated as a caveat, not hand-waved — but there is no positive
+   evidence of leakage there.
+3. **The channel is closed going forward.** The driver now spawns every subject
+   with a clean, empty `XDG_CONFIG_HOME`, alongside the existing scratch cwd. A/B
+   verified: same probe, clean config → "I don't retain memory", no recall attempt;
+   operator config → recall fires. Auth is unaffected (credentials live in the data
+   home), and a probe call under the clean config succeeded. Pinned by a test that
+   asserts the child's config home is a real, empty, non-operator directory.
+
+Because influence without markers cannot be ruled out for the tainted run, the
+step-5 numbers above are reported as observed-under-contamination, and the
+replication is being re-run under the clean config. The Muse Spark 9/9 stands as
+the headline; step-5 confirms the ordering, not the magnitudes.
+
 The two failures share a root cause worth recording, because it is the worst kind of
 benchmark bug: **a ground-truth source that reports success for a route it did not
 compute.** OSRM answers `{"code":"Ok","routes":[{"distance":0,"duration":0}]}` for a
