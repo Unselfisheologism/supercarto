@@ -318,8 +318,8 @@ be measurable.
   failed outright while the same query via CLI succeeded seconds later. Any external
   harness will see flaky failures that read as model errors. `SUPERCARTO_PMTILES`
   is the intended fix and is not configured.
-- **The expansion track is new and unmeasured at the time of writing.** §12a
-  describes the design; numbers land when the runs do.
+- **The expansion track is new: first numbers below.** §12a
+  describes the design; the verdict follows the table.
 
 ## 12a. The `expand` task: the first agentic track (benefit #4)
 
@@ -361,6 +361,34 @@ Three harness findings came out of building the track, before any score:
    matched only legacy `tool`, so no tool use had ever been voided on this CLI
    version; MCP calls nest inside the `execute` carrier, so judging by the
    carrier alone voids the very call under test. All fixed, all pinned.
+
+### Expansion verdict: the loop works, the task does not attract it
+
+| | supercarto | geojson | none | expanded? |
+|---|---|---|---|---|
+| muse-spark (9 calls) | 0/3 | 0/3 | 0/3 | 1 attempt, voided on a separator |
+| step-5 (9 calls) | 1/3 | 0/3 | 0/2 | 0 attempts |
+| pre-tool baseline | 1/3 | 0/3 | 0/3 | impossible |
+
+Read plainly: across ~14 opportunities with the tool available, subjects
+attempted expansion twice (one voided wrongly, one probe-demonstrated). Both
+passes answered without expanding - one with a justification citing edge
+distances that cannot determine containment, one a bare name. Every failure
+names all three cafes: without coordinates, models apply a proximity heuristic
+("all nearby, all inside") rather than seeking data.
+
+This is not a protocol failure - the one completed expansion returned exact,
+solvable geometry through the real binary. It is a task-design failure of a
+specific kind: the question is *guessable without the tool* (a 1-in-3 name
+pick scores a third of the time by chance), so satisficing agents guess instead
+of working. The omission task avoids this structurally - it asks *about* the
+gap, which cannot be guessed - and the expansion task as built does not.
+
+Two further observations for the record. Geojson scores 0/9 *with exact
+coordinates*: the point-in-polygon math beats the models even when nothing is
+hidden, so the task confounds tool-seeking with spatial math. And a none-arm
+subject called a tool literally named `question` - asking the harness for
+clarification mid-run, and correctly voided for it.
 
 ## 12. The `omission` task: measuring the protocol instead of the map
 
