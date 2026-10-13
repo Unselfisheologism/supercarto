@@ -153,6 +153,18 @@ describe('scoring heat', () => {
     expect(s.correct).toBe(true);
   });
 
+  it('reads word-separated coordinates', () => {
+    // The same answer in "latitude X, longitude Y" phrasing: no adjacent
+    // comma pair exists for the hotspot, so the comma pattern alone sees
+    // only the centre and fails a correct answer.
+    const s = scoreHeat(
+      'The maximum occurs at latitude 44.02181, longitude -150.01875, north-east of the centre (44.02, -150.02). Peak 200.',
+      200,
+      { lat: 44.02181, lon: -150.01875 },
+    );
+    expect(s.correct).toBe(true);
+  });
+
   it('does not mine coordinates for a fake value', () => {
     // "44.021" must not read as 44: standalone integers only.
     const s = scoreHeat('The peak is at 44.021, -150.019.', 200, at);

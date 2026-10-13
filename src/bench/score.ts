@@ -755,7 +755,14 @@ export function scoreHeat(
   if (value === undefined) flags.push('no peak value stated');
   else if (value !== peak) flags.push(`stated peak ${value}, true ${peak}`);
   let near = false;
-  const coords = [...answer.matchAll(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/g)].map((m) => ({
+  // Two phrasings: adjacent "lat,lon" and word-separated "latitude X,
+  // longitude Y". The second form cost a correct step-5 answer: it stated
+  // the hotspot exactly but the comma pattern only saw the map centre it
+  // quoted alongside, failing it as 224m off. Both feed the same pairs.
+  const coords = [
+    ...answer.matchAll(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/g),
+    ...answer.matchAll(/lat(?:itude)?\s*:?\s*(-?\d+\.\d+)\D{1,24}?lon(?:gitude)?\s*:?\s*(-?\d+\.\d+)/gi),
+  ].map((m) => ({
     lat: Number(m[1]),
     lon: Number(m[2]),
   }));

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T10:45:17.607Z",
+  "generatedAt": "2026-10-13T12:37:37.631Z",
   "models": [
     "opencode-step-5-preview-free"
   ],
@@ -31,9 +31,9 @@
       "model": "opencode/step-5-preview-free",
       "representation": "supercarto",
       "seed": 2,
-      "correct": false,
+      "correct": true,
       "scoredBy": "exact",
-      "rationale": "peak 200 at 44.02181,-150.01875; peak 224m from truth",
+      "rationale": "peak 200 at 44.02181,-150.01875; value and location",
       "error": null
     },
     {
@@ -114,12 +114,12 @@
     {
       "model": "opencode-step-5-preview-free",
       "representation": "supercarto",
-      "accuracy": 0.667,
+      "accuracy": 1,
       "completion": 1,
       "medianInputTokens": 392,
       "totalInputTokens": 1176,
       "meanWallMs": 0,
-      "accuracySpread": 1,
+      "accuracySpread": 0,
       "failures": 0
     },
     {

@@ -436,7 +436,7 @@ readings for harness reasons.
 | | supercarto | geojson | none |
 |---|---|---|---|
 | muse-spark | **3/3** | 0/3 | 0/3 |
-| step-5 | **2/3** | 0/3 | 0/3 |
+| step-5 | **3/3** | 0/3 | 0/3 |
 
 Expected outcome was parity with a token ratio; measured outcome is
 separation, and the mechanism is instructive. The yaml states the hotspot
@@ -453,7 +453,7 @@ trigger calculator instinct (shell) and exploration (read), both void on the
 strict track. The question now scopes effort honestly. A first-match
 coordinate bug then failed a correct step-5 answer for quoting the map
 centre alongside the hotspot (224m off); any stated pair within tolerance
-now counts, pinned with the measured answer.
+now counts, pinned with the measured answer. A second parser gap surfaced on recheck: word-separated coordinates ("latitude X, longitude Y") never matched the comma pattern at all, failing another correct answer; both phrasings now feed the same pairs, also pinned.
 
 ## 12. The `omission` task: measuring the protocol instead of the map
 
