@@ -36,7 +36,7 @@ from .client import (
     default_server_command,
 )
 
-__version__ = "0.4.2"
+__version__ = "0.4.9"
 
 __all__ = [
     "DaylightResult",
