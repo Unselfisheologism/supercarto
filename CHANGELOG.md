@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.9
+
+Tool-surface additions the benchmark repo needs (no behavior changes to
+existing APIs):
+
+- `src/diff/`: `diffDocuments` + `renderDiff` (benefit #5 implementation).
+- Ingest `heat` member on feature collections (benefit #3 fixture support).
+- `GraphNode.layer`: names the layer instead of generic feature labels.
+
 Releases are cut from `master`. Benchmark-affecting changes are listed under
 each release because a score is meaningless without the harness version that
 produced it; every run archive records its commit hash for the same reason.

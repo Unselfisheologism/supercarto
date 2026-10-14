@@ -197,62 +197,23 @@ correctness problem:
 
 ## The benchmark
 
-Token count is not the claim. The claim is that an agent given a supercarto
-maplet is **correct and cheap**, where the same agent given raw GeoJSON manages
-one or the other. That needs tasks with known answers.
+Lives in its own repo now:
+[supercarto-bench](https://github.com/Unselfisheologism/supercarto-bench).
+
+Same question, same model, same map — the only variable is what sits in
+the context window: compiled graph vs raw GeoJSON vs nothing. Raw runs,
+frozen test maps, and the scoring code all live there, so anyone building
+a rival map tool can run the same test and try to beat the score.
+
+Current headline there: 9/9 for the compact graph against ~4/9 raw and 0/9
+with no map, on two AI models. Route questions are unmeasurable (the public
+test router gives impossible answers) — stated, not hidden.
+
+What this repo keeps is a quick token-cost check:
 
 ```bash
-export ANTHROPIC_API_KEY=...
-npx supercarto bench:tasks --budgets 512,1024,2048 --out report.json
+npx supercarto bench <file.geojson>
 ```
-
-> **No results are published here.** An earlier version of this file showed an
-> accuracy table and a token-cost table. Those numbers were not backed by any
-> committed raw output, and the harness that produced them had three defects that
-> invalidate a run on their own: the raw GeoJSON baseline arm was stripped of
-> every name and all geometry by the harness, the turn-by-turn ground truth
-> described a 400m walk while the prompt asked about 200m, and the recall pass
-> condition was unreachable for every budgeted arm. The table was measuring the
-> harness. It has been removed rather than caveated, and it will come back when a
-> run whose raw output is committed produces it.
-
-Ground truth comes from OSRM for routing and from the source data for place
-tasks, so most rows are scored **programmatically** rather than by a judge.
-
-What the harness refuses to do is more interesting than what it does:
-
-- **No single-model leaderboard.** A panel spanning four families, because a
-  result on one model is a result about that model.
-- **Three seeds minimum, spread reported.** Providers are not
-  bit-deterministic; reporting one run as the score reports noise as a result.
-- **The subject model runs in an empty directory**, never the repository, and any
-  run that reached for a tool is voided rather than scored.
-- **Completion reported separately from accuracy.** A model that answered two of
-  thirty and got both right must not score 100%.
-- **Hallucinations scored as failures.** An agent that names three real cafes
-  and one imaginary one is worse than one that names none.
-- **Unscoreable tasks count as failures, not passes.**
-- **A small local model in the panel.** Winning with a 7B model is the one claim
-  a token-count benchmark cannot manufacture.
-
-> **The benchmark has no published result, and the reason is not modesty.** In the
-> runs archived under [`bench-results/`](bench-results/), the `none` arm — given
-> coordinates and nothing else — scores *above* the supercarto arm on two of four
-> task kinds. Given downtown San Francisco and no map, a model returned 863m via
-> Market Street → Spear Street → Mission Street against OSRM's 868m via the same
-> sequence; meanwhile the arm that *was* given the maplet correctly said the maplet
-> has no routable street layer, and was scored zero for saying so. The floor is
-> memorised city knowledge, so `supercarto − none` is not an effect size here and
-> can be negative. Fixing this needs a non-memorised area and a scorer that credits
-> honest "the data doesn't say", both listed as work in the datasheet.
-
-Known gaps are listed in [`docs/benchmark.md`](docs/benchmark.md#what-is-not-yet-true-of-this-harness),
-including the absent oracle-solver check on the live path and the fact that token
-counts on the free-model path are estimates rather than provider figures.
-
-Methodology and the full task set: [`docs/benchmark.md`](docs/benchmark.md).
-Datasheet, related work, and what would make this publishable:
-[`docs/datasheet.md`](docs/datasheet.md).
 
 ---
 
