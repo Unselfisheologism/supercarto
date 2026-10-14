@@ -155,7 +155,13 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
       // Never take the last connections. A map with no edges advertises places
       // the agent cannot reach, which is worse than a smaller map it can
       // navigate, so the last edge pair is always retained.
-      if (liveEdgeCount - incidentCount(edges, n.id) < 2) continue;
+      //
+      // Vacant where there is nothing to protect: with fewer than 2 live
+      // edges the rule guards every node (0 - 0 < 2), so nothing is ever
+      // removable and the loop exits over budget - measured at 1309 tokens
+      // against a 1024 budget on an edgeless map. An edgeless map has no
+      // connections to keep, so pruning falls through to rank order.
+      if (liveEdgeCount >= 2 && liveEdgeCount - incidentCount(edges, n.id) < 2) continue;
       if (n.name !== undefined) {
         if (namedLeft <= minLandmarks) continue;
         namedLeft--;

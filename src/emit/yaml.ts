@@ -57,6 +57,16 @@ export interface EmitOptions {
   readonly includeTools?: boolean;
   /** Include the `omitted:` block. On by default; honesty about gaps. */
   readonly includeOmitted?: boolean;
+  /**
+   * Keep named nodes with no edges. Default false.
+   *
+   * The safety net below removes orphan names because an agent that sees
+   * a name it cannot route to will confidently try to walk to it. That
+   * is correct for a connected map and wrong for an explicitly POI-only
+   * request, where edgelessness is what was asked for. toMaplet sets this
+   * when the caller restricted layers away from roads.
+   */
+  readonly keepOrphans?: boolean;
   /** Include heat summaries. Default true. */
   readonly includeHeat?: boolean;
   /**

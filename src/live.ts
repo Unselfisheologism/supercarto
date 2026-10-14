@@ -201,7 +201,34 @@ export class SuperCarto {
       },
     );
 
-    return {
+    // Places without streets are a contradiction, not a result. Measured
+    // against Tokyo: 55 named places, zero edges, served with a 200 as if
+    // nothing were wrong. An agent cannot navigate between names without
+    // a network, so handing it one misleads more than refusing. A fully
+    // empty map still serves: open ocean is honestly empty, and there is
+    // nothing in it to mislead about. Explicitly POI-only requests pass
+    // too: asking for places is honest, getting places is the answer.
+    //
+    // The signal is the safety net fingerprint, not the node count: the
+    // emitter strips orphan names and records them as landmark omissions,
+    // so stripped-names-plus-no-edges is exactly the misleading case, while
+    // an untouched empty map stays servable.
+    const explicit = req.layers !== undefined && req.layers.length > 0;
+    const wantsRoads =
+      !explicit || req.layers!.some((l) => l === 'road' || l === 'highway');
+    const stripped = (result.graph.omitted ?? []).some((o) => o.layer === 'landmark');
+    if (result.graph.edges.length === 0 && stripped && wantsRoads) {
+      const dropped = (result.graph.omitted ?? [])
+        .filter((o) => o.layer === 'landmark')
+        .reduce((n, o) => n + o.count, 0);
+      throw new Error(
+        `no walkable network survived for ${req.lat},${req.lon} ` +
+        `(radius ${radiusM}m): ${dropped} named places stripped for lack of streets. ` +
+        `Pass layers: ['poi'] for a POI-only map, or retry - a degraded ` +
+        `upstream fetch is the usual cause.`,
+      );
+    }
+        return {
       ...result,
       fetchedFrom: fetched.source,
       fetchMs: fetched.elapsedMs,

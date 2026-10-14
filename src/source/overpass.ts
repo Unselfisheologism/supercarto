@@ -127,6 +127,44 @@ const LAYER_TAGS: Record<string, string> = {
   building: 'building',
 };
 
+/**
+ * Documented names mapped to OSM tags.
+ *
+ * The MCP schema, the CLI help and the maplet YAML all speak `road` and
+ * `poi`, but OSM has neither tag. Without this map, `layers: ["road","poi"]`
+ * fell through to `node[road]` - a query matching nothing on the planet -
+ * and a documented call returned nothing, silently. `poi` expands to the
+ * point-source tags; `road` rides the highway subtype machinery below.
+ */
+const LAYER_ALIASES: Record<string, string[]> = {
+  road: ['highway'],
+  poi: ['amenity', 'shop', 'tourism'],
+};
+
+/**
+ * Validate, expand and order a caller-supplied layer list.
+ *
+ * Unknown names throw rather than querying nonsense: an unrecognised layer
+ * previously produced a valid-looking empty result, which reads as "nothing
+ * is here". Expansion is sorted into priority order so an explicit
+ * `[poi, road]` still surrenders streets last, and deduped so `[poi,
+ * amenity]` does not query amenity twice.
+ */
+export function normalizeLayers(user: string[]): string[] {
+  const known = new Set([...Object.keys(LAYER_TAGS), ...Object.keys(LAYER_ALIASES)]);
+  const unknown = user.filter((l) => !known.has(l));
+  if (unknown.length > 0) {
+    throw new Error(
+      `unknown layer(s) ${unknown.map((u) => `"${u}"`).join(', ')}. ` +
+        `Valid: ${[...Object.keys(LAYER_ALIASES), ...Object.keys(LAYER_TAGS)].join(', ')}`,
+    );
+  }
+  const order = new Map(DEFAULT_LAYERS.map((l, i) => [l, i]));
+  return [...new Set(user.flatMap((l) => LAYER_ALIASES[l] ?? [l]))].sort(
+    (a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99),
+  );
+}
+
 /** Error carrying the HTTP status, so the retry policy can inspect it. */
 export class OverpassError extends Error {
   override readonly name = 'OverpassError';
@@ -503,7 +541,7 @@ export class OverpassSource implements MapSource {
     // therefore dropped in priority order when the server refuses, so a caller
     // gets a partial map instead of an exception. Roads and POIs survive
     // longest: they are what an agent actually navigates by.
-    const layers = req.layers.length > 0 ? req.layers : DEFAULT_LAYERS;
+    const layers = req.layers.length > 0 ? normalizeLayers(req.layers) : DEFAULT_LAYERS;
     const attempts = this.maxAttempts;
     // The box actually queried. Retrying may shrink it, and both the query text
     // and the coordinate filter have to follow, or a shrunken request is still
@@ -518,6 +556,20 @@ export class OverpassSource implements MapSource {
     // usable data to be strict about a condition that was already satisfied.
     let best: SourceResult | undefined;
     let lastError: unknown;
+    // How many attempts ended in refusal (HTTP error/timeout) rather than a
+    // response. Load-bearing below: it distinguishes a degraded server from a
+    // genuinely roadless area.
+    let refusals = 0;
+    // Whether any attempt ever delivered way elements. A response that never
+    // contained ways while the server proved flaky is unwitnessed absence.
+    let sawWays = false;
+    const starvedError = () =>
+      new OverpassError(
+        'Overpass served no road geometry after refusing ' +
+          `${refusals} attempt(s); the instance is degraded, not the area empty - ` +
+          `retry, shrink the request, or set OVERPASS_ENDPOINT to a self-hosted mirror`,
+        502,
+      );
 
     for (let attempt = 0; attempt < attempts; attempt++) {
       // Each retry drops the lowest-priority layers, so the surviving query gets
@@ -573,6 +625,7 @@ export class OverpassSource implements MapSource {
         // demonstrated anything is wrong, and re-asking it would spend shared
         // quota to learn the same thing.
         const wayElements = (body.elements ?? []).filter((e) => e.type === 'way').length;
+        if (wayElements > 0) sawWays = true;
         const wantsShrink =
           req.layers.length === 0 &&
           attempt < MAX_SHRINK_ATTEMPTS &&
@@ -611,6 +664,36 @@ export class OverpassSource implements MapSource {
           best = result;
         }
 
+        // The sibling failure: highways requested, zero way elements arrived
+        // at all. Measured against Tokyo: two refused attempts, then a 200
+        // with nodes only - served as success, yielding a POI map with no
+        // streets. Same remedy as a shrink (tighter box, complete response),
+        // then give up loudly rather than serving roadlessness as success.
+        // Gated on prior refusals so a clean first-attempt empty - a plaza,
+        // farmland, a genuinely roadless patch - still serves instead of
+        // throwing at honest geography.
+        const starved =
+          kept.includes('highway') &&
+          wayElements === 0 &&
+          !truncated &&
+          isPopulatedLand(box) &&
+          refusals > 0;
+        if (starved && attempt < MAX_SHRINK_ATTEMPTS) {
+          const tightened = tighten(box);
+          if (tightened) {
+            box = tightened;
+            warnings.push(
+              'upstream returned no road geometry after refusing earlier ' +
+              'attempts; retrying over a smaller box to stay under the instance result limit',
+            );
+            continue;
+          }
+          throw starvedError();
+        }
+        // Starved past the shrink budget: falling through would serve the
+        // misleading map below, so fail here with the same error.
+        if (starved) throw starvedError();
+
         if (wantsShrink) {
           const tightened = tighten(box);
           if (tightened) {
@@ -625,6 +708,7 @@ export class OverpassSource implements MapSource {
         return result;
       } catch (err) {
         lastError = err;
+        if (isRetryable(err)) refusals++;
         if (!isRetryable(err) || attempt === attempts - 1) break;
         // Back off briefly. The shared instance rate-limits aggressively, and
         // hammering it makes a transient failure permanent.
@@ -636,6 +720,19 @@ export class OverpassSource implements MapSource {
     // map; throwing it away to report a bare retry failure would be a worse
     // outcome for the caller.
     if (best) {
+      // Same starvation, one level up: every attempt that answered carried
+      // no ways while the server proved flaky. Serving the best of those
+      // would hand back the misleading POI-only map this whole block
+      // exists to prevent.
+      if (
+        layers.includes('highway') &&
+        countWays(best.features) === 0 &&
+        !sawWays &&
+        refusals > 0 &&
+        isPopulatedLand(req.bbox)
+      ) {
+        throw starvedError();
+      }
       best.warnings.push('later attempts failed; serving the best result obtained');
       return best;
     }

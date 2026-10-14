@@ -189,7 +189,15 @@ async function main(): Promise<void> {
           flags.out,
         );
       } else {
-        writeOut(result.yaml, flags.out);
+        // Warnings ride inside the output, not just stderr: an agent
+        // reading only the map never sees stderr, and a map preceded by
+        // silent degradation is exactly the misleading artifact the MCP
+        // path already avoids with its # WARNING header lines. YAML
+        // comments, so parsers are unaffected.
+        const text =
+          result.yaml +
+          result.warnings.map((w) => `# WARNING: ${w}\n`).join('');
+        writeOut(text, flags.out);
       }
       process.stderr.write(
         `tokens ${result.metrics.yamlTokens}/${budget}  nodes ${result.graph.nodes.length}  ` +

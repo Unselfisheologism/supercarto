@@ -109,7 +109,18 @@ export function toMaplet(
   // Distances become metres only once the document's real-world scale is
   // known. This is what turns `dist: 47u` into `dist: 47m`.
   const scale = gridScaleFor(doc);
-  const emitted = emitAndVerify(fitted, req.emit, scale, budget);
+  // Orphan names survive only on explicit POI-only requests. Everywhere
+  // else the safety net stands: a name without a street misleads. Bench
+  // fixtures compile without layers, so their behavior is unchanged.
+  const layers = req.layers ?? [];
+  const poiOnly =
+    layers.length > 0 && !layers.some((l) => l === 'road' || l === 'highway');
+  const emitted = emitAndVerify(
+    fitted,
+    poiOnly ? { ...req.emit, keepOrphans: true } : req.emit,
+    scale,
+    budget,
+  );
 
   return {
     doc,
@@ -215,28 +226,32 @@ function emitAndVerify(
   // Safety net: a named node with no edges is a name the agent can see but
   // cannot route to. It is worse than an absent one, because the agent will
   // confidently try to walk to it. Remove any that survived, and record the loss
-  // so the map still reports itself as partial.
-  const touched = new Set<string>();
-  for (const e of graph.edges) {
-    touched.add(e.from);
-    touched.add(e.to);
+  // so the map still reports itself as partial. Skipped for explicitly
+  // POI-only requests (keepOrphans): edgelessness there is the answer,
+  // not a defect, and stripping it would return an empty map for a
+  // question the data does answer.
+  if (!emitOpts?.keepOrphans) {
+    const touched = new Set<string>();
+    for (const e of graph.edges) {
+      touched.add(e.from);
+      touched.add(e.to);
+    }
+    const orphans = graph.nodes.filter(
+      (n) => n.name !== undefined && !touched.has(n.id),
+    );
+    if (orphans.length > 0) {
+      const remove = new Set(orphans.map((n) => n.id));
+      graph = {
+        ...graph,
+        nodes: graph.nodes.filter((n) => !remove.has(n.id)),
+        edges: graph.edges.filter((e) => !remove.has(e.from) && !remove.has(e.to)),
+        omitted: bumpOmission(graph.omitted, 'landmark', orphans.length),
+        partial: true,
+      };
+      dropped += orphans.length;
+      result = render(graph);
+    }
   }
-  const orphans = graph.nodes.filter(
-    (n) => n.name !== undefined && !touched.has(n.id),
-  );
-  if (orphans.length > 0) {
-    const remove = new Set(orphans.map((n) => n.id));
-    graph = {
-      ...graph,
-      nodes: graph.nodes.filter((n) => !remove.has(n.id)),
-      edges: graph.edges.filter((e) => !remove.has(e.from) && !remove.has(e.to)),
-      omitted: bumpOmission(graph.omitted, 'landmark', orphans.length),
-      partial: true,
-    };
-    dropped += orphans.length;
-    result = render(graph);
-  }
-
   return { graph, result, dropped };
 }
 

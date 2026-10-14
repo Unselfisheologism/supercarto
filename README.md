@@ -4,8 +4,10 @@
 topological graphs that an AI agent can reason over directly.
 
 Give an agent a map without paying the token tax. A dense city extract is
-~42,000 tokens as raw GeoJSON; the same extract at a 1024-token budget is 819
-tokens, 98.1% smaller, and still navigable.
+~42,000 tokens as raw GeoJSON; the same extract at a 1024-token budget is
+about 600 tokens, ~98% smaller, and still navigable (measured 2026-10-14,
+Tokyo 400m: 601 tokens, 17 nodes, 14 edges; live maps vary with upstream
+conditions).
 
 ```bash
 npm install supercarto
@@ -339,8 +341,13 @@ supercarto compile city.geojson --budget 1024 --metrics
 supercarto encode city.geojson --out city.scr
 supercarto decode city.scr
 supercarto bench city.geojson
-supercarto bench:tasks --budgets 512,1024,2048
 ```
+
+`fetch` layers accept `road` and `poi` alongside raw OSM tags; anything
+else is rejected rather than silently returning nothing. A request that
+would yield named places with no streets fails with a clear error instead
+of a misleading map — pass `--layers poi` for a POI-only map. Warnings
+travel inside the map output, not just stderr, so agents see them.
 
 ---
 
