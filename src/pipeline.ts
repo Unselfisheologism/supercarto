@@ -184,11 +184,24 @@ function emitAndVerify(
     // agent cannot reach and it will try. The floor is small on purpose -
     // honouring the caller's budget outranks retaining a shape they did not ask
     // for - but it must leave at least one connected pair.
-    if (graph.nodes.length <= 2 || graph.edges.length <= 2) break;
+    // A connected pair is worth protecting; edgelessness is not a shape.
+    // With no edges there is nothing to keep navigable, so the loop may
+    // thin unnamed nodes until the output fits. Named nodes are never
+    // picked here - the safety net (or keepOrphans) owns that decision.
+    if (graph.nodes.length <= 2) break;
+    if (graph.edges.length === 2) break; // one pair left: the floor
 
     const holding = junctionsHoldingLandmarks(graph);
-    const cap = Math.max(1, Math.min(batch, graph.nodes.length - 3, graph.edges.length - 2));
-    const victims = pickBatch(graph, holding, cap);
+    const cap =
+      graph.edges.length < 2
+        ? batch
+        : Math.max(1, Math.min(batch, graph.nodes.length - 3, graph.edges.length - 2));
+    const named = new Set(
+      graph.nodes.filter((n) => n.name !== undefined).map((n) => n.id),
+    );
+    const victims = pickBatch(graph, holding, cap).filter(
+      (id) => graph.edges.length >= 2 || !named.has(id),
+    );
     if (victims.length === 0) {
       // Nothing safe left at this batch size. Shrink the batch and retry, which
       // reaches the protected nodes one at a time instead of stalling.
@@ -287,9 +300,11 @@ function pickBatch(
   for (const { id } of scored) {
     if (out.length >= limit) break;
     if (skip.has(id)) continue;
-    // Keep at least two edges so the map stays navigable.
+    // Keep at least two edges so the map stays navigable. Vacant on edgeless
+    // graphs: with nothing to keep connected, unnamed nodes thin freely and
+    // named ones are filtered by the caller, never here.
     const cost = incident.get(id) ?? 0;
-    if (edgesLeft - cost < 2) continue;
+    if (edgesLeft >= 2 && edgesLeft - cost < 2) continue;
     out.push(id);
     edgesLeft -= cost;
   }

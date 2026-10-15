@@ -3,11 +3,11 @@
 **LLM-native spatial middleware.** Compiles geospatial data into token-budgeted
 topological graphs that an AI agent can reason over directly.
 
-Give an agent a map without paying the token tax. A dense city extract is
-~42,000 tokens as raw GeoJSON; the same extract at a 1024-token budget is
-about 600 tokens, ~98% smaller, and still navigable (measured 2026-10-14,
-Tokyo 400m: 601 tokens, 17 nodes, 14 edges; live maps vary with upstream
-conditions).
+Give an agent a map without paying the token tax. One file in, both numbers
+out: examples/synthetic-dense.geojson is 272,993 bytes (~68,000 tokens) raw
+and compiles at a 1024-token budget to 892 tokens - 26 named places on 34
+street segments, ~99% smaller (measured 2026-10-15; rerun it yourself:
+`supercarto compile examples/synthetic-dense.geojson --budget 1024`).
 
 ```bash
 npm install supercarto
@@ -35,29 +35,31 @@ const result = await carto.maplet({
 console.log(result.yaml);
 ```
 
-Real OpenStreetMap data, fetched live, compiled into a graph an agent can
-navigate — no API key, no tile archive, any point on earth:
+The same file from the headline, compiled below (truncated output;
+warnings travel inside the map, where an agent reading only the map sees them):
 
 ```yaml
 map:
-  center: "35.6833, 139.762"
-  radius: 400m
+  center: "37.7749, -122.4194"
+  source: geojson
+  note: Simplified for reasoning; call expand_feature for exact geometry.
 nodes:
-  n186: {type: transit, name: 新橋駅(3), tags: [subway_entrance]}
-  n8:   {type: transit, name: 芝浦ふ頭, tags: [station]}
-  n26:  {type: transit, name: 日の出, tags: [station]}
+  n530: {type: poi, name: Bank 0, tags: [bank]}
+  n531: {type: poi, name: Cafe 1, tags: [cafe]}
+  n673: {type: transit, name: Station 0, tags: [subway_entrance]}
 edges:
-  n1->n2: {dist: 120m, dir: east, path: road}
-  n3->n4: {dist: 18m, dir: southeast, path: service}
-  n1->n25: {dist: 309m, dir: south, path: access}
+  n515->n516: {dist: 80m, dir: east, path: road}
+  n516->n517: {dist: 80m, dir: east, path: road}
 omitted:
-  - {layer: feature, count: 1754}
+  - {layer: building, count: 259}
+  - {layer: poi, count: 141}
+  - {layer: road, count: 441}
 tools:
-  - expand_node(id)
-  - route(from,to,mode)
+  - expand_feature(id)
 ```
 
-That is 749 tokens covering a real 400m radius.
+That is 892 tokens for the whole extract at a 1024 budget: every drop named
+by layer, nothing silently vanished.
 
 ---
 
