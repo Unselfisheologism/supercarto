@@ -59,7 +59,7 @@ describe('emitAndVerify on edgeless graphs', () => {
   // verify loop exists to close exactly this gap, but it used to break out
   // on `edges <= 2` first - so 1,800 tokens shipped against a 1,024 budget.
   // Measured with 120 unnamed tag-heavy POIs and zero edges.
-  function heavyUnnamed(n: number) {
+  function heavyUnnamed(n: number): FeatureJson[] {
     return Array.from({ length: n }, (_, i) => ({
       type: 'Feature',
       geometry: {
@@ -72,6 +72,12 @@ describe('emitAndVerify on edgeless graphs', () => {
         operator: 'San Francisco Recreation and Parks Department with a very long name indeed',
       },
     }));
+  }
+
+  interface FeatureJson {
+    type: string;
+    geometry: { type: string; coordinates: number[] };
+    properties: Record<string, string>;
   }
 
   function compile(features: unknown[], extra: Record<string, unknown> = {}) {
@@ -93,9 +99,9 @@ describe('emitAndVerify on edgeless graphs', () => {
   });
 
   it('drops named orphans on default requests but records them', () => {
-    const feats = heavyUnnamed(120).map((f: never, i: number) =>
+    const feats = heavyUnnamed(120).map((f, i) =>
       i % 40 === 0
-        ? { ...(f as object), properties: { amenity: 'cafe', name: `Place${i}` } }
+        ? { ...f, properties: { amenity: 'cafe', name: `Place${i}` } }
         : f,
     );
     const doc = compile(feats);
@@ -105,8 +111,8 @@ describe('emitAndVerify on edgeless graphs', () => {
   });
 
   it('keeps named orphans on explicit POI-only requests', () => {
-    const feats = heavyUnnamed(60).map((f: never) => ({
-      ...(f as object),
+    const feats = heavyUnnamed(60).map((f) => ({
+      ...f,
       properties: { layer: 'poi', amenity: 'cafe', name: 'Cafe Kept' },
     }));
     const doc = compile(feats, { layers: ['poi'], ingest: { layerKey: 'layer' } });

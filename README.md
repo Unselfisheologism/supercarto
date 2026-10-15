@@ -5,9 +5,11 @@ topological graphs that an AI agent can reason over directly.
 
 Give an agent a map without paying the token tax. One file in, both numbers
 out: examples/synthetic-dense.geojson is 272,993 bytes (~68,000 tokens) raw
-and compiles at a 1024-token budget to 892 tokens - 26 named places on 34
-street segments, ~99% smaller (measured 2026-10-15; rerun it yourself:
-`supercarto compile examples/synthetic-dense.geojson --budget 1024`).
+and compiles at a 1024-token budget to about 890 tokens - 26 nodes
+(10 named) on 34 edges (streets plus access links), ~99% smaller.
+Rerun it yourself: `supercarto compile examples/synthetic-dense.geojson
+--budget 1024`. Token counts are character-based estimates on a fixed test
+file; the sun and timestamp lines shift them by a few tokens run to run.
 
 ```bash
 npm install supercarto
@@ -58,7 +60,7 @@ tools:
   - expand_feature(id)
 ```
 
-That is 892 tokens for the whole extract at a 1024 budget: every drop named
+That is about 890 tokens for the whole extract at a 1024 budget: every drop named
 by layer, nothing silently vanished.
 
 ---
