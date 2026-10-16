@@ -3,7 +3,7 @@ import { encodeDocument } from './wire/encode.js';
 import { decodeDocument } from './wire/decode.js';
 import { fromGeoJson, type IngestOptions } from './ingest/geojson.js';
 import { compile, type CompileOptions } from './compile/compiler.js';
-import { fitToBudget, type BudgetOptions, type BudgetResult } from './budget/budget.js';
+import { fitToBudget, articulationPoints, contractAnonymousChains, type BudgetOptions, type BudgetResult } from './budget/budget.js';
 import { emitGraph, type EmitOptions, type EmitResult } from './emit/yaml.js';
 import { gridScaleFor, type GridScale } from './geo/scale.js';
 import type { GeoJsonFeature, GeoJsonFeatureCollection } from './ingest/geojson.js';
@@ -223,6 +223,12 @@ function emitAndVerify(
       partial: true,
     };
     dropped += victims.length;
+    // Safe leaf pruning exposes anonymous chains. Collapse those paths rather
+    // than spending the remaining budget on their intermediate junctions.
+    contractAnonymousChains(graph.nodes, graph.edges, (count) => {
+      dropped += count;
+      graph = { ...graph, omitted: bumpOmission(graph.omitted, 'waypoint', count), partial: true };
+    }, junctionsHoldingLandmarks(graph));
     result = render(graph);
 
     // Adapt the batch: grow while a full batch is removable, shrink when the
@@ -231,8 +237,8 @@ function emitAndVerify(
       batch = Math.min(graph.nodes.length, batch + Math.max(1, Math.floor(batch / 4)));
       stalls = 0;
     } else {
-      stalls++;
-      if (stalls > 6) break;
+      batch = Math.max(1, victims.length);
+      stalls = 0;
     }
   }
 
@@ -296,16 +302,20 @@ function pickBatch(
   }
 
   const out: string[] = [];
+  const keep = new Set(graph.nodes.map((n) => n.id));
+  let cuts = articulationPoints(graph.nodes, graph.edges, keep);
   let edgesLeft = graph.edges.length;
   for (const { id } of scored) {
     if (out.length >= limit) break;
-    if (skip.has(id)) continue;
+    if (skip.has(id) || cuts.has(id)) continue;
     // Keep at least two edges so the map stays navigable. Vacant on edgeless
     // graphs: with nothing to keep connected, unnamed nodes thin freely and
     // named ones are filtered by the caller, never here.
     const cost = incident.get(id) ?? 0;
     if (edgesLeft >= 2 && edgesLeft - cost < 2) continue;
     out.push(id);
+    keep.delete(id);
+    cuts = articulationPoints(graph.nodes, graph.edges, keep);
     edgesLeft -= cost;
   }
   return out;
