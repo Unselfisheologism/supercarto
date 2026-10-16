@@ -249,7 +249,7 @@ function edgeBody(e: GraphEdge, scale: GridScale | undefined): string {
   // correct in a bbox whose width and height differ.
   const usableScale =
     scale && Number.isFinite(scale.x) && Number.isFinite(scale.y) ? scale : undefined;
-  const metres = usableScale ? Math.hypot(e.dx * usableScale.x, e.dy * usableScale.y) : Number.NaN;
+  const metres = usableScale ? (e.segments ?? [e]).reduce((sum, leg) => sum + Math.hypot(leg.dx * usableScale.x, leg.dy * usableScale.y), 0) : Number.NaN;
 
   if (Number.isFinite(metres)) {
     parts.push(`dist: ${Math.round(metres)}m`);
