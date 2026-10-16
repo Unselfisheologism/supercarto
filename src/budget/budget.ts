@@ -1,6 +1,6 @@
 import type { SpatialGraph, GraphNode, GraphEdge } from '../compile/graph.js';
 import { estimateTokens } from '../emit/yaml.js';
-import { oppositeCompass, type Compass } from '../geo/geometry.js';
+import { oppositeCompass, compassOf } from '../geo/geometry.js';
 
 /**
  * Token budgeting.
@@ -119,19 +119,15 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
 
   // Prune by rank until the estimate fits.
   //
-  // Removal is batched and cut vertices are computed once per batch rather than
-  // once per node. Recomputing articulation points is O(V+E), so doing it for
-  // each of ~900 removals made this stage take tens of seconds on a real
-  // extract. A batch can overshoot into a vertex that is a cut point at that
-  // moment, which is why the batch is halved whenever it stalls, converging on
-  // the same graph at a fraction of the cost.
+  // Estimate and serialize in batches, but validate each removal against the
+  // live keep set. Individually safe removals can jointly split a cycle.
   let current = estimateGraphTokens(nodes, edges, graph);
   let guard = 0;
   let batch = Math.max(1, Math.floor(nodes.length / 8));
   let stalls = 0;
 
   while (current > target && guard++ < 2000) {
-    const cuts = articulationPoints(nodes, edges, keep);
+    let cuts = articulationPoints(nodes, edges, keep);
     const liveNamed = nodes.filter((n) => keep.has(n.id) && n.name !== undefined).length;
 
     // Walk the ranking from the bottom, taking removable nodes until the batch
@@ -168,6 +164,10 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
       }
       if (wouldOrphanLandmark(edges, n.id, landmarks, keep)) continue;
       remove.add(n.id);
+      // Decisions must use the graph left by earlier choices in this batch.
+      // Two individually safe removals from a cycle may jointly disconnect it.
+      keep.delete(n.id);
+      cuts = articulationPoints(nodes, edges, keep);
     }
 
     if (remove.size === 0) {
@@ -282,7 +282,7 @@ export function scoreNode(node: GraphNode, degree: number, maxDegree: number): n
 }
 
 /**
- * Rank nodes for survival, worst first.
+ * Rank nodes for survival, best first.
  *
  * The ordering is not purely by semantic value. A named cafe wedged onto the
  * street network is worth far more to an agent than the same cafe stranded on
@@ -305,7 +305,7 @@ function rankNodes(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
     const sb = scoreNode(b, degrees.get(b.id) ?? 0, maxDegree);
     const na = inNetwork.has(a.id) ? 1 : 0;
     const nb = inNetwork.has(b.id) ? 1 : 0;
-    if (na !== nb) return na - nb;
+    if (na !== nb) return nb - na;
     // Streets outrank anonymous junctions, and landmarks outrank both: an
     // agent asked "where is a cafe" needs the cafe, and the junction it hangs
     // off is retained automatically because it is pinned.
@@ -316,7 +316,7 @@ function rankNodes(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
     };
     const ta = tier(a);
     const tb = tier(b);
-    if (ta !== tb) return ta - tb;
+    if (ta !== tb) return tb - ta;
     return sb - sa;
   });
 }
@@ -433,7 +433,7 @@ function touchingIds(edges: GraphEdge[], id: string): string[] {
  * the recursive form. Undirected, deduplicated adjacency: the graph carries
  * mirrored directed edges, so `n1<->n2` is one link, not two.
  */
-function articulationPoints(
+export function articulationPoints(
   nodes: GraphNode[],
   edges: GraphEdge[],
   keep: Set<string>,
@@ -455,6 +455,7 @@ function articulationPoints(
   const parent = new Map<string, string | undefined>();
   const cuts = new Set<string>();
   let clock = 0;
+  const childCounts = new Map<string, number>();
 
   for (const root of live) {
     if (disc.has(root.id)) continue;
@@ -478,8 +479,9 @@ function articulationPoints(
           const childLow = low.get(frame.id)!;
           const parentLow = low.get(p)!;
           if (childLow < parentLow) low.set(p, childLow);
-          if (parentLow >= disc.get(p)!) cuts.add(p);
+          if (parent.get(p) !== undefined && childLow >= disc.get(p)!) cuts.add(p);
         }
+        if (p === undefined && (childCounts.get(frame.id) ?? 0) > 1) cuts.add(frame.id);
         continue;
       }
       const v = next.value;
@@ -489,6 +491,7 @@ function articulationPoints(
         if (dv < low.get(frame.id)!) low.set(frame.id, dv);
         continue;
       }
+      childCounts.set(frame.id, (childCounts.get(frame.id) ?? 0) + 1);
       parent.set(v, frame.id);
       disc.set(v, clock);
       low.set(v, clock);
@@ -512,6 +515,7 @@ export function contractAnonymousChains(
   protectedIds?: ReadonlySet<string>,
 ): number {
   let removed = 0;
+  const uncontractable = new Set<string>();
   for (;;) {
     // Judge by *distinct neighbours*, not edge count. Every line contributes
     // two opposite directed edges, so an interior chain node has four incident
@@ -521,6 +525,7 @@ export function contractAnonymousChains(
     const victim = nodes.find(
       (n) =>
         !n.name &&
+        !uncontractable.has(n.id) &&
         n.kind === 'intersection' &&
         !protectedIds?.has(n.id) &&
         (neighbourCount.get(n.id) ?? 0) === 2,
@@ -534,7 +539,10 @@ export function contractAnonymousChains(
     // junction and must be kept.
     const inbound = edges.filter((e) => e.to === victim.id);
     const outbound = edges.filter((e) => e.from === victim.id);
-    if (inbound.length !== 2 || outbound.length !== 2) break;
+    if (inbound.length !== 2 || outbound.length !== 2) {
+      uncontractable.add(victim.id);
+      continue;
+    }
 
     // A neighbour is "before" the victim when an edge runs neighbour -> victim,
     // and "after" when an edge runs victim -> neighbour. Both sets must contain
@@ -542,9 +550,10 @@ export function contractAnonymousChains(
     // collapsing it would invent or destroy a restriction.
     const before = new Set(inbound.map((e) => e.from));
     const after = new Set(outbound.map((e) => e.to));
-    if (before.size !== 2 || after.size !== 2) break;
-    for (const n of before) if (!after.has(n)) break;
-    for (const n of after) if (!before.has(n)) break;
+    if (before.size !== 2 || after.size !== 2 || [...before].some((id) => !after.has(id))) {
+      uncontractable.add(victim.id);
+      continue;
+    }
 
     const neighbours = [...before];
     const beforeId = neighbours[0]!;
@@ -555,13 +564,24 @@ export function contractAnonymousChains(
     // with the outbound leg to the *same* neighbour would be a backtrack.
     const inLeg = inbound.find((e) => e.from === beforeId)!;
     const outLeg = outbound.find((e) => e.to === afterId)!;
+    // Keep differently labelled/restricted passages explicit. Original legs
+    // retain path length through bends rather than claiming a shortcut.
+    const sameAttributes = [...inbound, ...outbound].every((e) =>
+      e.path === inLeg.path && !!e.blocked === !!inLeg.blocked && !!e.crosswalk === !!inLeg.crosswalk);
+    const duplicate = edges.some((e) =>
+      (e.from === beforeId && e.to === afterId) || (e.from === afterId && e.to === beforeId));
+    if (!sameAttributes || duplicate || inLeg.blocked) {
+      uncontractable.add(victim.id);
+      continue;
+    }
 
-    // Sum the axis deltas so the emitter's per-axis scaling stays correct
-    // across a contraction; a straight-line distance would not survive it.
-    const dir = outLeg.dir;
+    // Displacement determines the endpoint bearing. Original legs determine
+    // path length after per-axis scaling, including bends and repeated joins.
     const dx = inLeg.dx + outLeg.dx;
     const dy = inLeg.dy + outLeg.dy;
-    const dist = Math.hypot(dx, dy);
+    const dist = inLeg.dist + outLeg.dist;
+    const segments = [...(inLeg.segments ?? [{ dx: inLeg.dx, dy: inLeg.dy }]), ...(outLeg.segments ?? [{ dx: outLeg.dx, dy: outLeg.dy }])];
+    const bearing = compassOf({ x: 0, y: 0 }, { x: dx, y: dy });
     const features = dedupe([...inLeg.features, ...outLeg.features]);
 
     // The through passage, forward: before -> after.
@@ -571,7 +591,8 @@ export function contractAnonymousChains(
       dist,
       dx,
       dy,
-      dir: outLeg.dir,
+      dir: bearing,
+      segments,
       features,
     };
     // The mirror: after -> before, with the axis deltas negated so the reverse
@@ -582,7 +603,8 @@ export function contractAnonymousChains(
       dist,
       dx: -dx,
       dy: -dy,
-      dir: oppositeCompass(outLeg.dir),
+      dir: oppositeCompass(bearing),
+      segments: [...segments].reverse().map((s) => ({ dx: -s.dx, dy: -s.dy })),
       features,
     };
     const p = inLeg.path ?? outLeg.path;
