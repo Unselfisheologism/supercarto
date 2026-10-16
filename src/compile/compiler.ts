@@ -703,7 +703,9 @@ function addEdge(
 
   // A line is bidirectional unless the data says otherwise. An agent reading a
   // directed graph assumes one-way semantics, so both directions must exist.
-  b.edges.push(base(dir), base(oppositeCompass(dir)));
+  b.edges.push(base(dir), {
+    ...base(oppositeCompass(dir)), from: toId, to: fromId, dx: -dx, dy: -dy,
+  });
   b.used.add(fromId);
   b.used.add(toId);
 
