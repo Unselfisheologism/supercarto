@@ -73,6 +73,8 @@ export interface GraphEdge {
   /** Grid-space displacement, kept so the emitter can scale each axis correctly. */
   dx: number;
   dy: number;
+  /** Original legs of a contracted path, for correct per-axis length scaling. */
+  segments?: { dx: number; dy: number }[];
   /** Compass direction of travel, from `from` to `this`. */
   dir: Compass;
   /** Path class: sidewalk, road, stairs, indoor, etc. */
