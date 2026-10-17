@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.11
+
+Bug fixes:
+
+- Live Overpass fetch now works for negative latitudes: supercarto emits the
+  positional `(s,w,n,e)` bbox form instead of the `bbox:`-prefixed form, which
+  the public Overpass instance rejects with HTTP 400 for negative-latitude
+  boxes. Includes a regression test.
+- Connectivity fixes for token-budgeted map graphs (PR #1,
+  fix-connected-budget).
+
+
 ## 0.4.9
 
 Tool-surface additions the benchmark repo needs (no behavior changes to
