@@ -11,7 +11,7 @@ import re
 
 from .graph import GraphEdge, GraphNode, SpatialGraph
 from .indoor import is_meaningful_indoor
-from .types import utf16_length
+from .types import js_num_str, utf16_length
 
 
 def estimate_tokens(text: str) -> int:
@@ -187,20 +187,21 @@ def emit_graph(graph: SpatialGraph, opts: dict | None = None) -> dict:
 def _indoor_lines(graph) -> list[str]:
     """Render the indoor block (only reachable once the indoor builder exists)."""
     out = ["indoor:"]
-    out.append(f"  storeys: {','.join(str(l.level) for l in graph.levels) or 'none'}")
+    out.append(f"  storeys: {','.join(js_num_str(l.level) for l in graph.levels) or 'none'}")
     out.append(f"  {'multi_storey: true' if graph.multiStorey else 'multi_storey: false'}")
 
     for level in graph.levels:
-        out.append(f"  {level.level}: {{label: {yaml_string(level.label)}, rooms: {len(level.nodes)}}}")
+        out.append(f"  {js_num_str(level.level)}: {{label: {yaml_string(level.label)}, rooms: {len(level.nodes)}}}")
         for n in level.nodes:
             parts = [f"type: {n.kind}"]
             if n.name:
                 parts.append(f"name: {yaml_string(n.name)}")
             if n.wheelchair is not None:
-                parts.append(f"wheelchair: {n.wheelchair}")
+                # boolean interpolation is `${bool}` on the TS side
+                parts.append(f"wheelchair: {'true' if n.wheelchair else 'false'}")
             out.append(f"    {n.id}: {{{', '.join(parts)}}}")
         for e in level.edges:
-            parts = [f"dist: {e.distM}m"]
+            parts = [f"dist: {_n(e.distM)}m"]
             if e.blocked:
                 parts.append("blocked: true")
             if e.door:
@@ -208,7 +209,7 @@ def _indoor_lines(graph) -> list[str]:
             out.append(f"    {e.from_}->{e.to}: {{{', '.join(parts)}}}")
 
     for v in graph.vertical:
-        parts = [f"type: {v.kind}", f"levels: [{','.join(str(x) for x in v.levels)}]"]
+        parts = [f"type: {v.kind}", f"levels: [{','.join(js_num_str(x) for x in v.levels)}]"]
         if v.wheelchair:
             parts.append("wheelchair: true")
         if v.name:
@@ -216,9 +217,9 @@ def _indoor_lines(graph) -> list[str]:
         out.append(f"  {v.id}: {{{', '.join(parts)}}}")
 
     if graph.missingLevels:
-        out.append(f"  missing: [{','.join(str(x) for x in graph.missingLevels)}]")
+        out.append(f"  missing: [{','.join(js_num_str(x) for x in graph.missingLevels)}]")
     for o in graph.omitted:
-        out.append(f"  omitted: - {{level: {o.level}, note: {yaml_string(o.reason)}}}")
+        out.append(f"  omitted: - {{level: {js_num_str(o.level)}, note: {yaml_string(o.reason)}}}")
     return out
 
 

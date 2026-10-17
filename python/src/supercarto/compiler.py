@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import math
+import re
 from typing import Any
 
 from .geometry import (
@@ -29,7 +30,12 @@ from .graph import (
     SunSummary,
 )
 from .hours import opening_phrase
-from .indoor import compile_indoor, empty_indoor
+from .indoor import (
+    IndoorFeature,
+    build_indoor_graph,
+    empty_indoor,
+    is_meaningful_indoor,
+)
 from .project import grid_to_lonlat
 from .sun import sun_position
 from .toolcatalog import advertised_tools
@@ -37,6 +43,7 @@ from .types import (
     Feature,
     Prop,
     ScrDocument,
+    js_num_str,
     js_round,
 )
 
@@ -900,3 +907,236 @@ class GridPointXY:
     def __init__(self, x: float, y: float) -> None:
         self.x = x
         self.y = y
+
+
+# ---------------------------------------------------------------------------
+# Indoor topology
+# ---------------------------------------------------------------------------
+
+
+def compile_indoor(doc: ScrDocument, opts: dict):
+    """Pull indoor features out of the document and build the per-floor graph.
+
+    Indoor data arrives as ordinary features tagged ``indoor=*`` and
+    ``level=*``, so the wire format needed no change; only the interpretation
+    did. A feature counts as indoor when it carries either tag, because a
+    ``level=2`` corridor is indoor even without ``indoor=corridor``, and an
+    ``indoor=room`` on an untagged storey is still a room worth showing under
+    an unknown level.
+    """
+    features: list[IndoorFeature] = []
+
+    for f in doc.features:
+        props = props_of(doc, f.attrSet)
+        level_raw = _prop_string(doc, props, "layer") or _prop_string(doc, props, "level")
+        indoor = _prop_string(doc, props, "indoor")
+        if level_raw is None and indoor is None:
+            continue
+
+        level = _parse_level(level_raw)
+        name = _prop_string(doc, props, "name")
+        kind_hint = indoor if indoor is not None else _class_name_of(doc, f.classId)
+
+        # Only genuine indoor categories participate. A polygon tagged
+        # `indoor=no` is explicitly not indoor space, and letting it through
+        # would put an outdoor parcel inside the floor graph.
+        if indoor == "no":
+            continue
+
+        centre = _centroid_of(f)
+        if centre is None:
+            continue
+
+        wheelchair = _wheelchair_of(doc, props)
+        extent = _extent_of(f)
+        features.append(
+            IndoorFeature(
+                id=f.id,
+                level=level,
+                name=name,
+                indoor=indoor,
+                # A polygon tagged `level` but not `indoor` is still a room of
+                # some kind: nobody tags level on a parking lot's kerb.
+                room=kind_hint == "room"
+                or (indoor is None and level is not None and f.kind == "polygon"),
+                x=centre[0],
+                y=centre[1],
+                extent=extent,
+                # A door or wall is not blocked by default; the tag marks the
+                # element as a boundary an agent may need to reason about.
+                blocked=False if indoor in ("door", "wall") else None,
+                wheelchair=wheelchair,
+                door=_prop_string(doc, props, "door"),
+            )
+        )
+
+    if not features:
+        return empty_indoor()
+
+    # Indoor distances are metres, not grid units. The indoor bounding box is
+    # almost always the same envelope as the whole map, which for a 400m radius
+    # would put a doorway 2000 grid units away and every edge beyond any sane
+    # threshold. The indoor extent alone gives the scale that matters.
+    mpu = _indoor_metres_per_unit(features, doc)
+    graph = build_indoor_graph(
+        features,
+        {
+            "metresPerUnit": mpu,
+            "maxNodesPerLevel": opts.get("maxIndoorNodesPerLevel", 60),
+            "maxLevels": opts.get("maxIndoorLevels", 8),
+        },
+    )
+
+    return graph if is_meaningful_indoor(graph) else empty_indoor()
+
+
+def _indoor_metres_per_unit(features: list[IndoorFeature], doc: ScrDocument) -> float:
+    """Metres per grid unit, measured from the indoor features themselves.
+
+    The document's own scale would be wrong for indoor work, because a
+    city-block envelope and a mall's corridors share it. Measuring the indoor
+    bounding box instead is self-calibrating: whatever the envelope, the indoor
+    features span the building, and a building has a known typical size.
+    """
+    xs = [f.x for f in features]
+    ys = [f.y for f in features]
+    span_grid = max(max(xs) - min(xs), max(ys) - min(ys))
+    if span_grid <= 0:
+        return 1
+
+    # Envelope width in metres, which is the real-world size of the area the
+    # indoor features sit in. Using the envelope's own metres-per-grid-unit and
+    # then rescaling by the indoor share of it avoids inventing a building size.
+    env = doc.envelope
+
+    def field(name: str) -> float:
+        return env[name] if isinstance(env, dict) else getattr(env, name)
+
+    env_type = env["type"] if isinstance(env, dict) else env.type
+    if env_type == "bbox":
+        mid_lat = (field("north") + field("south")) / 2
+        envelope_metres = max(
+            abs(field("east") - field("west")) * 111320 * math.cos(mid_lat * math.pi / 180),
+            abs(field("north") - field("south")) * 110574,
+        )
+    else:
+        from .project import tile_bounds
+
+        b = tile_bounds(int(field("z")), int(field("x")), int(field("y")))
+        mid_lat = (b["north"] + b["south"]) / 2
+        envelope_metres = max(
+            abs(b["east"] - b["west"]) * 111320 * math.cos(mid_lat * math.pi / 180),
+            abs(b["north"] - b["south"]) * 110574,
+        )
+    # A zero span means the geometry collapsed; fall through to the 1 m
+    # default rather than dividing by it.
+    if envelope_metres == 0:
+        return 1
+
+    per_unit = envelope_metres / max(1, doc.extent)
+    return per_unit
+
+
+_BLOCKER_TOKENS = frozenset(["door", "wall", "barrier"])
+
+
+def _parse_level(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    trimmed = raw.strip()
+    if trimmed == "":
+        return None
+    # OSM uses `2`, `-1`, and occasionally `2.5` or a name like `mezzanine`.
+    n = _js_number(trimmed)
+    if math.isfinite(n):
+        return n
+    named = {
+        "ground": 0,
+        "groundfloor": 0,
+        "ground_floor": 0,
+        "ground-floor": 0,
+        "main": 0,
+        "lobby": 0,
+        "reception": 0,
+        "basement": -1,
+        "underground": -1,
+        "lowerground": -1,
+    }
+    return named.get(re.sub(r"\s+", "", trimmed.lower()))
+
+
+def _centroid_of(f) -> tuple[float, float] | None:
+    g = f.geometry
+    if g.kind == "point":
+        return (g.point.x, g.point.y)
+    ring = g.lines[0] if g.kind == "line" else (g.polygon[0].rings[0] if g.polygon else None)
+    if not ring:
+        return None
+    return _ring_centroid(ring)
+
+
+def _extent_of(f) -> float | None:
+    g = f.geometry
+    if g.kind == "line":
+        return _polyline_length(g.lines)
+    if g.kind == "polygon":
+        ring = g.polygon[0].rings[0] if g.polygon else None
+        return _polyline_length([ring]) if ring else None
+    return None
+
+
+def _polyline_length(lines: list) -> float | None:
+    total = 0
+    for line in lines:
+        for i in range(1, len(line)):
+            a, b = line[i - 1], line[i]
+            total += math.hypot(b.x - a.x, b.y - a.y)
+    return total if total else None
+
+
+def _prop_string(doc: ScrDocument, props: list[Prop], key: str) -> str | None:
+    """Read a property as a string.
+
+    ``props_of`` returns raw ``Prop`` records rather than a map, so the lookup
+    goes through the same resolver the rest of the compiler uses. That matters
+    for ``level=2``: it is stored as a number, and reading it as a string would
+    give the literal text "2" on one path and the number 2 on another,
+    producing two different storeys for one floor.
+    """
+    for p in props:
+        if _key_name(doc, p) != key:
+            continue
+        v = resolve_prop(doc, p)
+        if isinstance(v, str) and v != "":
+            return v
+        # A number stored in a typed attr renders through the JS number
+        # formatting, same as String(v) on the reference side.
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            return js_num_str(v)
+    return None
+
+
+def _prop_token(doc: ScrDocument, props: list[Prop], key: str) -> str | None:
+    for p in props:
+        if _key_name(doc, p) != key:
+            continue
+        v = resolve_prop(doc, p)
+        if isinstance(v, str) and v != "":
+            return v
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            return js_num_str(v)
+    return None
+
+
+def _wheelchair_of(doc: ScrDocument, props: list[Prop]) -> bool | None:
+    v = _prop_token(doc, props, "wheelchair")
+    if v in ("yes", "true"):
+        return True
+    if v in ("no", "false"):
+        return False
+    return None
+
+
+def _class_name_of(doc: ScrDocument, class_id: int) -> str:
+    c = doc.classes.get(class_id)
+    return c.name if c else ""

@@ -89,6 +89,8 @@ const report = {
     warnings: m.warnings,
     source: m.fetchedFrom,
     sourceTruncated: m.sourceTruncated,
+    wireBytes: m.metrics.wireBytes,
+    scr: m.scr,
   },
   weather,
   route,

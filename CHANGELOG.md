@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased — full milestone 2: SCR wire codec, indoor floors, traffic, PMTiles/MVT
+
+Completes the live-source milestone: every `src/source/*.ts` provider, the SCR
+wire codec and indoor floors are now native Python, all under the same
+byte-parity gate. Zero runtime dependencies throughout (gzip via `zlib`, zstd
+via the Python 3.14 stdlib `compression.zstd`, MVT via hand-rolled protobuf
+varint parsing).
+
+- **SCR wire codec** (`wire.py`, a full port of `src/wire/{geometry,encode,
+  decode}.ts`): separators, delta paths and the ≥4-vertex smart threshold,
+  rings/polygons with signed areas, the three heat encodings, properties and
+  attr values, and `encode_document`/`decode_document` (5,000,000-feature cap,
+  header/envelope/Q required). `pipeline.to_maplet` now carries the real `scr`
+  and `wireBytes`/`wireTokens` fields (tokens are the ceil of bytes/4),
+  `from_scr()` round-trips documents, and `live.SuperCarto.scr()` encodes the
+  live-compiled document exactly like the Node server.
+- **Indoor floors** (`indoor.py`, `compiler.py`, a port of `src/compile/
+  indoor.ts` + the `compileIndoor` hook): `indoor=*`/`level=*` features become
+  per-floor room graphs gated by a named-corridor requirement, shafts
+  (`lift`/`stairs`) collapse into `VerticalLink`s keyed by a shared 32-unit
+  grid cell, level names (`ground`, `mezzanine`-style tables, fractional
+  `2.5` storeys) parse with the JS `Number()` semantics, and skipped storeys
+  land in the omission ledger with their reason. Distances are metres via an
+  envelope-calibrated `metresPerUnit`.
+- **Traffic flow providers** (`traffic.py`, a port of `src/source/traffic.ts`):
+  `TomTomFlow` and `HereFlow` with the same level-of-service thresholds and
+  congestion-scaled ETA arithmetic (`TrafficRouter`, `level_for_ratio`),
+  credentials from `TOMTOM_API_KEY`/`TRAFFIC_API_KEY`/`HERE_API_KEY`, and
+  `live.SuperCarto(sources=..., tomTom={...}, here={...})` wiring — the
+  no-credential fallback stays the labelled free-flow result, and `has_flow`
+  gates tool advertisement.
+- **PMTiles + MVT** (`protomaps.py`, `mvt.py`, ports of `src/source/
+  protomaps.ts` + `mvt.ts`): a PMTiles v3 reader (magic-checked 127-byte
+  header, column-major directory decode with the zero-offset contiguity
+  marker, leaf-aware cache, local-file and HTTP-range fetch), Hilbert-curve
+  TileIDs pinned to spec 4.1's worked table, and a minimal MVT 2.1 decoder
+  (column-major layers, tag tables resolved after the wire, multi-point
+  MoveTo kept in one part). `ProtomapsSource` fits the `MapSource` contract
+  with per-zoom capping, per-feature dedup across tiles, and per-layer
+  filtering, and its features compile like any other GeoJSON.
+- Parity gates extended: `scr-ts.mjs`/`scr-py.py` round-trip fixed-point SCR
+  bytes per fixture; `pmtiles-ts.mjs`/`pmtiles-py.py` build a spec-written
+  archive on each side independently and require byte-identical canonical
+  reports (header, directory, MVT decode, fetched features, compiled YAML).
+  Offline `check.sh` now runs 7 cases green plus the pmtiles gate.
+- Port notes worth keeping: `js_number()` is now a faithful JS `Number()` —
+  bare hex strings parsed, `"0x…"` prefixes unsigned, `"infinity"` is NaN —
+  and the SCR gate exposed that a bare-hex bug had corrupted ingest string
+  interning. The SCR doc-side string sort reproduces the TS quirk of sorting
+  `id,text` entries lexicographically rather than by id. MVT kv tags are
+  greedy like the reference's `(\S+)` regex, so `turn=19th Street` keeps
+  `turn="19th"` there too. PMTiles' `centerZoom` reads as a float32 at offset
+  105 on both sides.
+
 ## Unreleased — Python-native live sources (milestone 2a)
 
 The pip package can now **fetch and compile any location on earth without
@@ -31,10 +85,9 @@ dependencies. All under the same byte-parity gate as milestone 1.
   metrics, weather parsing, route prose, and the exact request strings each
   side builds (Overpass QL, weather URL, OSRM URL). Fixtures captured from
   the real public services in `scripts/parity/fixtures/live/`.
-- Deferred to still later milestones: SCR wire codec, indoor floors,
-  PMTiles/MVT, and the TomTom/HERE traffic flow providers (requiring paid
-  credentials; `route_with_traffic` reports free-flow labelled
-  `freeFlowOnly`, identical to the TS class with no key configured).
+- Deferred to a later milestone (the rest of milestone 2, above): SCR wire
+  codec, indoor floors, PMTiles/MVT, and the TomTom/HERE traffic flow
+  providers.
 - Port notes worth keeping: Overpass `normalizeLayers`/`buildQuery` are
   string-identical; `clipGeometry` matches vertices by object reference on
   the TS side (so polygons needing any clip come back with an empty ring and

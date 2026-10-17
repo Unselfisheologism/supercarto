@@ -11,6 +11,7 @@ exist only in this in-memory form (and never round-trip through strings).
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 DEFAULT_EXTENT = 4096
@@ -169,7 +170,31 @@ class HeatLayer:
     minValue: float
     maxValue: float
     encoding: HeatEncoding
+    #: ``sparse``: non-empty cells in grid coordinates.
     cells: list[HeatCell] | None = None
+    #: ``rle``: run-length rows, keyed by row index.
+    rows: list[HeatRow] | None = None
+    #: ``cell``: externally indexed cells (H3/S2/etc).
+    indexed: list[IndexedHeatCell] | None = None
+
+
+@dataclass
+class HeatRow:
+    y: int
+    runs: list[HeatRun]
+
+
+@dataclass
+class HeatRun:
+    x: int
+    len: int
+    value: float
+
+
+@dataclass
+class IndexedHeatCell:
+    cell: str
+    value: float
 
 
 @dataclass
@@ -252,25 +277,28 @@ def js_number(raw: str) -> float:
     ``"18"`` as often as ``18``, so a converter that returns ``nan`` for
     anything JavaScript would coerce keeps the port from diverging on edge
     cases like ``"1e5"`` or ``"Infinity"``.
+
+    Faithful to the grammar: a leading sign is not allowed with radix
+    prefixes (``Number("-0x1f")`` is ``NaN``); hex/binary/octal literals need
+    the ``0x``/``0b``/``0o`` prefix (bare ``"cafe"`` is ``NaN``, a distinction
+    that matters for OSM tag values); the empty string is ``0``; ``Infinity``
+    matches case-insensitively but bare ``"inf"`` is ``NaN``.
     """
     t = raw.strip()
     if t == "":
-        return math.nan
+        return 0.0
     if t in ("Infinity", "+Infinity"):
         return math.inf
     if t == "-Infinity":
         return -math.inf
-    try:
+    if re.fullmatch(r"[+-]?0[xXoObB][0-9a-fA-F]+", t):
+        # Signed equivalents are NaN in JS: only the unsigned form parses.
+        if t[0] in "+-":
+            return math.nan
+        return float(int(t, 0))  # python accepts 0x/0b/0o prefixes here too
+    if re.fullmatch(r"[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?", t):
         return float(t)
-    except ValueError:
-        pass
-    # Hexadecimal literals, which JS accepts and float() does not.
-    neg = t[0] == "-"
-    body = t[1:] if neg else t
-    try:
-        return -int(body, 16) if neg else int(body, 16)
-    except ValueError:
-        return math.nan
+    return math.nan
 
 
 def js_round(x: float) -> float:
@@ -291,6 +319,79 @@ def utf16_length(text: str) -> int:
     which would make Python believe a maplet is smaller than Node did.
     """
     return len(text.encode("utf-16-le")) // 2
+
+
+def js_num_str(n: float) -> str:
+    """JavaScript ``String(n)`` for numbers.
+
+    SCR payloads interpolate coordinates, counts and attribute values with
+    template literals, so the codec's bytes carry JavaScript's number
+    formatting: Python's ``str()`` differs on integral floats (``"2.0"`` vs
+    ``"2"``), negative zero (``"-0.0"`` vs ``"0"``) and exponent forms
+    (``"1.5e-07"`` vs ``"1.5e-7"``).
+
+    Both runtimes pick the same shortest round-trip digits (Python's ``repr``
+    as well as V8), so this re-renders those digits under the ECMAScript
+    ToString rules: decompose the value into digit string ``s`` (k digits) and
+    exponent ``n`` with value ``= s * 10^(n - k)``, then
+    ``k <= n <= 21`` -> digits padded with zeros,
+    ``0 < n <= 21``       -> decimal point inserted after ``n`` digits,
+    ``-6 < n <= 0``       -> ``0.`` + ``-n`` zeros + digits,
+    otherwise             -> ``d1.d2... e (n-1)``.
+    """
+    if isinstance(n, bool):
+        return "true" if n else "false"
+    if isinstance(n, int):
+        return str(n)
+    if math.isnan(n):
+        return "NaN"
+    if math.isinf(n):
+        return "Infinity" if n > 0 else "-Infinity"
+    if n == 0:
+        return "0"  # -0 prints as "0" too
+
+    s = repr(n)  # shortest round-trip digits, same as V8 picks
+    sign = ""
+    if s[0] == "-":
+        sign = "-"
+        s = s[1:]
+
+    if "e" in s:
+        mant, _, exp_s = s.partition("e")
+        m = int(exp_s)
+    else:
+        mant = s
+        m = 0
+    if "." in mant:
+        ip, fp = mant.split(".", 1)
+        # repr marks integral floats with a bare ".0"; that trailing zero is a
+        # Python-ism, not a significant digit (JS prints 1.0 as "1").
+        if not fp.strip("0"):
+            fp = ""
+    else:
+        ip, fp = mant, ""
+    digits_all = ip + fp
+    if not digits_all.lstrip("0"):
+        return "0"  # subnormal dust rounding to zero, defensively
+    d = abs(int(digits_all))
+    # value = digits_all * 10^shift, then simplified to s * 10^(n-k)
+    shift = (m - len(fp)) if "e" in s else -len(fp)
+    ds = str(d)
+    k = len(ds)
+    n10 = shift + k
+
+    if k <= n10 <= 21:
+        return sign + ds + "0" * (n10 - k)
+    if 0 < n10 <= 21:
+        head = ds[:n10] if n10 <= k else ds  # n10 < k implies a fraction digit
+        tail = ds[n10:] if n10 <= k else ""
+        return sign + head + "." + tail
+    if -6 < n10 <= 0:
+        z = max(0, -n10) if n10 < 0 else 0
+        return sign + "0." + "0" * z + ds
+    e_out = n10 - 1
+    mant_out = ds[0] + ("." + ds[1:] if k > 1 else "")
+    return f"{sign}{mant_out}e{'+' if e_out > 0 else '-'}{abs(e_out)}"
 
 
 def js_fixed(n: float, d: int) -> str:

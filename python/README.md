@@ -14,20 +14,24 @@ Two surfaces, one package, no runtime dependencies:
   Node library: the omission ledger, connectivity guarantees, and a budget that
   is verified against the emitted bytes) **and** the live sources it feeds on:
   Overpass for OSM data, Open-Meteo for weather, OSRM for turn-by-turn routing —
-  all over `urllib`, all keyless, still zero dependencies.
-- **stdio client** — PMTiles sources, the SCR wire codec and the traffic flow
-  providers still speak MCP to the Node server. See [the client](#use).
+  all over `urllib`, all keyless, still zero dependencies — **plus the SCR wire
+  codec** (`scr` field, `from_scr()` round-trips), **indoor floors** (per-storey
+  room graphs with lift/stairs vertical links), **traffic flow providers**
+  (TomTom/HERE, key-optional), and **PMTiles/MVT** (vector tile archives over
+  HTTP range requests or local files).
+- **stdio client** — for MCP-style integration with the Node server; the native
+  core now covers everything the server's compile and source layers can do, so
+  the client is an alternative interface rather than a missing-feature stopgap.
+  See [the client](#use).
 
 The native core is ported stage by stage with **byte-level output parity
-against the TypeScript as the gate per stage** (`scripts/parity/` in the repo;
-enforced in `tests/test_parity.py`). What the parity gate covers today: the full
-offline pipeline — projection, Web Mercator grid, GeoJSON ingest with OSM
+against the TypeScript as the gate per stage** (`scripts/parity/` in the repo).
+The gate covers the full offline pipeline (projection, ingest with OSM
 classification, topology compilation, opening-hours grammar, solar position,
-token budget with landmark floors and cut-vertex protection, and YAML emission —
-plus the whole live path (Overpass fetch+ingest, weather parsing, route prose,
-and the exact request strings each side builds) replayed against recorded
-service responses in `tests/test_live_parity.py`. Not ported yet: the SCR wire
-codec, indoor floors, PMTiles, and the traffic flow providers.
+token budget, YAML emission), the SCR wire bytes per fixture, the live path
+replayed against recorded service responses, and PMTiles/MVT end-to-end: both
+sides build a spec-written archive independently and must agree on the header,
+directory, decoded MVT, fetched features and the compiled YAML.
 
 ```python
 from supercarto import compile_file
@@ -57,7 +61,34 @@ route["route"].steps[0].instruction   # "turn right onto 19th Street" prose
 
 weather = carto.weather_at(37.7599, -122.4142, 12)
 weather["now"]["summary"]             # "heavy rain", or NaN + "degraded" when unreachable
+
+# Live congestion, only when a flow provider has a credential — otherwise a
+# labelled free-flow estimate (`freeFlowOnly: true`), which is the difference
+# between a useful answer and a confidently wrong ETA.
+traffic = carto.route_with_traffic({"from": {"lat": ..., "lon": ...},
+                                    "to": {...}, "mode": "drive"})
+traffic["level"], traffic["worstLevel"], traffic["delayS"]
 ```
+
+Traffic and PMTiles sources are injectable the same way everything else is:
+
+```python
+from supercarto.traffic import TomTomFlow, HereFlow
+from supercarto.protomaps import ProtomapsSource
+from supercarto.live import SuperCarto
+
+carto = SuperCarto(
+    sources=[ProtomapsSource("https://example.com/city.pmtiles", max_zoom=14)],
+    tomTom={"api_key": "…"},        # or TOMTOM_API_KEY / TRAFFIC_API_KEY environment
+    here={"api_key": "…"},          # or HERE_API_KEY
+    elevation=...,                  # optional; omitted maplets carry no slope layer
+)
+```
+
+PMTiles/MVT notes: `ProtomapsSource` reads local files or any `http(s)` URL with
+the same range-request logic, accepts `max_zoom`, `max_tiles` and `layers`
+filters, and reports the area as incomplete when the tile cap bites — an agent
+told a map is complete will route across a gap it cannot see.
 
 Sources are injectable for tests and self-hosting: pass
 `overpass={"endpoint": "https://my.overpass.local/api/interpreter"}`,

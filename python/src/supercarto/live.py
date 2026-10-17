@@ -9,11 +9,6 @@ The Python :class:`SuperCarto` is synchronous: ``urllib`` instead of the event
 loop, which keeps the package dependency-free and makes every call
 predictable. The orchestration, caching, retry and honesty logic is ported
 one-for-one.
-
-Deferred to a later milestone: the TomTom/HERE flow providers (they require
-paid keys and only matter for ``route_with_traffic``, which here reports
-free-flow and says so, exactly as the TS class does with no provider
-configured).
 """
 
 from __future__ import annotations
@@ -28,8 +23,10 @@ from .pipeline import to_maplet
 from .project import grid_to_lonlat
 from .routing import OsrmRouter, straight_line_route
 from .scale import grid_scale_for
+from .traffic import HereFlow, TomTomFlow, TrafficRouter
 from .types import Feature, ScrDocument, js_round
 from .weather import OpenMeteoWeather
+from .wire import encode_document as _encode_wire
 
 #: Samples per axis for the slope grid.
 #:
@@ -55,10 +52,12 @@ class SuperCarto:
         router: OsrmRouter | None = None,
         elevation: Any | None = None,
         weather: Any | None = None,
-        traffic: list | None = None,  # flow providers not ported yet; accepted and ignored
+        traffic: list | None = None,
         heat: bool = True,
         overpass: dict | None = None,
         openMeteo: dict | None = None,
+        tomTom: dict | None = None,
+        here: dict | None = None,
         defaultBudget: int = 1024,
     ):
         self.sources = sources or [OverpassSource(**(overpass or {}))]
@@ -76,7 +75,12 @@ class SuperCarto:
         # Traffic is never defaulted. A provider without a credential can only
         # report free flow, and presenting that as a live ETA is the single
         # most damaging thing this service could do.
-        self.traffic = traffic  # unused until the flow providers are ported
+        self.traffic = TrafficRouter(
+            self.router,
+            traffic
+            if traffic is not None
+            else [TomTomFlow(**(tomTom or {})), HereFlow(**(here or {}))],
+        )
         self.derive_heat = heat
         self.default_budget = defaultBudget
         #: Per-area cache of compiled documents, keyed by envelope and layer set.
@@ -201,28 +205,8 @@ class SuperCarto:
         credential. The `freeFlowOnly` flag is what the tool layer reads to
         tell the user their ETA ignores traffic, so this is the difference
         between a useful answer and a confidently wrong one.
-
-        Flow providers (TomTom/HERE) are not ported yet, so the branch taken
-        here is always the no-provider fallback — the same output the TS class
-        produces when no key is configured.
         """
-        mode = req.get("mode") or "drive"
-        routed = self.route({**req, "mode": mode})
-        duration_s = (routed["route"].time or 0)
-        return {
-            "level": "unknown",
-            "worstLevel": "unknown",
-            "durationS": duration_s,
-            "freeFlowS": duration_s,
-            "delayS": 0,
-            "segments": [],
-            "source": "none",
-            "unavailable": (
-                "no traffic flow source configured; duration is free-flow and ignores "
-                "congestion. Set TOMTOM_API_KEY or HERE_API_KEY for live conditions."
-            ),
-            "freeFlowOnly": True,
-        }
+        return self.traffic.route(req)
 
     def weather_at(self, lat: float, lon: float, forecast_hours: int = 12) -> dict | None:
         """Conditions at a point.
@@ -355,8 +339,9 @@ class SuperCarto:
         self.cache[key] = (doc, time.time())
 
     def scr(self, bbox: dict, layers: list[str] | None = None) -> str:
-        """Full SCR text for an area. *(SCR codec not ported yet — milestone 2.)*"""
-        raise NotImplementedError("the SCR wire codec is not ported yet (milestone 2)")
+        """Full SCR text for an area, for machine-side caching or binary encoding."""
+        found = self.document(bbox, layers or [])
+        return _encode_wire(found["doc"], {"group": False})
 
     def elevation_for(self, bbox: dict, res: int = 32) -> Any | None:
         """Elevation grid for an area, when a terrain source is configured."""
@@ -405,8 +390,7 @@ class SuperCarto:
         Advertising it anyway would produce an agent that confidently quotes a
         free-flow ETA.
         """
-        # Flow providers are not ported yet, so live traffic is never available.
-        return False
+        return self.traffic.has_flow
 
     @property
     def capabilities(self) -> dict[str, bool]:

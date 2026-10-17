@@ -108,5 +108,12 @@ module = [
     "supercarto.heat",
     "supercarto.terrain",
     "supercarto.live",
+    # Milestone 2 continuation: SCR wire codec, indoor emitter glue, traffic
+    # flow providers and the PMTiles/MVT readers. Same rationale again: wire- /
+    # protobuf-shaped records, dict-shaped TS results, injectable fetch.
+    "supercarto.wire",
+    "supercarto.traffic",
+    "supercarto.mvt",
+    "supercarto.protomaps",
 ]
 ignore_errors = true

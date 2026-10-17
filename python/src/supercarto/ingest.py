@@ -41,6 +41,7 @@ from .types import (
     Prop,
     ScrDocument,
     TileEnvelope,
+    js_num_str,
     js_number,
 )
 
@@ -557,17 +558,8 @@ def _render_value(v) -> str:
     if v.t == "ref":
         return f"s{v.ref}"
     if v.t == "num":
-        return _js_num_to_str(v.num)
+        # ts renderValue uses String(value.num).
+        return js_num_str(v.num)
     if v.t == "bool":
         return "true" if v.bool else "false"
     return v.token
-
-
-def _js_num_to_str(n: float) -> str:
-    """Number-to-string that matches JavaScript's plain formatting for the
-    small integer and simple decimal values that appear in GeoJSON tags."""
-    if n != n:  # noqa: PLR0124 - NaN check, mirrors JS
-        return "NaN"
-    if n == int(n) and abs(n) < 1e21:
-        return str(int(n))
-    return repr(n)

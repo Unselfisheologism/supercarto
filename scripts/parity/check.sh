@@ -26,6 +26,16 @@ run_case() { # file budget opts
     echo "ts failed: $name"; fail=1; return; }
   python3 scripts/parity/py.py "$file" "$work/${name}.py.yaml" "$opts" 2>"$work/${name}.py.json" || {
     echo "py failed: $name"; fail=1; return; }
+  # SCR codec gate: the post-filter document encoded by both sides, byte for
+  # byte. Runs once per fixture (budget shapes features, and scr encodes the
+  # doc before compilation, so both budgets exercise the shrink path).
+  local scr_ok=1
+  npx tsx scripts/parity/scr-ts.mjs "$file" "$work/${name}.ts.scr" "$opts" 2>/dev/null || scr_ok=0
+  python3 scripts/parity/scr-py.py "$file" "$work/${name}.py.scr" "$opts" >/dev/null 2>&1 || scr_ok=0
+  if [ $scr_ok -eq 1 ]; then
+    cmp -s "$work/${name}.ts.scr" "$work/${name}.py.scr" || scr_ok=0
+  fi
+  [ $scr_ok -eq 0 ] && { echo "FAIL $name (scr)"; fail=1; }
   if diff -q "$work/${name}.ts.yaml" "$work/${name}.py.yaml" >/dev/null; then
     echo "PASS $name ($(python3 -c "import json,sys;print(json.load(open('$work/${name}.ts.json'))['tokens'])") tokens)"
   else
@@ -49,4 +59,19 @@ for f in $files; do
     run_case "$f" "$b" "{\"budget\":$b,\"compile\":{\"now\":\"2026-10-01T12:00:00Z\",\"utcOffsetMinutes\":-420}}"
   done
 done
+
+# PMTiles/MVT reader gate: both sides build the same spec-written archive,
+# fetch through their own reader, and compile the result. The canonical JSON
+# reports must be byte-identical.
+pt_ok=1
+npx tsx scripts/parity/pmtiles-ts.mjs "$work/pmtiles.ts.json" 2>"$work/pmtiles.ts.err" || pt_ok=0
+python3 scripts/parity/pmtiles-py.py "$work/pmtiles.py.json" 2>"$work/pmtiles.py.err" || pt_ok=0
+if [ $pt_ok -eq 1 ] && cmp -s "$work/pmtiles.ts.json" "$work/pmtiles.py.json"; then
+  echo "PASS pmtiles (spec archive: header, directory, mvt, features, yaml)"
+else
+  echo "FAIL pmtiles"
+  diff <(python3 -c "print(open('$work/pmtiles.ts.json').read()[:400])") \
+       <(python3 -c "print(open('$work/pmtiles.py.json').read()[:400])") 2>/dev/null | head -6 | sed 's/^/    /'
+  fail=1
+fi
 exit $fail

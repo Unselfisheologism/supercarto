@@ -4,9 +4,9 @@ GeoJSON in, token-budgeted YAML out. Every stage is also exported
 individually, but this is what a server should call, because the stages have
 a required order and one meaningful set of defaults.
 
-Milestone-1 note: the SCR wire codec is not ported yet, so the ``scr`` field
-and the wire metrics (``wireBytes``/``wireTokens``) are None. The YAML and its
-token count are fully emitted and budget-verified.
+``to_maplet`` also carries the SCR wire document: ``scr`` is the ungrouped
+wire text of the post-filter document (byte-parity port of ``encodeDocument``),
+and ``fromScr`` compiles an already-encoded document without re-ingesting.
 """
 
 from __future__ import annotations
@@ -20,6 +20,12 @@ from .graph import GraphNode, OmittedEntry, SpatialGraph
 from .ingest import from_geojson
 from .scale import grid_scale_for
 from .types import Omission, ScrDocument
+from .wire import decode_document, encode_document
+
+
+def utf8_len(s: str) -> int:
+    # Buffer.byteLength(scr, 'utf8') on the TS side.
+    return len(s.encode("utf-8"))
 
 
 def to_maplet(
@@ -97,15 +103,61 @@ def to_maplet(
         budget_val,
     )
 
+    # SCR text of the (post-filter) document, for machine-side caching and the
+    # wire metrics. Emitted ungrouped: group blank lines are a debugging aid,
+    # and a wire format that stdio pipes carry should not spend bytes on them.
+    scr = encode_document(doc, {"group": False})
+    wire_bytes = utf8_len(scr)
+
     return {
         "doc": doc,
+        "scr": scr,
         "graph": emitted["graph"],
         "yaml": emitted["result"]["yaml"],
         "metrics": {
             "budget": budget_val,
             "tokens": emitted["result"]["tokens"],
-            "wireBytes": None,  # SCR codec not ported yet (milestone 2)
-            "wireTokens": None,
+            "wireBytes": wire_bytes,
+            "wireTokens": -(-wire_bytes // 4),  # Math.ceil
+            "yamlTokens": emitted["result"]["tokens"],
+            "nodes": len(emitted["graph"].nodes),
+            "edges": len(emitted["graph"].edges),
+            "droppedNodes": emitted["dropped"],
+            "droppedEdges": 0,
+        },
+    }
+
+
+def from_scr(
+    scr: str,
+    opts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compile an already-encoded SCR document, without re-ingesting.
+
+    Port of TS ``fromScr``.
+    """
+    opts = opts or {}
+    doc = decode_document(scr)
+    graph = compile(doc, opts.get("compile"))
+    budget_val = opts.get("budget") if opts.get("budget") is not None else 1024
+    fitted = fit_to_budget(graph, {**(opts.get("budgetOpts") or {}), "budget": budget_val})
+    emitted = _emit_and_verify(
+        fitted,
+        opts.get("emit"),
+        grid_scale_for(doc),
+        budget_val,
+    )
+    wire_bytes = utf8_len(scr)
+    return {
+        "doc": doc,
+        "scr": scr,
+        "graph": emitted["graph"],
+        "yaml": emitted["result"]["yaml"],
+        "metrics": {
+            "budget": budget_val,
+            "tokens": emitted["result"]["tokens"],
+            "wireBytes": wire_bytes,
+            "wireTokens": -(-wire_bytes // 4),
             "yamlTokens": emitted["result"]["tokens"],
             "nodes": len(emitted["graph"].nodes),
             "edges": len(emitted["graph"].edges),

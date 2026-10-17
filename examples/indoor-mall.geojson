@@ -1,0 +1,95 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 1,
+      "properties": { "indoor": "corridor", "level": "0" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4196, 37.7681], [-122.4184, 37.7681], [-122.4184, 37.7683], [-122.4196, 37.7683], [-122.4196, 37.7681]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 2,
+      "properties": { "indoor": "corridor", "level": "1" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4195, 37.7687], [-122.4186, 37.7687], [-122.4186, 37.7689], [-122.4195, 37.7689], [-122.4195, 37.7687]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 3,
+      "properties": { "indoor": "room", "level": "0", "name": "Coffee Bar", "amenity": "cafe", "opening_hours": "07:00-19:00", "wheelchair": "yes" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4196, 37.7683], [-122.4192, 37.7683], [-122.4192, 37.7686], [-122.4196, 37.7686], [-122.4196, 37.7683]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 4,
+      "properties": { "indoor": "room", "level": "0" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4192, 37.7683], [-122.4188, 37.7683], [-122.4188, 37.7686], [-122.4192, 37.7686], [-122.4192, 37.7683]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 5,
+      "properties": { "indoor": "room", "level": "1", "name": "Bookstore", "wheelchair": "no" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4195, 37.7683], [-122.4191, 37.7683], [-122.4191, 37.7686], [-122.4195, 37.7686], [-122.4195, 37.7683]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 6,
+      "properties": { "indoor": "room", "level": "2.5", "name": "Mezzanine Cafe" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4191, 37.7683], [-122.4188, 37.7683], [-122.4188, 37.7686], [-122.4191, 37.7686], [-122.4191, 37.7683]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 7,
+      "properties": { "indoor": "door", "level": "0", "door": "sliding" },
+      "geometry": { "type": "Point", "coordinates": [-122.4192, 37.7683] }
+    },
+    {
+      "type": "Feature",
+      "id": 8,
+      "properties": { "indoor": "lift", "level": "0", "wheelchair": "yes" },
+      "geometry": { "type": "Point", "coordinates": [-122.4185, 37.7684] }
+    },
+    {
+      "type": "Feature",
+      "id": 9,
+      "properties": { "indoor": "lift", "level": "1", "wheelchair": "yes" },
+      "geometry": { "type": "Point", "coordinates": [-122.4185, 37.7684] }
+    },
+    {
+      "type": "Feature",
+      "id": 10,
+      "properties": { "indoor": "stairs", "level": "0", "name": "East Stairs" },
+      "geometry": { "type": "LineString", "coordinates": [[-122.4186, 37.7684], [-122.4185, 37.7686]] }
+    },
+    {
+      "type": "Feature",
+      "id": 11,
+      "properties": { "indoor": "stairs", "level": "1", "name": "East Stairs" },
+      "geometry": { "type": "LineString", "coordinates": [[-122.4186, 37.7684], [-122.4185, 37.7686]] }
+    },
+    {
+      "type": "Feature",
+      "id": 12,
+      "properties": { "indoor": "wall", "level": "0" },
+      "geometry": { "type": "LineString", "coordinates": [[-122.4196, 37.7686], [-122.4184, 37.7686]] }
+    },
+    {
+      "type": "Feature",
+      "id": 13,
+      "properties": { "indoor": "no", "level": "0", "name": "Outdoor Parcel" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4188, 37.7680], [-122.4184, 37.7680], [-122.4184, 37.7681], [-122.4188, 37.7681], [-122.4188, 37.7680]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 14,
+      "properties": { "indoor": "room", "level": "-1", "name": "Storage" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4196, 37.7687], [-122.4192, 37.7687], [-122.4192, 37.7690], [-122.4196, 37.7690], [-122.4196, 37.7687]]] }
+    },
+    {
+      "type": "Feature",
+      "id": 15,
+      "properties": { "indoor": "room", "name": "Untagged Storey Room" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-122.4188, 37.7687], [-122.4184, 37.7687], [-122.4184, 37.7690], [-122.4188, 37.7690], [-122.4188, 37.7687]]] }
+    }
+  ]
+}
