@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as _dt
 import math
 import re
+from dataclasses import replace
 from typing import Any
 
 from .geometry import (
@@ -427,7 +428,11 @@ def _add_edge(
     # A line is bidirectional unless the data says otherwise. An agent reading
     # a directed graph assumes one-way semantics, so both directions must exist.
     b.edges.append(base(direction))
-    b.edges.append(base(opposite_compass(direction)))
+    # The mirror keeps the reversed dir and metadata but traverses back with
+    # negated axis deltas, so per-axis scaling stays correct in reverse.
+    b.edges.append(
+        replace(base(opposite_compass(direction)), from_=to_id, to=from_id, dx=-dx, dy=-dy)
+    )
     b.used.add(from_id)
     b.used.add(to_id)
 

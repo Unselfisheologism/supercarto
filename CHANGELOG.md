@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — back-port of the 0.4.11 reference fixes
+
+The TypeScript reference gained two fixes (PR #1, 0.4.11) that change byte
+output; the Python port follows them and the parity gate stays green:
+
+- **Real mirror edges in the compiler** (`compiler.py`): the reverse of every
+  bidirectional line now swaps endpoints and negates its axis deltas instead
+  of duplicating the forward edge with a reversed `dir` label. This changes
+  every compiled graph, so all parity fixtures were re-gated.
+- **Correctness fixes in the budgeter** (`budget.py`, `pipeline.py`,
+  `emit.py`, `graph.py`): best-first ranking before the worst-first prune
+  walk, per-removal live articulation recompute so a batch cannot split a
+  cycle, the root-child-count rule and Tarjan's proper cut test in
+  `articulation_points`, chain contraction that fails closed (an
+  uncontractable candidate is skipped, not the whole pass), path-length
+  (`inLeg.dist + outLeg.dist`) and per-leg `segments` preservation with
+  compass-of-displacement bearings, plus the same contraction and live cut
+  recompute in the pipeline's real-output verify loop.
+- Edge gains an optional `segments` field (`graph.py`) and the emitter sums
+  leg-wise metres over it (`emit.py`), matching `yaml.ts`.
+- `test_connectivity.py` (12 tests) and the Overpass positional-bbox
+  regression test are ports of the reference's new tests.
+
 ## Unreleased — full milestone 2: SCR wire codec, indoor floors, traffic, PMTiles/MVT
 
 Completes the live-source milestone: every `src/source/*.ts` provider, the SCR

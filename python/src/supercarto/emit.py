@@ -254,8 +254,12 @@ def _edge_body(e: GraphEdge, scale: dict | None) -> str:
         if scale is not None and math.isfinite(scale["x"]) and math.isfinite(scale["y"])
         else None
     )
+    legs = e.segments if e.segments is not None else [{"dx": e.dx, "dy": e.dy}]
     metres = (
-        math.hypot(e.dx * usable_scale["x"], e.dy * usable_scale["y"])
+        sum(
+            math.hypot(leg["dx"] * usable_scale["x"], leg["dy"] * usable_scale["y"])
+            for leg in legs
+        )
         if usable_scale is not None
         else math.nan
     )

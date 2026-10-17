@@ -11,9 +11,14 @@ and ``fromScr`` compiles an already-encoded document without re-ingesting.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from .budget import fit_to_budget
+from .budget import (
+    _articulation_points,
+    contract_anonymous_chains,
+    fit_to_budget,
+)
 from .compiler import compile
 from .emit import emit_graph
 from .graph import GraphNode, OmittedEntry, SpatialGraph
@@ -245,17 +250,33 @@ def _emit_and_verify(
             partial=True,
         )
         dropped += len(victims)
+        # Safe leaf pruning exposes anonymous chains. Collapse those paths
+        # rather than spending the remaining budget on their intermediate
+        # junctions.
+        def on_contract(removed_count: int) -> None:
+            nonlocal graph, dropped
+            dropped += removed_count
+            graph = _with_omitted(
+                graph, "waypoint", removed_count, True
+            )
+        contract_anonymous_chains(
+            graph.nodes,
+            graph.edges,
+            on_contract,
+            _junctions_holding_landmarks(graph),
+        )
         result = render(graph)
 
         # Adapt the batch: grow while a full batch is removable, shrink when
-        # the graph stops yielding nodes.
+        # the graph stops yielding nodes. Growing on a short batch ratchets
+        # into the stall counter; capping at what the last batch actually
+        # yielded keeps progress at the achievable rate.
         if len(victims) >= batch:
             batch = min(len(graph.nodes), batch + max(1, batch // 4))
             stalls = 0
         else:
-            stalls += 1
-            if stalls > 6:
-                break
+            batch = max(1, len(victims))
+            stalls = 0
 
     # Safety net: a named node with no edges is a name the agent can see but
     # cannot route to. It is worse than an absent one, because the agent will
@@ -289,6 +310,15 @@ def _emit_and_verify(
     return {"graph": graph, "result": result, "dropped": dropped}
 
 
+def _with_omitted(graph: SpatialGraph, layer: str, count: int, partial: bool) -> SpatialGraph:
+    """Clone the graph with one aggregated omission incremented."""
+    return replace(
+        graph,
+        omitted=_bump_omission(graph.omitted, layer, count),
+        partial=partial or graph.partial,
+    )
+
+
 def _pick_batch(graph: SpatialGraph, skip: set, limit: int) -> list[str]:
     """Up to ``limit`` node ids to drop, worst-first, never orphaning a named
     landmark and never taking the last connections.
@@ -311,17 +341,25 @@ def _pick_batch(graph: SpatialGraph, skip: set, limit: int) -> list[str]:
         incident[e.to] = incident.get(e.to, 0) + 1
 
     out: list[str] = []
+    keep: dict[str, None] = {n.id: None for n in graph.nodes}
+    cuts = _articulation_points(graph.nodes, graph.edges, keep)
     edges_left = len(graph.edges)
     for id_, _score in scored:
         if len(out) >= limit:
             break
-        if id_ in skip:
+        if id_ in skip or id_ in cuts:
             continue
-        # Keep at least two edges so the map stays navigable.
+        # Keep at least two edges so the map stays navigable. Vacant on
+        # edgeless graphs: with nothing to keep connected, unnamed nodes thin
+        # freely and named ones are filtered by the caller, never here.
         cost = incident.get(id_, 0)
         if edges_left >= 2 and edges_left - cost < 2:
             continue
         out.append(id_)
+        # Do not let a batch split a cycle node by node: re-derive the cut
+        # vertices against the graph this batch has already built.
+        keep.pop(id_, None)
+        cuts = _articulation_points(graph.nodes, graph.edges, keep)
         edges_left -= cost
     return out
 

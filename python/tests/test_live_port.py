@@ -61,10 +61,10 @@ def test_build_query_bbox_inside_statement():
             "maxFeatures": 0,
         }
     )
-    # bbox filters go inside the statement parentheses — a bracket prefix is
-    # a documented parse error on the server.
-    assert "way(bbox:37.76,-122.42,37.77,-122.41)[highway=motorway];" in q
-    assert "node(bbox:37.76,-122.42,37.77,-122.41)[highway=bus_stop];" in q
+    # bbox filters go inside the statement parentheses, in positional form —
+    # the ``bbox:`` prefixed form is rejected for negative latitudes.
+    assert "way(37.76,-122.42,37.77,-122.41)[highway=motorway];" in q
+    assert "node(37.76,-122.42,37.77,-122.41)[highway=bus_stop];" in q
     assert q.rstrip().endswith("out geom qt 5000;")
 
 
@@ -76,7 +76,7 @@ def test_build_query_excludes_micro_pathways_from_way_queries():
             "maxFeatures": 0,
         }
     )
-    assert 'way(bbox:0,0,0.001,0.001)[amenity][highway!~"^(footway|path|steps|cycleway|track|bridleway|corridor)$"];' in q
+    assert 'way(0,0,0.001,0.001)[amenity][highway!~"^(footway|path|steps|cycleway|track|bridleway|corridor)$"];' in q
 
 
 def test_build_query_uses_separate_natural_statements():
@@ -591,3 +591,55 @@ def test_format_radius_scales_over_a_kilometre():
     assert format_radius(999) == "999m"
     assert format_radius(1500) == "1.5km"
     assert format_radius(1000) == "1.0km"
+
+
+# ---------------------------------------------------------------------------
+# Overpass query form (port of test/overpass.query.test.ts)
+# ---------------------------------------------------------------------------
+
+
+def test_overpass_emits_positional_bbox_filter_for_negative_latitudes():
+    """Regression: the public instance rejects ``bbox:`` for negative
+    latitudes with 400 "bbox-query: n must be greater or equal than s"
+    (measured against overpass-api.de on 2026-10-17 for Yogyakarta), while
+    the positional form ``way(s,w,n,e)[tag]`` succeeds. The emitted query
+    must stay positional.
+    """
+    import json
+    from urllib.parse import unquote
+
+    yogyakarta = {"west": 110.3739, "south": -7.775, "east": 110.3812, "north": -7.7677}
+    with_way = {
+        "elements": [
+            {"type": "node", "id": 1, "lat": -7.771, "lon": 110.377,
+             "tags": {"amenity": "cafe", "name": "Kopi"}},
+            {"type": "node", "id": 2, "lat": -7.772, "lon": 110.378, "tags": {}},
+            {"type": "way", "id": 10, "nodes": [1, 2],
+             "tags": {"highway": "residential", "name": "Jl. Contoh"}},
+        ],
+    }
+
+    bodies: list[str] = []
+
+    class R:
+        def __init__(self, payload):
+            self.status = 200
+            self.ok = True
+            self._payload = payload
+            self.headers = {"content-type": "application/json"}
+            self.text = json.dumps(payload)
+
+    def fetch(_url, body=None, **kw):
+        bodies.append(unquote(str(body or "")))
+        return R(with_way)
+
+    src = ov.OverpassSource(fetch=fetch, max_attempts=1)
+    res = src.fetch({"bbox": yogyakarta, "layers": [], "maxFeatures": 100})
+    assert res["features"]
+    assert bodies
+    query = bodies[0]
+    assert "bbox:" not in query
+    assert (
+        f"({yogyakarta['south']},{yogyakarta['west']},"
+        f"{yogyakarta['north']},{yogyakarta['east']})" in query
+    ), query

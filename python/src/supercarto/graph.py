@@ -68,6 +68,11 @@ class GraphEdge:
     crosswalk: bool = False
     #: True where movement is blocked: construction, wall, closed gate.
     blocked: bool = False
+    #: Per-leg axis deltas along the edge, in traversal order. Set when the
+    #: edge is a contraction of a chain: the original legs keep their own
+    #: geometry so the emitter can scale each bend by its own axis. Plain
+    #: edges are their own single leg (the emitter falls back to dx/dy).
+    segments: list[dict[str, float]] | None = None
 
 
 @dataclass

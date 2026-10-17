@@ -14,8 +14,12 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable
 
-from .geometry import opposite_compass
+from .geometry import compass_of, opposite_compass
 from .graph import GraphEdge, GraphNode, OmittedEntry, SpatialGraph
+from .types import GridPoint
+
+#: Origin for bearing reduction: the compass of the edge displacement vector.
+_ORIGIN = GridPoint(0, 0)
 
 DEFAULT_OVERHEAD = 0.12
 
@@ -146,6 +150,11 @@ def fit_to_budget(graph: SpatialGraph, opts: dict) -> dict:
             if _would_orphan_landmark(edges, n.id, landmarks, keep):
                 continue
             remove[n.id] = None
+            # Decisions must use the graph left by earlier choices in this
+            # batch. Two individually safe removals from a cycle may jointly
+            # disconnect it.
+            keep.pop(n.id, None)
+            cuts = _articulation_points(nodes, edges, keep)
 
         if len(remove) == 0:
             # Nothing safe at this batch size. Halve and retry, which reaches
@@ -232,11 +241,15 @@ def fit_to_budget(graph: SpatialGraph, opts: dict) -> dict:
 
 
 def _rank_nodes(nodes: list[GraphNode], edges: list[GraphEdge]) -> list[GraphNode]:
-    """Rank nodes for survival, worst last.
+    """Rank nodes for survival, best first.
 
     The ordering is not purely by semantic value: a named cafe wedged onto the
     street network is worth far more than the same cafe stranded on an island
     with no edges, because the agent can only act on a landmark it can reach.
+
+    Streets outrank anonymous junctions, and landmarks outrank both: an agent
+    asked "where is a cafe" needs the cafe, and the junction it hangs off is
+    retained automatically because it is pinned.
     """
     degrees = _degree_map(nodes, edges)
     in_network = _nodes_in_main_component(nodes, edges)
@@ -255,8 +268,8 @@ def _rank_nodes(nodes: list[GraphNode], edges: list[GraphEdge]) -> list[GraphNod
     return sorted(
         nodes,
         key=lambda n: (
-            1 if n.id in in_network else 0,
-            tier(n),
+            0 if n.id in in_network else 1,
+            -tier(n),
             -score_node(n, degrees.get(n.id, 0), max_degree),
         ),
     )
@@ -397,6 +410,7 @@ def _articulation_points(
     parent: dict[str, str | None] = {}
     cuts: set[str] = set()
     clock = 0
+    child_counts: dict[str, int] = {}
 
     for root in live:
         if root.id in disc:
@@ -416,12 +430,17 @@ def _articulation_points(
                 stack.pop()
                 p = parent.get(frame_id)
                 if p is not None:
+                    # Propagate the low point upward, then test for a cut.
                     child_low = low.get(frame_id, 0)
                     parent_low = low.get(p, 0)
                     if child_low < parent_low:
                         low[p] = child_low
-                    if parent_low >= disc.get(p, 0):
+                    # A cut vertex needs a parent itself; the root is handled
+                    # by the child-count rule below.
+                    if parent.get(p) is not None and child_low >= disc.get(p, 0):
                         cuts.add(p)
+                if p is None and child_counts.get(frame_id, 0) > 1:
+                    cuts.add(frame_id)
                 continue
             v = nxt
             if v == parent.get(frame_id):
@@ -431,6 +450,7 @@ def _articulation_points(
                 if dv < low.get(frame_id, dv):
                     low[frame_id] = dv
                 continue
+            child_counts[frame_id] = child_counts.get(frame_id, 0) + 1
             parent[v] = frame_id
             disc[v] = clock
             low[v] = clock
@@ -452,6 +472,7 @@ def contract_anonymous_chains(
     """
     removed = 0
     protected = frozenset(protected_ids) if protected_ids is not None else frozenset()
+    uncontractable: set[str] = set()
     while True:
         # Judge by *distinct neighbours*, not edge count. Every line
         # contributes two opposite directed edges, so an interior chain node
@@ -462,6 +483,7 @@ def contract_anonymous_chains(
                 n
                 for n in nodes
                 if not n.name
+                and n.id not in uncontractable
                 and n.kind == "intersection"
                 and n.id not in protected
                 and neighbour_count.get(n.id, 0) == 2
@@ -477,7 +499,8 @@ def contract_anonymous_chains(
         inbound = [e for e in edges if e.to == victim.id]
         outbound = [e for e in edges if e.from_ == victim.id]
         if len(inbound) != 2 or len(outbound) != 2:
-            break
+            uncontractable.add(victim.id)
+            continue
 
         # A neighbour is "before" the victim when an edge runs neighbour ->
         # victim, and "after" when an edge runs victim -> neighbour. Both sets
@@ -485,8 +508,9 @@ def contract_anonymous_chains(
         # asymmetric, and collapsing it would invent or destroy a restriction.
         before = _dedupe([e.from_ for e in inbound])
         after = _dedupe([e.to for e in outbound])
-        if len(before) != 2 or len(after) != 2:
-            break
+        if len(before) != 2 or len(after) != 2 or any(id_ not in after for id_ in before):
+            uncontractable.add(victim.id)
+            continue
 
         before_id = before[0]
         after_id = after[1]
@@ -499,11 +523,35 @@ def contract_anonymous_chains(
         in_leg = next(e for e in inbound if e.from_ == before_id)
         out_leg = next(e for e in outbound if e.to == after_id)
 
-        # Sum the axis deltas so the emitter's per-axis scaling stays correct
-        # across a contraction; a straight-line distance would not survive it.
+        # Keep differently labelled/restricted passages explicit. Original
+        # legs retain path length through bends rather than claiming a
+        # shortcut.
+        same_attributes = all(
+            e.path == in_leg.path
+            and bool(e.blocked) == bool(in_leg.blocked)
+            and bool(e.crosswalk) == bool(in_leg.crosswalk)
+            for e in [*inbound, *outbound]
+        )
+        duplicate = any(
+            (e.from_ == before_id and e.to == after_id)
+            or (e.from_ == after_id and e.to == before_id)
+            for e in edges
+        )
+        if not same_attributes or duplicate or in_leg.blocked:
+            uncontractable.add(victim.id)
+            continue
+
+        # Displacement determines the endpoint bearing. Original legs
+        # determine path length after per-axis scaling, including bends and
+        # repeated joins.
         dx = in_leg.dx + out_leg.dx
         dy = in_leg.dy + out_leg.dy
-        dist = math.hypot(dx, dy)
+        dist = in_leg.dist + out_leg.dist
+        in_default = [{"dx": in_leg.dx, "dy": in_leg.dy}]
+        out_default = [{"dx": out_leg.dx, "dy": out_leg.dy}]
+        segments = list(in_leg.segments) if in_leg.segments is not None else in_default
+        segments += list(out_leg.segments) if out_leg.segments is not None else out_default
+        bearing = compass_of(_ORIGIN, GridPoint(dx, dy))
         features = _dedupe(list(in_leg.features) + list(out_leg.features))
 
         # The through passage, forward: before -> after.
@@ -513,8 +561,9 @@ def contract_anonymous_chains(
             dist=dist,
             dx=dx,
             dy=dy,
-            dir=out_leg.dir,
+            dir=bearing,
             features=features,
+            segments=segments,
         )
         # The mirror: after -> before, with the axis deltas negated so the
         # reverse traversal is geometrically correct rather than merely
@@ -525,8 +574,11 @@ def contract_anonymous_chains(
             dist=dist,
             dx=-dx,
             dy=-dy,
-            dir=opposite_compass(out_leg.dir),
+            dir=opposite_compass(bearing),
             features=features,
+            segments=[
+                {"dx": -s["dx"], "dy": -s["dy"]} for s in reversed(segments)
+            ],
         )
         p = in_leg.path if in_leg.path else out_leg.path
         if p:
