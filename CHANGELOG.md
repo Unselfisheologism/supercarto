@@ -11,6 +11,41 @@ Bug fixes:
 - Connectivity fixes for token-budgeted map graphs (PR #1,
   fix-connected-budget).
 
+## Unreleased — Python-native core (milestone 1)
+
+The pip package gets a **pure-Python compile core**: GeoJSON in,
+token-budgeted topological YAML out, no Node involved. Milestone 1 of the
+port; enforced by byte-level output parity against the TypeScript compiler.
+
+- `python/src/supercarto/`: ported in dependency order with parity as the
+  gate — wire model (`types.py`), projection + tile envelopes
+  (`project.py`), grid geometry (Visvalingam-Whyatt with the TS heap ported
+  verbatim so simplification tie-breaks match), per-axis grid scale,
+  GeoJSON ingest (OSM classification, attribute sets, token semantics),
+  the topology compiler, the opening-hours grammar, solar position (NOAA
+  approximation), tool catalogue, token budget (rank, cut-vertex
+  protection, chain contraction, batch shrink with stall handling), YAML
+  emission, and the `toMaplet` pipeline with real-output budget
+  verification.
+- `to_maplet()` / `compile_file()` / `compile_maplet()` public API; both
+  data and file inputs. JSON-string input accepted.
+- Parity harness `scripts/parity/` (ts.mjs / py.py / check.sh / debug-py.py)
+  and `python/tests/test_parity.py`: identical options pinned to a fixed
+  instant and UTC offset; YAML must diff clean across budgets, layer
+  filters, bbox and tile envelopes.
+- Deferred to milestone 2, tracked in the port decision record: the SCR
+  wire codec (the `doc`/`scr` result fields exist in memory, not yet on the
+  wire), indoor floors (`python/src/supercarto/indoor.py` is an
+  empty-graph bridge), PMTiles/MVT, and network sources.
+- Port notes worth keeping: JS `Math.round` ties-up semantics preserved
+  (`js_round`), string lengths counted in UTF-16 units for the token
+  estimator, and the budgeter's cut-vertex rule ports faithfully — its
+  read-before-update `parentLow` makes the result DFS-order-dependent, so
+  the Python adjacency iterates in the same insertion order as the
+  TypeScript's `Set`.
+- Fixed en route (pre-existing, surfaced by lint): `client._await_response`
+  referenced an out-of-scope `method`, which raised `NameError` instead of
+  `ConnectionError` when the server replied with an error frame.
 
 ## 0.4.9
 

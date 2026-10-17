@@ -17,8 +17,9 @@ import asyncio
 import json
 import os
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Sequence
+from typing import Any
 
 __all__ = [
     "ConnectionError",
@@ -191,7 +192,7 @@ class SuperCarto:
         self._tools: list[dict[str, Any]] | None = None
         self._write_lock = asyncio.Lock()
 
-    async def __aenter__(self) -> SuperCarto:
+    async def __aenter__(self) -> SuperCarto:  # noqa: PYI034 - explicit class, not Self
         await self.start()
         return self
 
@@ -391,7 +392,7 @@ class SuperCarto:
         # failure mode is an indefinite hang rather than an error message.
         try:
             deadline = asyncio.wait_for(
-                self._await_response(request_id), timeout=self._timeout_s
+                self._await_response(request_id, method), timeout=self._timeout_s
             )
             return await deadline
         except asyncio.TimeoutError as exc:
@@ -401,7 +402,7 @@ class SuperCarto:
                 "otherwise the client and server disagree about framing."
             ) from exc
 
-    async def _await_response(self, request_id: int) -> dict[str, Any]:
+    async def _await_response(self, request_id: int, method: str) -> dict[str, Any]:
         while True:
             message = await self._read_message()
             # Skip anything that is not our response: the server is free to send
@@ -451,7 +452,7 @@ class SuperCarto:
                 continue
             try:
                 parsed = json.loads(text)
-            except json.JSONDecodeError as exc:
+            except json.JSONDecodeError:
                 # Anything that is not JSON on stdout is a stray print. Skipping
                 # it is better than dying, since a log line from a dependency
                 # should not take down a working session.

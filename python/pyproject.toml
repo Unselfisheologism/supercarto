@@ -75,3 +75,27 @@ target-version = "py310"
 [tool.mypy]
 python_version = "3.10"
 strict = true
+mypy_path = "src"
+
+# Milestone-1 ported modules. These mirror the TypeScript's structural SCR
+# types closely (tagged unions, dict-shaped envelopes, wire-model objects) and
+# carrying strict typing through them is a deliberate follow-up pass planned
+# alongside the SCR codec port. The stdio client stays strict today.
+[[tool.mypy.overrides]]
+module = [
+    "supercarto.types",
+    "supercarto.project",
+    "supercarto.geometry",
+    "supercarto.scale",
+    "supercarto.ingest",
+    "supercarto.hours",
+    "supercarto.sun",
+    "supercarto.toolcatalog",
+    "supercarto.graph",
+    "supercarto.indoor",
+    "supercarto.compiler",
+    "supercarto.budget",
+    "supercarto.emit",
+    "supercarto.pipeline",
+]
+ignore_errors = true

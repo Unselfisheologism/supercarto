@@ -7,13 +7,37 @@ location on earth as a token-budgeted topological graph it can reason over.
 pip install supercarto
 ```
 
-This package is a **client**. The map compilation, token budgeting, topology
-work, and indoor graph live in the Node library, and this speaks MCP to it over
-stdio. That is deliberate: those algorithms are the product, and a second
-implementation in a second language would be a second thing to keep correct.
+Two surfaces, one package, no runtime dependencies:
 
-**Node 20 or newer is required to call anything.** `pip install` alone will
-succeed; the error when you call will tell you exactly what to install.
+- **Native core** — the offline compile path, pure Python with no Node. GeoJSON
+  in, token-budgeted topological YAML out, with the same honesty invariants as
+  the Node library: the omission ledger, connectivity guarantees, and a budget
+  that is verified against the emitted bytes.
+- **stdio client** — live sources (Overpass/PMTiles, weather, traffic, routing)
+  still speak MCP to the Node server. See [the client](#use).
+
+The native core is ported stage by stage with **byte-level output parity
+against the TypeScript compiler as the gate per stage** (`scripts/parity/` in
+the repo; enforced in `tests/test_parity.py`). What the parity gate covers
+today: the full offline pipeline — projection, Web Mercator grid, GeoJSON
+ingest with OSM classification, topology compilation, opening-hours grammar,
+solar position, token budget with landmark floors and cut-vertex protection,
+and YAML emission. Not ported yet: the SCR wire codec, indoor floors, PMTiles,
+and the network sources.
+
+```python
+from supercarto import compile_file
+
+r = compile_file("city.geojson", budget=1024)
+print(r["yaml"])
+print(r["metrics"]["tokens"], "tokens")
+```
+
+`to_maplet(features_dict, budget=512)` works straight from dicts parsed off an
+API, and rejects nothing that the Node path accepts for offline input.
+
+**Live sources need Node 20 or newer.** `pip install` alone will succeed; the
+error when you call will tell you exactly what to install.
 
 ```bash
 npm install -g supercarto     # or: npx supercarto mcp
@@ -21,7 +45,7 @@ npm install -g supercarto     # or: npx supercarto mcp
 
 ---
 
-## Use
+## Use (stdio client)
 
 ```python
 import asyncio

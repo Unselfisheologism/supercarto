@@ -1,15 +1,20 @@
 """supercarto - LLM-native spatial middleware for Python.
 
-A thin, dependency-free client for the supercarto MCP server.
+Two surfaces, one package:
 
-The design decision worth knowing about: this package does not reimplement
-anything. The map compilation, the token budgeting, the topology work and the
-indoor graph all live in the Node library, and this speaks JSON-RPC to it over
-stdio. That is deliberate, because those algorithms are the product and a second
-implementation in a second language would be a second thing to keep correct.
+**Native core** (no Node, no runtime dependencies): the offline compile path —
+GeoJSON in, token-budgeted topological YAML out, with the same honesty
+invariants as the TypeScript compiler (omission ledger, connectivity
+guarantees, budget verification).
 
-So the shape here is: start the server, call a tool, get back text an agent can
-act on.
+    from supercarto import compile_maplet
+
+    with open("city.geojson") as fh:
+        result = compile_maplet(fh.read(), budget=1024)
+    print(result["yaml"])
+
+**stdio client**: for live sources (Overpass/PMTiles, weather, traffic,
+routing) until those are ported, this talks JSON-RPC to the Node MCP server:
 
     import asyncio
     from supercarto import SuperCarto
@@ -18,13 +23,21 @@ act on.
         async with SuperCarto() as carto:
             m = await carto.maplet(lat=35.6833, lon=139.7620, radius_m=400, budget=1500)
             print(m.yaml)
-            print(m.tokens, "tokens")
 
     asyncio.run(main())
+
+The design decision worth knowing about: the algorithms are the product, and
+a second implementation is a second thing to keep correct. The native core is
+therefore ported stage by stage with byte-level output parity against the
+TypeScript as the gate per stage (see ``scripts/parity`` in the repo).
 """
+
+from typing import Any
 
 from .client import (
     ConnectionError as SuperCartoConnectionError,
+)
+from .client import (
     DaylightResult,
     MapletResult,
     RouteResult,
@@ -35,8 +48,15 @@ from .client import (
     WeatherResult,
     default_server_command,
 )
+from .pipeline import compile_file, to_maplet
 
 __version__ = "0.4.10"
+
+
+def compile_maplet(geojson: str, **kwargs: Any) -> dict[str, Any]:
+    """Byte-friendly wrapper around :func:`to_maplet` for a JSON string."""
+    return to_maplet(geojson, kwargs or None)
+
 
 __all__ = [
     "DaylightResult",
@@ -48,6 +68,9 @@ __all__ = [
     "ToolError",
     "TrafficResult",
     "WeatherResult",
-    "default_server_command",
     "__version__",
+    "compile_file",
+    "compile_maplet",
+    "default_server_command",
+    "to_maplet",
 ]
