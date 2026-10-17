@@ -358,9 +358,11 @@ describe('OverpassSource', () => {
 
     // The body is form-encoded, so decode it rather than matching the escaped form.
     const decoded = new URLSearchParams(captured).get('data') ?? '';
-    // The bbox must sit inside the parentheses. Written as a bracket prefix it is
-    // a parse error, and Overpass reports that as an opaque 400.
-    expect(decoded).toContain('(bbox:37.77,-122.42,37.78,-122.41)');
+    // The bbox must sit inside the parentheses in positional form. The `bbox:`
+    // prefixed form is rejected by the public instance for negative latitudes
+    // (400, "bbox-query: n must be >= s"), measured 2026-10-17.
+    expect(decoded).toContain('(37.77,-122.42,37.78,-122.41)');
+    expect(decoded).not.toContain('bbox:');
   });
 
   it('discards features whose coordinates lie outside the requested area', async () => {
@@ -563,7 +565,7 @@ it('retries over a smaller box when streets arrive but none are usable', async (
     };
     const fetchImpl = (async (_url: string, init: RequestInit) => {
       const q = new URLSearchParams(String(init.body)).get('data') ?? '';
-      const m = /bbox:([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)/.exec(q);
+      const m = /way\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/.exec(q);
       boxes.push(m
         ? [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]
         : [0, 0, 0, 0]);
@@ -819,7 +821,8 @@ it('retries over a smaller box when streets arrive but none are usable', async (
 
     const src = new OverpassSource({ fetchImpl });
     await src.fetch({ bbox: SF_BBOX, layers: [], maxFeatures: 10 });
-    expect(decoded).toContain('way(bbox:');
+    expect(decoded).toContain('way(');
+    expect(decoded).not.toContain('bbox:');
   });
 
   it('surfaces Overpass XML errors instead of a JSON syntax error', async () => {

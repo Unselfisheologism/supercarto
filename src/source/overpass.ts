@@ -301,9 +301,12 @@ const SERVER_SIDE_CAP = 5_000;
  * Two details are load-bearing, and both were found by running against the real
  * public instance rather than by reading the docs:
  *
- * 1. The bbox filter goes *inside* the parentheses: `node(bbox:...)[tag]`.
- *    Written as a bracket prefix (`node[bbox:...][tag]`) it is a parse error,
- *    because `bbox:` is only legal in statement position.
+ * 1. The bbox filter goes *inside* the parentheses in positional form:
+ *    `node(s,w,n,e)[tag]`. The `bbox:` prefixed form parses on the public
+ *    instance for northern boxes but is rejected for negative latitudes with
+ *    a 400 `bbox-query: n must be >= s` (measured against overpass-api.de on
+ *    2026-10-17), which made every live fetch in the southern hemisphere
+ *    fail while northern cities worked.
  * 2. Unfiltered `way` queries time out on the shared public instance - the
  *    server's read dispatcher gives up well before it has scanned every footway
  *    and path in a city block. Excluding the micro-pathways and capping the
@@ -313,7 +316,7 @@ const SERVER_SIDE_CAP = 5_000;
  */
 function buildQuery(req: SourceRequest): string {
   const { south: s, west: w, north: n, east: e } = req.bbox;
-  const area = `(bbox:${s},${w},${n},${e})`;
+  const area = `(${s},${w},${n},${e})`;
 
   const parts: string[] = [];
 
