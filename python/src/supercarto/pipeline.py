@@ -48,7 +48,14 @@ def to_maplet(
     ingest_opts = {**(req.get("ingest") or {})}
     if envelope is not None:
         ingest_opts.setdefault("envelope", envelope)
-    doc = from_geojson(input_, ingest_opts)
+
+    # Callers that already hold a document — chiefly the live path, which
+    # attaches derived heat layers to the fetched document — pass it through
+    # instead of re-ingesting. Heat lives on the document, not on any feature,
+    # so a round trip through features would discard every derived layer.
+    doc = req.get("doc")
+    if doc is None:
+        doc = from_geojson(input_, ingest_opts)
 
     layers = req.get("layers")
     if layers:
@@ -56,10 +63,12 @@ def to_maplet(
 
     compile_opts = {**(req.get("compile") or {})}
     if req.get("radiusLabel"):
-        compile_opts.setdefault("radiusLabel", req["radiusLabel"])
+        # TS spreads the label *after* req.compile, so it wins.
+        compile_opts["radiusLabel"] = req["radiusLabel"]
     compile_opts.setdefault(
         "capabilities",
-        {
+        req.get("capabilities")
+        or {
             "elevation": req.get("hasElevation", False),
             "weather": False,
             "traffic": False,

@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased — Python-native live sources (milestone 2a)
+
+The pip package can now **fetch and compile any location on earth without
+Node**: Overpass (OSM data), Open-Meteo (weather) and OSRM (turn-by-turn
+routing) are ported over `urllib`, keeping the package at zero runtime
+dependencies. All under the same byte-parity gate as milestone 1.
+
+- New `python/src/supercarto/` modules, ports of `src/source/*.ts` and
+  `src/live.ts`: `net.py` (a zero-dependency `urllib` fetch shaped like the
+  WHATWG API), `overpass.py` (query builder, element→GeoJSON conversion,
+  retry with layer-dropping / box-shrinking / best-result retention,
+  implausible-coordinate rejection), `weather.py` (Open-Meteo with null-safe
+  cells, WMO code prose, NaN "unknown" degradation), `routing.py` (OSRM with
+  maneuver→sentence prose and the labelled `*-approx` fallback),
+  `heat.py` (poi density + slope layers), `terrain.py` (Terrarium elevation
+  tiles, raw decoding + bilinear sampling), and `live.py` (the `SuperCarto`
+  orchestration: document cache with TTL/eviction, heat derivation,
+  capability-driven tool advertisement, landmark starvation safety net).
+- `supercarto.live.SuperCarto` is synchronous (no event loop — `urllib`
+  under the hood) and shares the module namespace with the stdio client's
+  `SuperCarto`, so the native one is imported as `from supercarto.live
+  import SuperCarto`.
+- `toMaplet` accepts a prebuilt document (`req.doc`) so live-attached heat
+  layers survive compilation, plus a top-level `capabilities` override —
+  both mirroring the TypeScript pipeline.
+- Parity gate extended to the live path: `scripts/parity/live-ts.mjs` /
+  `live-py.py` / `check-live.sh` replay recorded service responses through
+  both stacks and require byte-identical canonical reports — maplet YAML +
+  metrics, weather parsing, route prose, and the exact request strings each
+  side builds (Overpass QL, weather URL, OSRM URL). Fixtures captured from
+  the real public services in `scripts/parity/fixtures/live/`.
+- Deferred to still later milestones: SCR wire codec, indoor floors,
+  PMTiles/MVT, and the TomTom/HERE traffic flow providers (requiring paid
+  credentials; `route_with_traffic` reports free-flow labelled
+  `freeFlowOnly`, identical to the TS class with no key configured).
+- Port notes worth keeping: Overpass `normalizeLayers`/`buildQuery` are
+  string-identical; `clipGeometry` matches vertices by object reference on
+  the TS side (so polygons needing any clip come back with an empty ring and
+  are dropped downstream) — reproduced faithfully in Python (identity, not
+  value, equality) for byte parity, marked as a milestone-3 revisit when the
+  reference is fixed.
+
 ## 0.4.11
 
 Bug fixes:

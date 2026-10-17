@@ -2,29 +2,22 @@
 
 Two surfaces, one package:
 
-**Native core** (no Node, no runtime dependencies): the offline compile path —
-GeoJSON in, token-budgeted topological YAML out, with the same honesty
-invariants as the TypeScript compiler (omission ledger, connectivity
-guarantees, budget verification).
+**Native core** (no Node, no runtime dependencies): the compile path — GeoJSON
+in, token-budgeted topological YAML out, with the same honesty invariants as
+the TypeScript compiler (omission ledger, connectivity guarantees, budget
+verification) — plus the live sources (Overpass, Open-Meteo, OSRM) it fetches
+from, also dependency-free:
 
-    from supercarto import compile_maplet
+    from supercarto.pipeline import compile_maplet
+    from supercarto.live import SuperCarto
 
-    with open("city.geojson") as fh:
-        result = compile_maplet(fh.read(), budget=1024)
-    print(result["yaml"])
+    carto = SuperCarto()          # sync; urllib under the hood
+    m = carto.maplet(37.7749, -122.4194, radius_m=400, budget=1500)
+    print(m["yaml"])
 
-**stdio client**: for live sources (Overpass/PMTiles, weather, traffic,
-routing) until those are ported, this talks JSON-RPC to the Node MCP server:
-
-    import asyncio
-    from supercarto import SuperCarto
-
-    async def main():
-        async with SuperCarto() as carto:
-            m = await carto.maplet(lat=35.6833, lon=139.7620, radius_m=400, budget=1500)
-            print(m.yaml)
-
-    asyncio.run(main())
+**stdio client**: ``supercarto.SuperCarto`` talks JSON-RPC to the Node MCP
+server (PMTiles sources, traffic flow providers and the SCR wire codec live
+there until ported). The native live class is ``supercarto.live.SuperCarto``.
 
 The design decision worth knowing about: the algorithms are the product, and
 a second implementation is a second thing to keep correct. The native core is

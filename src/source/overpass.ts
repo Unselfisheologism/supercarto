@@ -314,7 +314,7 @@ const SERVER_SIDE_CAP = 5_000;
  *    the least useful features for an agent: a kerb-level footway does not
  *    change where anyone walks.
  */
-function buildQuery(req: SourceRequest): string {
+export function buildQuery(req: SourceRequest): string {
   const { south: s, west: w, north: n, east: e } = req.bbox;
   const area = `(${s},${w},${n},${e})`;
 

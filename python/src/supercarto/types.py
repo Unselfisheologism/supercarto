@@ -291,3 +291,24 @@ def utf16_length(text: str) -> int:
     which would make Python believe a maplet is smaller than Node did.
     """
     return len(text.encode("utf-16-le")) // 2
+
+
+def js_fixed(n: float, d: int) -> str:
+    """JavaScript ``n.toFixed(d)``.
+
+    Python's format rounds half-to-even and JS's ``toFixed`` rounds the decimal
+    representation half-away from zero in practice, so the scaling round-trip
+    keeps emitted coordinates and query parameters byte-identical at edges
+    like ``.00005``.
+    """
+    scaled = n * 10**d
+    if not math.isfinite(scaled):
+        # NaN/Infinity formatting is never hit by callers; mirror JS loosely.
+        raw = "nan" if math.isnan(scaled) else ("Infinity" if scaled > 0 else "-Infinity")
+        return raw
+    r = int(js_round(scaled))
+    sign = "-" if r < 0 else ""
+    r = abs(r)
+    if d == 0:
+        return f"{sign}{r}"
+    return f"{sign}{r // 10**d}.{r % 10**d:0{d}d}"

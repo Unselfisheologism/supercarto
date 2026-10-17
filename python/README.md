@@ -9,21 +9,25 @@ pip install supercarto
 
 Two surfaces, one package, no runtime dependencies:
 
-- **Native core** — the offline compile path, pure Python with no Node. GeoJSON
-  in, token-budgeted topological YAML out, with the same honesty invariants as
-  the Node library: the omission ledger, connectivity guarantees, and a budget
-  that is verified against the emitted bytes.
-- **stdio client** — live sources (Overpass/PMTiles, weather, traffic, routing)
-  still speak MCP to the Node server. See [the client](#use).
+- **Native core** — pure Python with no Node. The compile path (GeoJSON in,
+  token-budgeted topological YAML out, with the same honesty invariants as the
+  Node library: the omission ledger, connectivity guarantees, and a budget that
+  is verified against the emitted bytes) **and** the live sources it feeds on:
+  Overpass for OSM data, Open-Meteo for weather, OSRM for turn-by-turn routing —
+  all over `urllib`, all keyless, still zero dependencies.
+- **stdio client** — PMTiles sources, the SCR wire codec and the traffic flow
+  providers still speak MCP to the Node server. See [the client](#use).
 
 The native core is ported stage by stage with **byte-level output parity
-against the TypeScript compiler as the gate per stage** (`scripts/parity/` in
-the repo; enforced in `tests/test_parity.py`). What the parity gate covers
-today: the full offline pipeline — projection, Web Mercator grid, GeoJSON
-ingest with OSM classification, topology compilation, opening-hours grammar,
-solar position, token budget with landmark floors and cut-vertex protection,
-and YAML emission. Not ported yet: the SCR wire codec, indoor floors, PMTiles,
-and the network sources.
+against the TypeScript as the gate per stage** (`scripts/parity/` in the repo;
+enforced in `tests/test_parity.py`). What the parity gate covers today: the full
+offline pipeline — projection, Web Mercator grid, GeoJSON ingest with OSM
+classification, topology compilation, opening-hours grammar, solar position,
+token budget with landmark floors and cut-vertex protection, and YAML emission —
+plus the whole live path (Overpass fetch+ingest, weather parsing, route prose,
+and the exact request strings each side builds) replayed against recorded
+service responses in `tests/test_live_parity.py`. Not ported yet: the SCR wire
+codec, indoor floors, PMTiles, and the traffic flow providers.
 
 ```python
 from supercarto import compile_file
@@ -36,8 +40,39 @@ print(r["metrics"]["tokens"], "tokens")
 `to_maplet(features_dict, budget=512)` works straight from dicts parsed off an
 API, and rejects nothing that the Node path accepts for offline input.
 
-**Live sources need Node 20 or newer.** `pip install` alone will succeed; the
-error when you call will tell you exactly what to install.
+## Native live service
+
+Sync (no event loop), keyless, zero dependencies.
+
+```python
+from supercarto.live import SuperCarto
+
+carto = SuperCarto()  # Overpass + Open-Meteo + OSRM by default
+m = carto.maplet(37.7599, -122.4142, radius_m=400, budget=1500)
+print(m["yaml"])          # budget-verified YAML, same shape as the Node server
+print(m["fetchedFrom"], m["fetchMs"], m["sourceTruncated"])
+
+route = carto.route({"from": {"lat": ..., "lon": ...}, "to": {...}, "mode": "walk"})
+route["route"].steps[0].instruction   # "turn right onto 19th Street" prose
+
+weather = carto.weather_at(37.7599, -122.4142, 12)
+weather["now"]["summary"]             # "heavy rain", or NaN + "degraded" when unreachable
+```
+
+Sources are injectable for tests and self-hosting: pass
+`overpass={"endpoint": "https://my.overpass.local/api/interpreter"}`,
+`openMeteo={"endpoint": ...}`, `router=OsrmRouter(endpoint=...)`, or your own
+`fetch`-shaped callables (`overpass={"fetch": ...}`). Elevation comes via
+`elevation=TerrariumElevation(...)` once configured; without it the maplet
+simply carries no slope layer.
+
+The honesty invariants carry over: a rate-limited shared Overpass degrades to a
+smaller box before failing loudly, an unreachable weather source reports
+"unknown" instead of invented sunshine, and a routing failure falls back to a
+route labelled `walk-approx`, never presented as real turns.
+
+**Live sources need no Node anymore.** Node is still required for the stdio
+client below.
 
 ```bash
 npm install -g supercarto     # or: npx supercarto mcp
