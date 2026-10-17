@@ -396,6 +396,11 @@ function clipGeometry(
 ): GeoJsonFeature {
   const g = f.geometry;
   if (!g) return f;
+  // Matching must be by value: `keep` holds the copies `allCoordinates` built,
+  // while the feature's own geometry arrays are different objects, so a
+  // reference comparison matches nothing and silently empties every polygon.
+  const inKeep = (c: [number, number]): boolean =>
+    keep.some((k) => k[0] === c[0] && k[1] === c[1]);
   if (g.type === 'LineString') {
     return { ...f, geometry: { type: 'LineString', coordinates: keep } };
   }
@@ -404,7 +409,7 @@ function clipGeometry(
     // one, which would create edges between places with no connection.
     const parts = (g.coordinates ?? []) as Array<Array<[number, number]>>;
     const runs = parts
-      .map((line) => line.filter((c) => keep.some((k) => k === c)))
+      .map((line) => line.filter((c) => inKeep(c)))
       .filter((line) => line.length >= 2)
       .sort((a, b) => b.length - a.length);
     if (runs.length === 0) {
@@ -414,7 +419,7 @@ function clipGeometry(
   }
   if (g.type === 'Polygon') {
     const rings = (g.coordinates ?? []) as Array<Array<[number, number]>>;
-    const ring = (rings[0] ?? []).filter((c) => keep.some((k) => k === c));
+    const ring = (rings[0] ?? []).filter((c) => inKeep(c));
     const first = ring[0];
     const last = ring[ring.length - 1];
     const closed = !!first && !!last && first[0] === last[0] && first[1] === last[1];

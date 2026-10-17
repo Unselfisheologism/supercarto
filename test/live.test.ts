@@ -885,6 +885,55 @@ it('retries over a smaller box when streets arrive but none are usable', async (
     expect(building!.geometry!.type).toBe('Polygon');
   });
 
+  it('keeps clipped polygons whose surviving ring stays closed', async () => {
+    // Vertex matching is by value: `keep` holds the copies `allCoordinates`
+    // built while the ring holds the arrays the geometry references, so a
+    // reference comparison matched nothing and silently emptied every polygon
+    // (0.4.11 and earlier). Fixed on both sides in milestone 3.
+    const stub = (geometry: unknown) => async () =>
+      new Response(
+        JSON.stringify({
+          elements: [{ type: 'way', id: 9, tags: { building: 'yes' }, geometry }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ) as unknown as Response;
+    const bbox = { west: 1.99, south: 0.99, east: 2.01, north: 1.01 };
+    const closedRing = [
+      { lat: 1.0, lon: 2.0 }, { lat: 1.001, lon: 2.0 },
+      { lat: 1.001, lon: 2.001 }, { lat: 1.0, lon: 2.001 },
+      { lat: 1.0, lon: 2.0 },
+    ];
+
+    // Everything in range: the ring survives untouched.
+    let src = new OverpassSource({ fetchImpl: stub(closedRing) });
+    let res = await src.fetch({ bbox, layers: ['building'], maxFeatures: 100 });
+    expect(res.features[0]!.geometry!.coordinates).toEqual([[
+      [2.0, 1.0], [2.0, 1.001], [2.001, 1.001], [2.001, 1.0], [2.0, 1.0],
+    ]]);
+
+    // One mid-run vertex flagged corrupt: the surviving ring still closes, so
+    // the polygon is kept with its four in-range vertices.
+    const clipped = closedRing.slice();
+    clipped[2] = { lat: 50.0, lon: 90.0 };
+    src = new OverpassSource({ fetchImpl: stub(clipped) });
+    res = await src.fetch({ bbox, layers: ['building'], maxFeatures: 100 });
+    expect(res.features[0]!.geometry!.coordinates).toEqual([[
+      [2.0, 1.0], [2.0, 1.001], [2.001, 1.0], [2.0, 1.0],
+    ]]);
+
+    // The closing vertex flagged instead: the dirty ring no longer closes, so
+    // the way was never classified as an area — it is a line of the surviving
+    // vertices.
+    const unclosed = closedRing.slice();
+    unclosed[4] = { lat: 50.0, lon: 90.0 };
+    src = new OverpassSource({ fetchImpl: stub(unclosed) });
+    res = await src.fetch({ bbox, layers: ['building'], maxFeatures: 100 });
+    expect(res.features[0]!.geometry!.type).toBe('LineString');
+    expect(res.features[0]!.geometry!.coordinates).toEqual([
+      [2.0, 1.0], [2.0, 1.001], [2.001, 1.001], [2.001, 1.0],
+    ]);
+  });
+
   it('does not treat a closed highway as an area', async () => {
     // A roundabout is a closed way with `highway`, which is a road loop, not a
     // polygon. Classifying it as an area would give an agent a walkable blob.

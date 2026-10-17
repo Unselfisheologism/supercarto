@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — milestone 3: clipped polygons survive
+
+`clipGeometry` used to match vertices by object reference, while the vertex
+lists it matched against were fresh copies — so every polygon that passed
+through the Overpass clip step came back with an empty ring (clipped or not)
+and was dropped downstream as "not a real area". Both sides are fixed
+together, so byte parity holds:
+
+- `src/source/overpass.ts` / `python/src/supercarto/overpass.py`: vertex
+  matching in the clip step is now by value. A clipped polygon whose
+  surviving ring still closes is kept with its in-range vertices; a clipped
+  line keeps its in-range stretch; a multi-line keeps its longest surviving
+  run by mapped length (the Python port had mapped the hold/whole-line
+  distinction itself wrong, which the identity bug had masked — longest run
+  selection now also maps each run).
+- New regression tests on both sides pin all three outcomes: intact ring,
+  closed-after-clip ring, and ring broken by a corrupt closing vertex (the
+  dirty ring stops being an area at classification time, so the way is a
+  line of surviving vertices).
+- Still deferred, unchanged since milestone 1: the greedy `(dist|ref|turn)`
+  wire kv regex and its lossy `turn="19th"` roundtrip stay aligned with the
+  reference until the reference changes.
+
 ## Unreleased — back-port of the 0.4.11 reference fixes
 
 The TypeScript reference gained two fixes (PR #1, 0.4.11) that change byte

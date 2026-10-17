@@ -366,11 +366,11 @@ def clip_geometry(f: dict, keep: list[tuple[float, float]]) -> dict:
     if g.get("type") == "MultiLineString":
         # Keep the longest surviving run rather than flattening separate roads
         # into one, which would create edges between places with no connection.
+        # Each run maps to its kept vertices; only mapped runs count.
         runs = [
-            line
+            _in_keep(line, keep)
             for line in (g.get("coordinates") or [])
             if isinstance(line, list)
-            if _ref_keep(line, keep)
         ]
         runs = [r for r in runs if len(r) >= 2]
         runs.sort(key=lambda r: -len(r))
@@ -380,7 +380,7 @@ def clip_geometry(f: dict, keep: list[tuple[float, float]]) -> dict:
     if g.get("type") == "Polygon":
         rings = g.get("coordinates") or []
         ring0 = rings[0] if rings else []
-        ring = _ref_filter(ring0, keep)
+        ring = _in_keep(ring0, keep)
         first = ring[0] if ring else None
         last = ring[-1] if ring else None
         closed = bool(first) and bool(last) and first[0] == last[0] and first[1] == last[1]
@@ -396,23 +396,16 @@ def clip_geometry(f: dict, keep: list[tuple[float, float]]) -> dict:
     return f
 
 
-def _ref_filter(line: list, keep: list) -> list:
-    """Filter ``line`` to vertices that are members of ``keep`` *by identity*.
+def _in_keep(line: list, keep: list) -> list:
+    """Filter ``line`` to vertices whose coordinates are on ``keep``.
 
-    The TypeScript uses ``keep.some((k) => k === c)``, which matches by object
-    reference. Since ``keep`` holds copies produced by :func:`all_coordinates`
-    while ``line`` holds the original coordinate arrays, that comparison
-    matches nothing: TS polygons and multi-lines that need clipping come back
-    empty and are dropped downstream. The port reproduces this faithfully
-    (identity instead of value equality) so the parity gate stays byte-level;
-    changing it here would diverge from the reference until the TS side is
-    fixed, so it is recorded for a milestone-3 revisit.
+    Matching is by value: ``keep`` holds the copies :func:`all_coordinates`
+    built, while ``line`` holds the coordinate arrays referenced by the
+    feature's geometry, so a comparison of object identity would match nothing
+    and silently empty every polygon. (The reference matched by identity until
+    milestone 3 fixed both sides together.)
     """
-    return [c for c in line if any(k is c for k in keep)]
-
-
-def _ref_keep(line: list, keep: list) -> list:
-    return _ref_filter(line, keep)
+    return [c for c in line if any(k[0] == c[0] and k[1] == c[1] for k in keep)]
 
 
 def node_to_feature(el: dict) -> dict:

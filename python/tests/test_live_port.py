@@ -141,13 +141,11 @@ def test_closed_area_way_becomes_polygon():
     assert ov.way_to_feature({"id": 2, "tags": {"building": "yes"}}, ring_open)["geometry"]["type"] == "LineString"
 
 
-def test_polygon_clipping_behaves_like_the_reference_for_parity():
-    """`clipGeometry` in the TypeScript matches vertices by object reference
-    while `allCoordinates` builds fresh arrays, so on the reference a polygon
-    whose vertices need any clip at all comes back with an empty ring and is
-    dropped downstream. The port reproduces that exactly (identity, not value,
-    equality) because byte parity is the gate; revisit when the reference is
-    fixed (milestone 3 candidate)."""
+def test_polygon_clipping_keeps_rings_that_stay_closed():
+    """Vertex matching is by value here: ``keep`` holds fresh coordinate copies
+    while the ring holds the arrays referenced by the geometry, so an identity
+    comparison matches nothing and the reference (as of 0.4.11) silently
+    emptied every polygon. Milestone 3 fixed both sides together."""
 
     class R:
         status = 200
@@ -156,32 +154,59 @@ def test_polygon_clipping_behaves_like_the_reference_for_parity():
         def __init__(self, payload):
             self.text = json.dumps(payload)
 
-    elements = [
-        {"type": "way", "id": 9,
-         "tags": {"building": "yes"},
-         "geometry": [
-             {"lat": 1.0, "lon": 2.0}, {"lat": 1.001, "lon": 2.0},
-             {"lat": 1.001, "lon": 2.001}, {"lat": 1.0, "lon": 2.001},
-             {"lat": 1.0, "lon": 2.0},
-         ]},
+    def do(elements):
+        src = ov.OverpassSource(fetch=lambda url, **kw: R({"elements": elements}))
+        return src.fetch({"bbox": {"south": 0.99, "west": 1.99, "north": 1.01, "east": 2.01},
+                          "layers": ["building"], "maxFeatures": 50000})
+
+    closed_ring = [
+        {"lat": 1.0, "lon": 2.0}, {"lat": 1.001, "lon": 2.0},
+        {"lat": 1.001, "lon": 2.001}, {"lat": 1.0, "lon": 2.001},
+        {"lat": 1.0, "lon": 2.0},
     ]
-    src = ov.OverpassSource(fetch=lambda url, **kw: R({"elements": elements}))
-    res = src.fetch({"bbox": {"south": 0.99, "west": 1.99, "north": 1.01, "east": 2.01},
-                     "layers": ["building"], "maxFeatures": 50000})
-    assert res["features"][0]["geometry"]["coordinates"] == []
-    # LineStrings clip correctly on both sides: the in-range stretch survives.
-    elements2 = [
-        {"type": "way", "id": 10, "tags": {"highway": "residential"},
-         "geometry": [
-             {"lat": 1.0, "lon": 2.0}, {"lat": 1.0, "lon": 2.5},
-             {"lat": 1.0, "lon": 90.0},
-         ]},
+
+    # Everything in range: the ring survives untouched.
+    res = do([{"type": "way", "id": 9, "tags": {"building": "yes"}, "geometry": closed_ring}])
+    assert res["features"][0]["geometry"]["coordinates"] == [[
+        [2.0, 1.0], [2.0, 1.001], [2.001, 1.001], [2.001, 1.0], [2.0, 1.0],
+    ]]
+
+    # One mid-run vertex flagged as corrupt: the surviving ring still closes,
+    # so the polygon is kept with 4 vertices.
+    clipped = list(closed_ring)
+    clipped[2] = {"lat": 50.0, "lon": 90.0}
+    res2 = do([{"type": "way", "id": 9, "tags": {"building": "yes"}, "geometry": clipped}])
+    assert res2["features"][0]["geometry"]["coordinates"] == [[
+        [2.0, 1.0], [2.0, 1.001], [2.001, 1.0], [2.0, 1.0],
+    ]]
+
+    # The closing vertex flagged instead: the dirty ring no longer closes, so
+    # the way was never classified as an area — it is a line of the surviving
+    # vertices.
+    unclosed = list(closed_ring)
+    unclosed[4] = {"lat": 50.0, "lon": 90.0}
+    res3 = do([{"type": "way", "id": 9, "tags": {"building": "yes"}, "geometry": unclosed}])
+    assert res3["features"][0]["geometry"]["type"] == "LineString"
+    assert res3["features"][0]["geometry"]["coordinates"] == [
+        [2.0, 1.0], [2.0, 1.001], [2.001, 1.001], [2.001, 1.0],
     ]
-    src2 = ov.OverpassSource(fetch=lambda url, **kw: R({"elements": elements2}))
-    res2 = src2.fetch({"bbox": {"south": 0.99, "west": 1.99, "north": 1.01, "east": 2.6},
-                       "layers": ["highway"], "maxFeatures": 50000})
-    line = [list(c) for c in res2["features"][0]["geometry"]["coordinates"]]
-    assert line == [[2.0, 1.0], [2.5, 1.0]]
+
+
+def test_multiline_clipping_keeps_the_longest_surviving_run():
+    # MultiLineString is defensive this source never emits, but the clip must
+    # still keep the longest run rather than fuse separate roads into one.
+    g = {
+        "type": "MultiLineString",
+        "coordinates": [
+            [[0.0, 0.0], [1.0, 0.0], [90.0, 0.0]],  # second vertex flagged
+            [[2.0, 3.0], [2.0, 4.0], [2.0, 5.0]],   # fully in range, longest
+        ],
+    }
+    f = {"id": 1, "properties": {}, "geometry": g}
+    keep = [[0.0, 0.0], [1.0, 0.0], [2.0, 3.0], [2.0, 4.0], [2.0, 5.0]]
+    out = ov.clip_geometry(f, keep)
+    assert out["geometry"]["type"] == "LineString"
+    assert out["geometry"]["coordinates"] == [[2.0, 3.0], [2.0, 4.0], [2.0, 5.0]]
 
 
 def test_untagged_way_vertex_nodes_are_skipped():
@@ -643,3 +668,28 @@ def test_overpass_emits_positional_bbox_filter_for_negative_latitudes():
         f"({yogyakarta['south']},{yogyakarta['west']},"
         f"{yogyakarta['north']},{yogyakarta['east']})" in query
     ), query
+
+
+def test_linestring_clipping_keeps_the_in_range_stretch():
+    """LineStrings clip correctly on both sides: the in-range stretch survives,
+    split so the clipped feature does not still carry the corrupt vertex."""
+
+    class R:
+        status = 200
+        ok = True
+
+        def __init__(self, payload):
+            self.text = json.dumps(payload)
+
+    def do(elements):
+        src = ov.OverpassSource(fetch=lambda url, **kw: R({"elements": elements}))
+        return src.fetch({"bbox": {"south": 0.99, "west": 1.99, "north": 1.01, "east": 2.6},
+                          "layers": ["highway"], "maxFeatures": 50000})
+
+    line_far = [
+        {"lat": 1.0, "lon": 2.0}, {"lat": 1.0, "lon": 2.5},
+        {"lat": 1.0, "lon": 90.0},
+    ]
+    res = do([{"type": "way", "id": 10, "tags": {"highway": "residential"}, "geometry": line_far}])
+    line = [list(c) for c in res["features"][0]["geometry"]["coordinates"]]
+    assert line == [[2.0, 1.0], [2.5, 1.0]]
