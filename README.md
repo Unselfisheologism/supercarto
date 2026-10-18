@@ -1,5 +1,7 @@
 # supercarto
 
+[![skills.sh](https://skills.sh/b/Unselfisheologism/supercarto)](https://skills.sh/Unselfisheologism/supercarto)
+
 **LLM-native spatial middleware.** Compiles geospatial data into token-budgeted
 topological graphs that an AI agent can reason over directly.
 
