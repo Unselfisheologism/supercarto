@@ -215,6 +215,13 @@ Current headline there: 9/9 for the compact graph against ~4/9 raw and 0/9
 with no map, on two AI models. Route questions are unmeasurable (the public
 test router gives impossible answers) — stated, not hidden.
 
+The score now ships with its own reproduction recipe (`scoreC certificate`,
+re-derived from raw answer archives without model calls), a per-model
+leaderboard, and adapter arms: a rival tool registers itself with a single
+`{ name, prepare }` module and gets the same tasks, models and pass rules.
+The current certificate: supercarto 36/44 · geojson 14/41 · none 0/44
+across every archived run.
+
 What this repo keeps is a quick token-cost check:
 
 ```bash
