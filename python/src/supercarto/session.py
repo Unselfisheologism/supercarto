@@ -68,3 +68,28 @@ def _view_header(meta: Any) -> dict[str, str]:
 def session_doc(scr: str) -> ScrDocument:
     """Decode-only re-export so callers can inspect the document they hold."""
     return decode_document(scr)
+
+
+def session_envelope_contains(env: Any, bbox: dict[str, float]) -> bool:
+    """Whether a view box can be quantized on the session envelope's grid.
+
+    A wrapped envelope (``west > east``, the antimeridian) is one grid only
+    on the east-side span ``[west, 180]``: the projection is linear in
+    Mercator X, so features inside ``[-180, east]`` would land on negative
+    grid x, off the document's own coordinate system. A view inside that
+    span is refused - the agent gets a clear instruction to open a new
+    session rather than a diff that a foreign grid would make a lie.
+    """
+
+    def get(obj: Any, key: str) -> float:
+        out = obj[key] if isinstance(obj, dict) else getattr(obj, key)
+        return float(out)
+
+    lat_ok = get(bbox, "south") >= get(env, "south") and get(bbox, "north") <= get(env, "north")
+    if not lat_ok:
+        return False
+    if get(env, "west") <= get(env, "east"):
+        return get(bbox, "west") >= get(env, "west") and get(bbox, "east") <= get(env, "east")
+    # Antimeridian: coverage is [west, 180] plus [-180, east], but only the
+    # first span quantizes onto the document's grid.
+    return get(bbox, "west") >= get(env, "west") and get(bbox, "east") <= 180

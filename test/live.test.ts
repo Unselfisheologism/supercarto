@@ -310,6 +310,8 @@ describe('bboxAreaSqm', () => {
 });
 
 describe('moveView: the agent moves', () => {
+  let scrWrap: string;
+
   // The airport story in miniature. The first step's maplets give the agent
   // its session state; the second step moves a cafe and adds one, and the
   // session must report exactly that, and nothing else.
@@ -380,6 +382,37 @@ describe('moveView: the agent moves', () => {
     });
     await expect(
       carto.moveView({ scr: first.scr, lat: 37.9, lon: -122.41, radiusM: 5000 }),
+    ).rejects.toThrow(/leaves the session envelope/);
+  });
+
+  it('moves within a wrap-crossing session on the east side of the antimeridian', async () => {
+    // A wrapped envelope (west > east) is one grid only on [west, 180]: the
+    // projection is linear in Mercator X, so the far side would quantize to
+    // negative grid x, off the document's own coordinate system.
+    const WRAP = { type: 'bbox' as const, west: 179.5, south: -18.15, east: -179.5, north: -18.1 };
+    const step = {
+      type: 'FeatureCollection' as const,
+      features: [cafe(30, 179.7, 'Dateline Cafe')],
+    };
+    const doc = fromGeoJson(step, { envelope: WRAP });
+    scrWrap = encodeDocument(doc, { group: false });
+
+    const carto = new SuperCarto({
+      sources: [new MovingSource([step.features])],
+      weather: false,
+      heat: false,
+    });
+    const move = await carto.moveView({
+      scr: scrWrap, lat: -18.12, lon: 179.7, radiusM: 100,
+    });
+    expect(move.counts).toEqual({ added: 0, removed: 0, updated: 0 });
+    expect(move.scr.startsWith('SCR 1')).toBe(true);
+
+    // A view on the far side of the dateline would quantize on the other
+    // branch of the wrap: refused, not served with a diff of negative-x
+    // ghosts.
+    await expect(
+      carto.moveView({ scr: scrWrap, lat: -18.12, lon: -179.7, radiusM: 30 }),
     ).rejects.toThrow(/leaves the session envelope/);
   });
 });

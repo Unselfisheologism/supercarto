@@ -23,7 +23,7 @@ from .pipeline import to_maplet
 from .project import grid_to_lonlat
 from .routing import OsrmRouter, straight_line_route
 from .scale import grid_scale_for
-from .session import move_maplet, session_doc
+from .session import move_maplet, session_doc, session_envelope_contains
 from .traffic import HereFlow, TomTomFlow, TrafficRouter
 from .types import Feature, ScrDocument, js_round
 from .weather import OpenMeteoWeather
@@ -222,15 +222,12 @@ class SuperCarto:
             )
         radius_m = radius_m if radius_m is not None else 300
         bbox = normalize_bbox(bbox_around(lat, lon, radius_m))
-        if (
-            env.west > bbox["west"]
-            or env.south > bbox["south"]
-            or env.east < bbox["east"]
-            or env.north < bbox["north"]
-        ):
+        if not session_envelope_contains(env, bbox):
             raise ValueError(
                 f"the move leaves the session envelope (BBOX {env.west} {env.south} "
-                f"{env.east} {env.north}); call get_maplet again to open a new session"
+                f"{env.east} {env.north}); a wrap-crossing view quantizes on the far "
+                "side of the antimeridian and cannot share the session grid - "
+                "call get_maplet again to open a new session"
             )
 
         # The compiler's time input is a datetime; a request hand-carries it

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from supercarto.diff import diff_documents
 from supercarto.ingest import from_geojson
-from supercarto.session import move_maplet
+from supercarto.session import move_maplet, session_envelope_contains
 from supercarto.wire import encode_document
 
 # One shared, fixed envelope for the whole session: every view quantizes on
@@ -108,3 +108,21 @@ def test_round_trip_state_still_decodes():
     # envelope guard lives in the live class (TS side), which has a position.
     moved = move_maplet(_open_scr(), STEP2, {"envelope": ENVELOPE})
     assert moved["scr"].startswith("SCR 1")
+
+
+def test_wrap_session_envelope_is_one_grid_only_on_the_east_side():
+    # A wrapped envelope (west > east, the antimeridian) is one grid only on
+    # [west, 180]: the projection is linear in Mercator X, so features on the
+    # far side would land on negative grid x, off the document's own
+    # coordinate system.
+    wrap = {"type": "bbox", "west": 179.5, "south": -18.15, "east": -179.5, "north": -18.1}
+    inside = {"west": 179.6, "south": -18.14, "east": 179.9, "north": -18.11}
+    far_side = {"west": -179.8, "south": -18.14, "east": -179.6, "north": -18.11}
+    normal = {"type": "bbox", "west": 2.0, "south": 41.38, "east": 2.01, "north": 41.385}
+    normal_in = {"west": 2.005, "south": 41.382, "east": 2.008, "north": 41.384}
+    normal_out = {"west": 2.5, "south": 41.38, "east": 2.6, "north": 41.385}
+
+    assert session_envelope_contains(wrap, inside)
+    assert not session_envelope_contains(wrap, far_side)
+    assert session_envelope_contains(normal, normal_in)
+    assert not session_envelope_contains(normal, normal_out)

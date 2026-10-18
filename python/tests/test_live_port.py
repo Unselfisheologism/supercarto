@@ -771,3 +771,32 @@ def test_move_view_refuses_to_leave_the_session_envelope():
     first = carto.maplet(lat=37.78, lon=-122.41, radius_m=400, layers=["poi"], budget=4096)
     with pytest.raises(ValueError, match="leaves the session envelope"):
         carto.move_view(first["scr"], lat=37.9, lon=-122.41, radius_m=5000)
+
+
+def test_move_view_within_a_wrap_crossing_session():
+    # Same content as the TS test: a wrap-crossing session works on the east
+    # side of the antimeridian, refused on the far side (quantization would
+    # land on negative grid x).
+    wrap = {"type": "bbox", "west": 179.5, "south": -18.15, "east": -179.5, "north": -18.1}
+    step = [
+        {
+            "type": "Feature",
+            "id": 30,
+            "properties": {"amenity": "cafe", "name": "Dateline Cafe"},
+            "geometry": {"type": "Point", "coordinates": [179.7, -18.12]},
+        }
+    ]
+
+    from supercarto.ingest import from_geojson
+    from supercarto.wire import encode_document
+
+    first = from_geojson({"type": "FeatureCollection", "features": step}, {"envelope": wrap})
+    scr = encode_document(first, {"group": False})
+
+    carto = _stub_carto([step])
+    move = carto.move_view(scr, lat=-18.12, lon=179.7, radius_m=100)
+    assert move["counts"] == {"added": 0, "removed": 0, "updated": 0}
+    assert move["scr"].startswith("SCR 1")
+
+    with pytest.raises(ValueError, match="leaves the session envelope"):
+        carto.move_view(scr, lat=-18.12, lon=-179.7, radius_m=30)

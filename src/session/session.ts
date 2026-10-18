@@ -2,6 +2,8 @@ import { decodeDocument } from '../wire/decode.js';
 import { diffDocuments, renderDiff, type FeatureChange } from '../diff/diff.js';
 import type { ScrDocument } from '../wire/types.js';
 import { toMaplet, type MapletRequest } from '../pipeline.js';
+import { type BboxEnvelope } from '../wire/types.js';
+import type { BboxQuery } from '../source/types.js';
 import type { GeoJsonFeatureCollection } from '../ingest/geojson.js';
 
 /**
@@ -86,4 +88,28 @@ export function moveMaplet(
 /** Decode-only re-export so callers can inspect the document they hold. */
 export function sessionDoc(scr: string): ScrDocument {
   return decodeDocument(scr);
+}
+
+/**
+ * Whether a view box can be quantized on the session envelope's grid.
+ *
+ * A wrapped envelope (`west > east`, the antimeridian) is one grid only on
+ * the east-side span `[west, 180]`: the projection is linear in Mercator X,
+ * so features inside `[-180, east]` would land on negative grid x, off the
+ * document's own coordinate system. A view inside that span is refused -
+ * the agent gets a clear instruction to open a new session rather than a
+ * diff that a foreign grid would make a lie.
+ */
+export function sessionEnvelopeContains(
+  env: BboxEnvelope,
+  bbox: BboxQuery,
+): boolean {
+  const latOk = bbox.south >= env.south && bbox.north <= env.north;
+  if (!latOk) return false;
+  if (env.west <= env.east) {
+    return bbox.west >= env.west && bbox.east <= env.east;
+  }
+  // Antimeridian: coverage is [west, 180] plus [-180, east], but only the
+  // first span quantizes onto the document's grid.
+  return bbox.west >= env.west && bbox.east <= 180;
 }

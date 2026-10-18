@@ -1,5 +1,5 @@
 import { toMaplet, type MapletResult } from './pipeline.js';
-import { moveMaplet, sessionDoc, type SessionMoveResult } from './session/session.js';
+import { moveMaplet, sessionDoc, sessionEnvelopeContains, type SessionMoveResult } from './session/session.js';
 import {
   bboxAround,
   normalizeBbox,
@@ -282,15 +282,12 @@ export class SuperCarto {
     }
     const radiusM = req.radiusM ?? 300;
     const bbox = normalizeBbox(bboxAround(req.lat, req.lon, radiusM));
-    if (
-      env.west > bbox.west ||
-      env.south > bbox.south ||
-      env.east < bbox.east ||
-      env.north < bbox.north
-    ) {
+    if (!sessionEnvelopeContains(env, bbox)) {
       throw new Error(
         `the move leaves the session envelope ` +
         `(BBOX ${env.west} ${env.south} ${env.east} ${env.north}); ` +
+        `a wrap-crossing view quantizes on the far side of the antimeridian ` +
+        `and cannot share the session grid - ` +
         `call get_maplet again to open a new session`,
       );
     }
