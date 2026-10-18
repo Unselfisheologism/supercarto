@@ -119,22 +119,60 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
 
   // Prune by rank until the estimate fits.
   //
-  // Estimate and serialize in batches, but validate each removal against the
-  // live keep set. Individually safe removals can jointly split a cycle.
+  // Selection and validation are separate: the batch is *chosen* once against
+  // the cuts of the graph as it stands (cheap, one articulation pass), then
+  // *validated* once against what the batch actually does. Validating per
+  // candidate is O(V+E) each and measured in tens of seconds on a dense
+  // extract; validating per batch is the same arithmetic a handful of times.
+  // The validated invariant is the one that matters to an agent: no removal -
+  // and no combination of removals within a batch - may strand a named
+  // landmark. Splits are permitted as the last resort (see the selection walk
+  // and applyRemovalsValidated for why).
   let current = estimateGraphTokens(nodes, edges, graph);
   let guard = 0;
   let batch = Math.max(1, Math.floor(nodes.length / 8));
   let stalls = 0;
+  // Pressure valve for the selection walk: cut vertices join the candidate
+  // pool only after connected pruning is exhausted, so the graph fragments
+  // only when staying whole cannot reach the budget.
+  let allowCuts = false;
 
   while (current > target && guard++ < 2000) {
-    let cuts = articulationPoints(nodes, edges, keep);
+    const cuts = articulationPoints(nodes, edges, keep);
     const liveNamed = nodes.filter((n) => keep.has(n.id) && n.name !== undefined).length;
+    // Which named nodes this batch may still kill if it strands them: the
+    // floor forbids going below `minLandmarks`, and within the allowance the
+    // worst-ranked names are offered first. The validator consults this only
+    // when a whole batch would otherwise strand a landmark - the ordinary
+    // selection walk already protects names above the floor.
+    const removableNamed = new Set<string>();
+    {
+      let allowance = liveNamed - minLandmarks;
+      for (let i = ranked.length - 1; i >= 0 && allowance > 0; i--) {
+        const n = ranked[i]!;
+        if (keep.has(n.id) && n.name !== undefined && !removableNamed.has(n.id)) {
+          removableNamed.add(n.id);
+          allowance--;
+        }
+      }
+    }
 
     // Walk the ranking from the bottom, taking removable nodes until the batch
     // is full. `ranked` is ordered best-first, so iterating in reverse drops the
     // least important nodes first, which is the whole point of ranking them.
-    // A node is removable when it is anonymous or the landmark floor permits,
-    // is not a cut vertex, and does not orphan a landmark.
+    //
+    // Two sweeps, in escalating order of harm, gated by pressure. The first
+    // refuses cut vertices, so ordinary pruning keeps the network whole
+    // wherever it can - and stays whole only while that can still reach the
+    // budget. Once connected pruning is exhausted (every candidate refused,
+    // even one at a time), the second sweep admits cut vertices: the
+    // alternative at hard pressure is deleting the landmarks themselves, and
+    // a map that honours its name floor locally but fragments between
+    // neighbourhoods is worth more to an agent than a connected mesh of
+    // streets with no names on it (measured: the connected-first policy is
+    // what cost sf-cbd seven of its ten landmarks at budget 1024; see
+    // supercarto issue #3). The validator never lets the batch strand a named
+    // landmark in either sweep.
     const remove = new Set<string>();
     let namedLeft = liveNamed;
     // Count the edges that survive the current keep set, so the "keep the last
@@ -143,36 +181,66 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
     let liveEdgeCount = 0;
     for (const e of edges) if (keep.has(e.from) && keep.has(e.to)) liveEdgeCount++;
 
-    for (let i = ranked.length - 1; i >= 0; i--) {
-      const n = ranked[i]!;
-      if (remove.size >= batch) break;
-      if (!keep.has(n.id) || remove.has(n.id)) continue;
-      if (cuts.has(n.id)) continue;
-      // Never take the last connections. A map with no edges advertises places
-      // the agent cannot reach, which is worse than a smaller map it can
-      // navigate, so the last edge pair is always retained.
-      //
-      // Vacant where there is nothing to protect: with fewer than 2 live
-      // edges the rule guards every node (0 - 0 < 2), so nothing is ever
-      // removable and the loop exits over budget - measured at 1309 tokens
-      // against a 1024 budget on an edgeless map. An edgeless map has no
-      // connections to keep, so pruning falls through to rank order.
-      if (liveEdgeCount >= 2 && liveEdgeCount - incidentCount(edges, n.id) < 2) continue;
-      if (n.name !== undefined) {
-        if (namedLeft <= minLandmarks) continue;
-        namedLeft--;
+    const collect = (allowCuts: boolean): void => {
+      for (let i = ranked.length - 1; i >= 0; i--) {
+        const n = ranked[i]!;
+        if (remove.size >= batch) return;
+        if (!keep.has(n.id) || remove.has(n.id)) continue;
+        if (!allowCuts && cuts.has(n.id)) continue;
+        // Never take the last connections. A map with no edges advertises places
+        // the agent cannot reach, which is worse than a smaller map it can
+        // navigate, so the last edge pair is always retained.
+        //
+        // Vacant where there is nothing to protect: with fewer than 2 live
+        // edges the rule guards every node (0 - 0 < 2), so nothing is ever
+        // removable and the loop exits over budget - measured at 1309 tokens
+        // against a 1024 budget on an edgeless map. An edgeless map has no
+        // connections to keep, so pruning falls through to rank order.
+        if (liveEdgeCount >= 2 && liveEdgeCount - incidentCount(edges, n.id) < 2) continue;
+        if (n.name !== undefined) {
+          if (namedLeft <= minLandmarks) continue;
+          namedLeft--;
+        }
+        if (wouldOrphanLandmark(edges, n.id, landmarks, keep)) continue;
+        remove.add(n.id);
+        keep.delete(n.id);
+        liveEdgeCount -= incidentCount(edges, n.id);
       }
-      if (wouldOrphanLandmark(edges, n.id, landmarks, keep)) continue;
-      remove.add(n.id);
-      // Decisions must use the graph left by earlier choices in this batch.
-      // Two individually safe removals from a cycle may jointly disconnect it.
-      keep.delete(n.id);
-      cuts = articulationPoints(nodes, edges, keep);
-    }
+    };
+    collect(false);
+    if (remove.size < batch && allowCuts) collect(true);
+    // The selection walk mutated `keep` as a scratch space; restore it to the
+    // full set so the validation below sees the real candidate batch.
+    for (const id of remove) keep.add(id);
 
     if (remove.size === 0) {
-      // Nothing safe at this batch size. Halve and retry, which reaches
-      // protected nodes individually instead of stalling outright.
+      // Nothing removable without cuts at this batch size. Halve and retry,
+      // which reaches protected nodes individually instead of stalling.
+      if (batch > 1 || !allowCuts) {
+        batch = Math.floor(batch / 2);
+        if (++stalls > 8) break;
+        // True exhaustion: empty even one at a time, so connected pruning
+        // cannot reach the budget. Open the pressure valve rather than spend
+        // names - but only when still genuinely over the whole budget. The
+        // linear estimate runs high (real renders come in below it), and a
+        // connected map whose estimate sits between the budget and the budget
+        // plus overhead usually renders under the budget, which beats a
+        // fragmented one that fits with room to spare.
+        if (batch === 1 && !allowCuts && current > budget + overhead) {
+          allowCuts = true;
+          stalls = 0;
+        }
+        continue;
+      }
+      break;
+    }
+
+    const edgesBefore = edges.length;
+    const applied = applyRemovalsValidated([...remove], nodes, edges, keep, landmarks, removableNamed, !allowCuts);
+    if (applied.size === 0) {
+      // Even singles are unsafe here - the batch was refused wholesale. Halve
+      // and retry around whichever node tripped the invariant, rather than
+      // reselecting the same refusal forever.
       if (batch > 1) {
         batch = Math.floor(batch / 2);
         if (++stalls > 8) break;
@@ -180,9 +248,8 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
       }
       break;
     }
-
-    for (const id of remove) keep.delete(id);
-    droppedNodes += remove.size;
+    droppedNodes += applied.size;
+    droppedEdges = Math.max(droppedEdges, edgesBefore - edges.length);
     /**
      * Name the omission by what was actually dropped.
      *
@@ -194,31 +261,27 @@ export function fitToBudget(graph: SpatialGraph, opts: BudgetOptions): BudgetRes
      * Grouped by the node's own layer, which the compiler now carries. Nodes with
      * no layer - anything built before this field existed - fall back to `feature`,
      * so the record degrades to the old behaviour rather than to nonsense.
+     *
+     * Recorded over the applied set - the walk order, plus any landmark the
+     * validator appended to save it from stranding - so the ledger's layer
+     * order is a function of the ranking and therefore deterministic.
      */
-    for (const id of remove) {
+    for (const id of applied) {
       recordOmission(byId.get(id)?.layer ?? 'feature', 1);
     }
 
-    const live = nodes.filter((n) => keep.has(n.id));
-    const liveEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
-    droppedEdges = Math.max(droppedEdges, edges.length - liveEdges.length);
-    current = estimateGraphTokens(live, liveEdges, graph);
-
-    nodes.length = 0;
-    nodes.push(...live);
-    edges.length = 0;
-    edges.push(...liveEdges);
+    current = estimateGraphTokens(nodes, edges, graph);
 
     // Adapt the batch to how much the graph actually gives up. As the mesh
     // thins, fewer nodes are removable per pass, so a batch that was full
     // earlier starts returning short. Growing on a short batch would ratchet
     // the loop straight into the stall counter and stop far above the target;
     // shrinking instead lets it keep making progress at the achievable rate.
-    if (remove.size >= batch) {
-      batch = Math.min(live.length, batch + Math.max(1, Math.floor(batch / 4)));
+    if (applied.size >= batch) {
+      batch = Math.min(nodes.length, batch + Math.max(1, Math.floor(batch / 4)));
       stalls = 0;
     } else {
-      batch = Math.max(1, Math.min(batch, remove.size * 2));
+      batch = Math.max(1, Math.min(batch, applied.size * 2));
       stalls = 0;
     }
   }
@@ -501,6 +564,147 @@ export function articulationPoints(
   }
 
   return cuts;
+}
+
+/**
+ * Weakly-connected component count over the live subgraph.
+ *
+ * Directed edges are read as undirected: the compiled graph carries mirrored
+ * pairs, and the navigability question ("can I still get from A to B") does
+ * not care about direction.
+ */
+export function componentCount(nodes: GraphNode[], edges: GraphEdge[]): number {
+  const adj = new Map<string, string[]>();
+  for (const n of nodes) adj.set(n.id, []);
+  for (const e of edges) {
+    if (e.from === e.to) continue;
+    adj.get(e.from)?.push(e.to);
+    adj.get(e.to)?.push(e.from);
+  }
+  const seen = new Set<string>();
+  let count = 0;
+  for (const n of nodes) {
+    if (seen.has(n.id)) continue;
+    count++;
+    const stack = [n.id];
+    seen.add(n.id);
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      for (const nb of adj.get(id) ?? []) {
+        if (!seen.has(nb)) {
+          seen.add(nb);
+          stack.push(nb);
+        }
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * Validate and apply a removal batch, returning the ids actually removed.
+ *
+ * Per-candidate validation is O(V+E) each and measured at tens of seconds on a
+ * dense extract; this validates once per batch. Two invariants:
+ *
+ * 1. **No surviving named landmark is stranded** - every one keeps at least one
+ *    incident edge after the batch lands. A batch that would strand is
+ *    repaired, not rejected: if the name floor permits one more death, the
+ *    landmark itself joins the batch, so it and its last access disappear
+ *    together; otherwise the batch candidates adjacent to it are withdrawn, so
+ *    its access survives.
+ * 2. **When `enforceConnectivity`, no pre-batch component may be split.** The
+ *    caller keeps this on while ordinary connected pruning is enough, and
+ *    raises the pressure valve (passing false) once that is exhausted -
+ *    because holding every component whole is what made the budgeter spend
+ *    its last tokens on anonymous street mass and delete landmarks instead
+ *    (sf-cbd, budget 1024: seven of ten names gone; see supercarto issue #3).
+ *
+ * A split refusal bisects; depth is bounded by batch size, so the worst case
+ * is the old per-removal cost and the common case is a single validation.
+ */
+export function applyRemovalsValidated(
+  candidates: readonly string[],
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  keep: Set<string>,
+  landmarks: ReadonlySet<string>,
+  removableNamed: ReadonlySet<string> = new Set(),
+  enforceConnectivity = false,
+): Set<string> {
+  return applySafe([...new Set(candidates)]);
+
+  function applySafe(batch: string[]): Set<string> {
+    // Repair stranding first: each pass either extinguishes a stranding (the
+    // landmark joins the batch) or removes the cause from the batch (adjacent
+    // candidates withdrawn), and neither can repeat for the same landmark, so
+    // the loop is bounded by the landmark count.
+    for (let pass = 0; pass <= landmarks.size; pass++) {
+      const batchSet = new Set(batch);
+      const inKeep = (id: string): boolean => keep.has(id) && !batchSet.has(id);
+      const liveNodes = nodes.filter((n) => inKeep(n.id));
+      const liveEdges = edges.filter((e) => inKeep(e.from) && inKeep(e.to));
+
+      const stranded: string[] = [];
+      for (const n of liveNodes) {
+        if (!landmarks.has(n.id)) continue;
+        if (!liveEdges.some((e) => e.from === n.id || e.to === n.id)) stranded.push(n.id);
+      }
+      if (stranded.length === 0) break;
+      if (pass === landmarks.size) return new Set();
+      for (const id of stranded) {
+        if (removableNamed.has(id)) {
+          // Landmark and its last access die together: one decision, not a
+          // half-map that shows a place no road reaches.
+          batch.push(id);
+        } else {
+          // The floor protects this name. Withdraw every candidate adjacent to
+          // it, so at least one access edge survives the batch.
+          for (let i = batch.length - 1; i >= 0; i--) {
+            const c = batch[i]!;
+            if (edges.some((e) => (e.from === id && e.to === c) || (e.to === id && e.from === c))) {
+              batch.splice(i, 1);
+            }
+          }
+        }
+      }
+    }
+    if (batch.length === 0) return new Set();
+
+    const batchSet = new Set(batch);
+    const liveNodes = nodes.filter((n) => keep.has(n.id) && !batchSet.has(n.id));
+    const liveEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to) && !batchSet.has(e.from) && !batchSet.has(e.to));
+
+    if (enforceConnectivity) {
+      // Two candidates that are individually non-cut may jointly split a
+      // cycle; this is the check the per-removal recompute used to run, one
+      // Tarjan at a time. Removing a singleton component legitimately lowers
+      // the count; a split raises it. Removals cannot merge components.
+      const before = componentCount(nodes, edges);
+      const isolatedRemoved = batch.filter((id) => {
+        const node = nodes.find((n) => n.id === id);
+        if (!node) return false;
+        return !edges.some((e) => (e.from === id || e.to === id) && keep.has(e.from) && keep.has(e.to));
+      }).length;
+      const split = componentCount(liveNodes, liveEdges) > before - isolatedRemoved;
+      if (split) {
+        if (batch.length === 1) return new Set();
+        const mid = batch.length >> 1;
+        return new Set<string>([
+          ...applySafe(batch.slice(0, mid)),
+          ...applySafe(batch.slice(mid)),
+        ]);
+      }
+    }
+
+    // Commit: replace the arrays in place - callers hold references.
+    for (const id of batch) keep.delete(id);
+    nodes.length = 0;
+    nodes.push(...liveNodes);
+    edges.length = 0;
+    edges.push(...liveEdges);
+    return batchSet;
+  }
 }
 
 /**

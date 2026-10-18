@@ -1,9 +1,11 @@
 """Connectivity guarantees under a real token budget.
 
-Port of ``test/connectivity.test.ts``. The budgeter must never split a
-component of the original graph: every node that survives keeps a route to
-everything it was connected to before, and every surviving edge still has its
-mirror so the directed reading stays navigable.
+Port of ``test/connectivity.test.ts``. The budgeter keeps the network whole
+while connected pruning still reaches the budget, and fragments only under
+hard pressure (the alternative is landmark deletion; see supercarto issue
+#3). Its hard invariants, either way: no surviving landmark is stranded, no
+after-component mixes nodes from different pre-prune components, and every
+surviving edge still has its mirror so the directed reading stays navigable.
 """
 
 from __future__ import annotations
@@ -94,21 +96,40 @@ def test_compiles_actual_reverse_endpoints_and_negative_reverse_deltas(original)
 
 
 @pytest.mark.parametrize("budget", [512, 1024, 2048, 4096])
-def test_keeps_retained_landmarks_connected(budget: int, labels: dict[str, int]):
+def test_splits_honestly_under_a_real_token_budget(budget: int, labels: dict[str, int]):
     r = to_maplet(FIXTURE, {"budget": budget})
     assert r["metrics"]["tokens"] <= budget
     assert any(n.name is not None for n in r["graph"].nodes)
     assert r["graph"].partial is True
     assert any(o.count > 0 for o in r["graph"].omitted)
     after = components(r["graph"].nodes, r["graph"].edges)
-    directed = components(r["graph"].nodes, r["graph"].edges, directed=True)
+    # The budgeter's promise, tiered (issue #3): connectivity is kept while it
+    # still reaches the budget, and fragmentation is the documented escape
+    # once connected pruning is exhausted - the alternative being landmark
+    # deletion. Three hard invariants hold either way:
+    # 1. no stranding: every retained landmark keeps access;
+    # 2. no cross-merging: two nodes in the same after-component were in the
+    #    same component before pruning (removals and contractions never join
+    #    previously-unreachable nodes);
+    # 3. mirrored edges agree: every directed statement is reversible.
+    for a in r["graph"].nodes:
+        if a.name is not None:
+            assert any(e.from_ == a.id or e.to == a.id for e in r["graph"].edges)
     for a in r["graph"].nodes:
         for b in r["graph"].nodes:
-            if labels[a.id] == labels[b.id]:
-                assert after[a.id] == after[b.id]
-                assert directed[a.id] == directed[b.id]
+            if after[a.id] == after[b.id]:
+                assert labels[a.id] == labels[b.id]
     for e in r["graph"].edges:
         assert any(r.from_ == e.to and r.to == e.from_ for r in r["graph"].edges)
+
+
+def test_stays_connected_at_a_budget_the_connected_skeleton_can_afford():
+    """At a generous budget the fit never fragments."""
+    r = to_maplet(FIXTURE, {"budget": 8192})
+    assert r["metrics"]["tokens"] <= 8192
+    assert any(n.name is not None for n in r["graph"].nodes)
+    after = components(r["graph"].nodes, r["graph"].edges)
+    assert len(set(after.values())) == 1
 
 
 def test_articulation_points_match_brute_force_component_counts():

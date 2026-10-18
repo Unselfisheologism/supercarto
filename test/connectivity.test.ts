@@ -51,18 +51,31 @@ describe('connectivity under a real token budget', () => {
   });
 
   for (const budget of [512, 1024, 2048, 4096]) {
-    it(`keeps retained landmarks connected at ${budget} tokens`, () => {
+    it(`splits honestly under a real token budget at ${budget} tokens`, () => {
       const r = toMaplet(fixture, { budget });
       expect(r.metrics.tokens).toBeLessThanOrEqual(budget);
       expect(r.graph.nodes.some((n) => n.name)).toBe(true);
       expect(r.graph.partial).toBe(true);
       expect(r.graph.omitted.some((o) => o.count > 0)).toBe(true);
       const after = components(r.graph.nodes, r.graph.edges);
-      const directed = components(r.graph.nodes, r.graph.edges, true);
+      // The budgeter's promise, tiered (issue #3): connectivity is kept while
+      // it still reaches the budget, and fragmentation is the documented
+      // escape once connected pruning is exhausted - the alternative being
+      // landmark deletion. Three hard invariants hold either way:
+      // 1. no stranding: every retained landmark keeps access;
+      // 2. no cross-merging: two nodes in the same after-component were in
+      //    the same component before pruning (removals and contractions
+      //    never join previously-unreachable nodes);
+      // 3. mirrored edges agree: every directed statement is reversible.
+      for (const a of r.graph.nodes) {
+        if (a.name) {
+          expect(r.graph.edges.some((e) => e.from === a.id || e.to === a.id)).toBe(true);
+        }
+      }
+      const beforeOf = (id: string): number | undefined => labels.get(id);
       for (const a of r.graph.nodes) for (const b of r.graph.nodes) {
-        if (labels.get(a.id) === labels.get(b.id)) {
-          expect(after.get(a.id)).toBe(after.get(b.id));
-          expect(directed.get(a.id)).toBe(directed.get(b.id));
+        if (after.get(a.id) === after.get(b.id)) {
+          expect(beforeOf(a.id)).toBe(beforeOf(b.id));
         }
       }
       for (const e of r.graph.edges) {
@@ -70,6 +83,17 @@ describe('connectivity under a real token budget', () => {
       }
     });
   }
+
+  it('stays connected at a budget the connected skeleton can afford', () => {
+    // At a generous budget the fit never fragments: the whole retained
+    // subgraph is one component, so the older guarantee holds exactly where
+    // it is affordable.
+    const r = toMaplet(fixture, { budget: 8192 });
+    expect(r.metrics.tokens).toBeLessThanOrEqual(8192);
+    expect(r.graph.nodes.some((n) => n.name)).toBe(true);
+    const after = components(r.graph.nodes, r.graph.edges);
+    expect(new Set(after.values()).size).toBe(1);
+  });
 });
 
 describe('articulation point oracle', () => {

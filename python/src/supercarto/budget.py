@@ -118,81 +118,160 @@ def fit_to_budget(graph: SpatialGraph, opts: dict) -> dict:
     guard = 0
     batch = max(1, len(nodes) // 8)
     stalls = 0
+    # Pressure valve for the selection walk: cut vertices join the candidate
+    # pool only after connected pruning is exhausted, so the graph fragments
+    # only when staying whole cannot reach the budget.
+    allow_cuts = False
 
     while current > target and guard < 2000:
         guard += 1
         cuts = _articulation_points(nodes, edges, keep)
         live_named = sum(1 for n in nodes if n.id in keep and n.name is not None)
 
+        # Which named nodes this batch may still kill if it strands them: the
+        # floor forbids going below ``min_landmarks``, and within the
+        # allowance the worst-ranked names are offered first. The validator
+        # consults this only when a whole batch would otherwise strand a
+        # landmark - the ordinary selection walk already protects names above
+        # the floor.
+        removable_named: dict[str, None] = {}
+        allowance = live_named - min_landmarks
+        for i in range(len(ranked) - 1, -1, -1):
+            if allowance <= 0:
+                break
+            n = ranked[i]
+            if (
+                n.id in keep
+                and n.name is not None
+                and n.id not in removable_named
+            ):
+                removable_named[n.id] = None
+                allowance -= 1
+
+        # Walk the ranking from the bottom, taking removable nodes until the
+        # batch is full. ``ranked`` is ordered best-first, so iterating in
+        # reverse drops the least important nodes first, which is the whole
+        # point of ranking them.
+        #
+        # Two sweeps, in escalating order of harm, gated by pressure. The
+        # first refuses cut vertices, so ordinary pruning keeps the network
+        # whole wherever it can - and stays whole only while that can still
+        # reach the budget. Once connected pruning is exhausted (every
+        # candidate refused, even one at a time), the second sweep admits cut
+        # vertices: the alternative at hard pressure is deleting the
+        # landmarks themselves, and a map that honours its name floor locally
+        # but fragments between neighbourhoods is worth more to an agent than
+        # a connected mesh of streets with no names on it (measured: the
+        # connected-first policy is what cost sf-cbd seven of its ten
+        # landmarks at budget 1024; see supercarto issue #3). The validator
+        # never lets the batch strand a named landmark in either sweep.
         remove: dict[str, None] = {}
         named_left = live_named
         # Count the edges that survive the current keep set, so the "keep the
         # last connection" rule below is judged against what is actually left.
         live_edge_count = sum(1 for e in edges if e.from_ in keep and e.to in keep)
 
-        for i in range(len(ranked) - 1, -1, -1):
-            n = ranked[i]
-            if len(remove) >= batch:
-                break
-            if n.id not in keep or n.id in remove:
-                continue
-            if n.id in cuts:
-                continue
-            # Never take the last connections. A map with no edges advertises
-            # places the agent cannot reach, which is worse than a smaller map
-            # it can navigate, so the last edge pair is always retained.
-            if live_edge_count >= 2 and live_edge_count - _incident_count(edges, n.id) < 2:
-                continue
-            if n.name is not None:
-                if named_left <= min_landmarks:
+        def collect(allow_cuts_sweep: bool) -> None:
+            nonlocal named_left, live_edge_count
+            for i in range(len(ranked) - 1, -1, -1):
+                n = ranked[i]
+                if len(remove) >= batch:  # noqa: B023
+                    return
+                if n.id not in keep or n.id in remove:  # noqa: B023
                     continue
-                named_left -= 1
-            if _would_orphan_landmark(edges, n.id, landmarks, keep):
-                continue
-            remove[n.id] = None
-            # Decisions must use the graph left by earlier choices in this
-            # batch. Two individually safe removals from a cycle may jointly
-            # disconnect it.
-            keep.pop(n.id, None)
-            cuts = _articulation_points(nodes, edges, keep)
+                if not allow_cuts_sweep and n.id in cuts:  # noqa: B023
+                    continue
+                # Never take the last connections. A map with no edges
+                # advertises places the agent cannot reach, which is worse
+                # than a smaller map it can navigate, so the last edge pair is
+                # always retained.
+                if live_edge_count >= 2 and live_edge_count - _incident_count(edges, n.id) < 2:
+                    continue
+                if n.name is not None:
+                    if named_left <= min_landmarks:
+                        continue
+                    named_left -= 1
+                if _would_orphan_landmark(edges, n.id, landmarks, keep):
+                    continue
+                remove[n.id] = None  # noqa: B023
+                keep.pop(n.id, None)
+                live_edge_count -= _incident_count(edges, n.id)
+
+        collect(False)
+        if len(remove) < batch and allow_cuts:
+            collect(True)
+        # The selection walk mutated ``keep`` as a scratch space; restore it to
+        # the full set so the validation below sees the real candidate batch.
+        for id_ in remove:
+            keep[id_] = None
 
         if len(remove) == 0:
-            # Nothing safe at this batch size. Halve and retry, which reaches
-            # protected nodes individually instead of stalling outright.
+            # Nothing removable without cuts at this batch size. Halve and
+            # retry, which reaches protected nodes individually instead of
+            # stalling.
+            if batch > 1 or not allow_cuts:
+                batch = batch // 2
+                stalls += 1
+                if stalls > 8:
+                    break
+                # True exhaustion: empty even one at a time, so connected
+                # pruning cannot reach the budget. Open the pressure valve
+                # rather than spend names - but only when still genuinely over
+                # the whole budget. The linear estimate runs high (real
+                # renders come in below it), and a connected map whose
+                # estimate sits between the budget and the budget plus
+                # overhead usually renders under the budget, which beats a
+                # fragmented one that fits with room to spare.
+                if batch == 1 and not allow_cuts and current > budget + overhead:
+                    allow_cuts = True
+                    stalls = 0
+                continue
+            break
+
+        edges_before = len(edges)
+        applied = apply_removals_validated(
+            list(remove),
+            nodes,
+            edges,
+            keep,
+            landmarks,
+            set(removable_named),
+            not allow_cuts,
+        )
+        if len(applied) == 0:
+            # Even singles are unsafe here - the batch was refused wholesale.
+            # Halve and retry around whichever node tripped the invariant,
+            # rather than reselecting the same refusal forever.
             if batch > 1:
-                batch //= 2
+                batch = batch // 2
                 stalls += 1
                 if stalls > 8:
                     break
                 continue
             break
 
-        for id_ in remove:
-            keep.pop(id_, None)
-        dropped_nodes += len(remove)
-        # Name the omission by what was actually dropped, grouped by the
-        # node's own layer; "features omitted" without names told an agent
-        # nothing about what it was missing.
-        for id_ in remove:
+        dropped_nodes += len(applied)
+        dropped_edges = max(dropped_edges, edges_before - len(edges))
+        # Name the omission by what was actually dropped, grouped by the node's
+        # own layer; "features omitted" without names told an agent nothing
+        # about what it was missing. Recorded over the applied set - the walk
+        # order, plus any landmark the validator appended to save it from
+        # stranding - so the ledger's layer order is a function of the ranking
+        # and therefore deterministic.
+        for id_ in applied:
             node = by_id.get(id_)
-            record_omission(node.layer if node and node.layer else "feature", 1)
+            record_omission(node.layer if node is not None and node.layer is not None else "feature", 1)
 
-        live = [n for n in nodes if n.id in keep]
-        live_edges = [e for e in edges if e.from_ in keep and e.to in keep]
-        dropped_edges = max(dropped_edges, len(edges) - len(live_edges))
-        current = _estimate_graph_tokens(live, live_edges, graph)
-
-        nodes[:] = live
-        edges[:] = live_edges
+        current = _estimate_graph_tokens(nodes, edges, graph)
 
         # Adapt the batch to how much the graph actually gives up. Growing on
         # a short batch ratchets into the stall counter; shrinking keeps
         # progress at the achievable rate.
-        if len(remove) >= batch:
-            batch = min(len(live), batch + max(1, batch // 4))
+        if len(applied) >= batch:
+            batch = min(len(nodes), batch + max(1, batch // 4))
             stalls = 0
         else:
-            batch = max(1, min(batch, len(remove) * 2))
+            batch = max(1, min(batch, len(applied) * 2))
             stalls = 0
 
     # Pruning can turn a dense mesh into a long thin chain of anonymous
@@ -653,3 +732,163 @@ def _js_round(x: float) -> float:
 
 
 estimate_graph_tokens = _estimate_graph_tokens
+
+
+def component_count(nodes: list[GraphNode], edges: list[GraphEdge]) -> int:
+    """Weakly-connected component count over the live subgraph.
+
+    Directed edges are read as undirected: the compiled graph carries mirrored
+    pairs, and the navigability question ("can I still get from A to B") does
+    not care about direction.
+    """
+    adj: dict[str, list[str]] = {n.id: [] for n in nodes}
+    for e in edges:
+        if e.from_ == e.to:
+            continue
+        if e.from_ in adj:
+            adj[e.from_].append(e.to)
+        if e.to in adj:
+            adj[e.to].append(e.from_)
+    seen: set[str] = set()
+    count = 0
+    for n in nodes:
+        if n.id in seen:
+            continue
+        count += 1
+        stack = [n.id]
+        seen.add(n.id)
+        while stack:
+            id_ = stack.pop()
+            for nb in adj.get(id_, []):
+                if nb not in seen:
+                    seen.add(nb)
+                    stack.append(nb)
+    return count
+
+
+def apply_removals_validated(
+    candidates: Iterable[str],
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
+    keep: dict[str, None],
+    landmarks: set[str],
+    removable_named: set[str] | frozenset[str] | None = None,
+    enforce_connectivity: bool = False,
+) -> dict[str, None]:
+    """Validate and apply a removal batch, returning the ids actually removed.
+
+    Per-candidate validation is O(V+E) each and measured at tens of seconds on
+    a dense extract; this validates once per batch. Two invariants:
+
+    1. **No surviving named landmark is stranded** - every one keeps at least
+       one incident edge after the batch lands. A batch that would strand is
+       repaired, not rejected: if the name floor permits one more death, the
+       landmark itself joins the batch, so it and its last access disappear
+       together; otherwise the batch candidates adjacent to it are withdrawn,
+       so its access survives.
+    2. **When ``enforce_connectivity``, no pre-batch component may be split.**
+       The caller keeps this on while ordinary connected pruning is enough,
+       and raises the pressure valve (passing False) once that is exhausted -
+       because holding every component whole is what made the budgeter spend
+       its last tokens on anonymous street mass and delete landmarks instead
+       (sf-cbd, budget 1024: seven of ten names gone; see supercarto issue
+       #3).
+
+    A split refusal bisects; depth is bounded by batch size, so the worst case
+    is the old per-removal cost and the common case is a single validation.
+    """
+    if removable_named is None:
+        removable_named = set()
+    return _apply_safe(list(dict.fromkeys(candidates)), nodes, edges, keep, landmarks, removable_named, enforce_connectivity)
+
+
+def _apply_safe(
+    batch: list[str],
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
+    keep: dict[str, None],
+    landmarks: set[str],
+    removable_named: set[str] | frozenset[str],
+    enforce_connectivity: bool,
+) -> dict[str, None]:
+    # Repair stranding first: each pass either extinguishes a stranding (the
+    # landmark joins the batch) or removes the cause from the batch (adjacent
+    # candidates withdrawn), and neither can repeat for the same landmark, so
+    # the loop is bounded by the landmark count.
+    for _pass in range(len(landmarks) + 1):
+        batch_set = set(batch)
+        live_nodes = [n for n in nodes if n.id in keep and n.id not in batch_set]
+        live_edges = [
+            e for e in edges
+            if e.from_ in keep and e.to in keep
+            and e.from_ not in batch_set and e.to not in batch_set
+        ]
+
+        stranded: list[str] = []
+        for n in live_nodes:
+            if n.id not in landmarks:
+                continue
+            if not any(e.from_ == n.id or e.to == n.id for e in live_edges):
+                stranded.append(n.id)
+        if not stranded:
+            break
+        if _pass == len(landmarks):
+            return {}
+        for id_ in stranded:
+            if id_ in removable_named:
+                # Landmark and its last access die together: one decision, not
+                # a half-map that shows a place no road reaches.
+                batch.append(id_)
+            else:
+                # The floor protects this name. Withdraw every candidate
+                # adjacent to it, so at least one access edge survives the
+                # batch.
+                for i in range(len(batch) - 1, -1, -1):
+                    c = batch[i]
+                    if any(
+                        (e.from_ == id_ and e.to == c) or (e.to == id_ and e.from_ == c)
+                        for e in edges
+                    ):
+                        batch.pop(i)
+    if not batch:
+        return {}
+
+    batch_set = set(batch)
+    live_nodes = [n for n in nodes if n.id in keep and n.id not in batch_set]
+    live_edges = [
+        e for e in edges
+        if e.from_ in keep and e.to in keep
+        and e.from_ not in batch_set and e.to not in batch_set
+    ]
+
+    if enforce_connectivity:
+        # Two candidates that are individually non-cut may jointly split a
+        # cycle; this is the check the per-removal recompute used to run, one
+        # Tarjan at a time. Removing a singleton component legitimately lowers
+        # the count; a split raises it. Removals cannot merge components.
+        before = component_count(nodes, edges)
+        isolated_removed = sum(
+            1
+            for id_ in batch
+            if any(n.id == id_ for n in nodes)
+            and not any(
+                (e.from_ == id_ or e.to == id_) and e.from_ in keep and e.to in keep
+                for e in edges
+            )
+        )
+        split = component_count(live_nodes, live_edges) > before - isolated_removed
+        if split:
+            if len(batch) == 1:
+                return {}
+            mid = len(batch) // 2
+            merged: dict[str, None] = {}
+            merged.update(_apply_safe(batch[:mid], nodes, edges, keep, landmarks, removable_named, enforce_connectivity))
+            merged.update(_apply_safe(batch[mid:], nodes, edges, keep, landmarks, removable_named, enforce_connectivity))
+            return merged
+
+    # Commit: replace the lists in place - callers hold references.
+    for id_ in batch:
+        keep.pop(id_, None)
+    nodes[:] = live_nodes
+    edges[:] = live_edges
+    return dict.fromkeys(batch)

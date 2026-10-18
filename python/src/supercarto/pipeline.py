@@ -16,6 +16,7 @@ from typing import Any
 
 from .budget import (
     _articulation_points,
+    apply_removals_validated,
     contract_anonymous_chains,
     fit_to_budget,
 )
@@ -200,6 +201,10 @@ def _emit_and_verify(
     # after every single node is O(V^2)), and the omission list is aggregated.
     batch = max(1, min(8, len(graph.nodes) // 40))
     stalls = 0
+    # Pressure valve, mirroring fit_to_budget: cut vertices join the candidate
+    # pool only after connected pruning is exhausted, so the graph fragments
+    # only when staying whole cannot reach the budget.
+    allow_cuts = False
 
     for _guard in range(3000):
         if result["tokens"] <= budget:
@@ -221,7 +226,7 @@ def _emit_and_verify(
         named = {n.id for n in graph.nodes if n.name is not None}
         victims = [
             id_
-            for id_ in _pick_batch(graph, holding, cap)
+            for id_ in _pick_batch(graph, holding, cap, allow_cuts)
             if len(graph.edges) >= 2 or id_ not in named
         ]
         if not victims:
@@ -233,6 +238,12 @@ def _emit_and_verify(
                 stalls += 1
                 if stalls > 6:
                     break
+                if batch == 1 and not allow_cuts:
+                    # True exhaustion: empty even one at a time, so connected
+                    # pruning cannot reach the budget. Open the pressure valve
+                    # rather than spend names - mirroring fit_to_budget.
+                    allow_cuts = True
+                    stalls = 0
                 continue
             break
 
@@ -319,35 +330,50 @@ def _with_omitted(graph: SpatialGraph, layer: str, count: int, partial: bool) ->
     )
 
 
-def _pick_batch(graph: SpatialGraph, skip: set, limit: int) -> list[str]:
+def _pick_batch(graph: SpatialGraph, skip: set, limit: int, allow_cuts: bool = False) -> list[str]:
     """Up to ``limit`` node ids to drop, worst-first, never orphaning a named
     landmark and never taking the last connections.
 
-    Each node takes its incident edges with it, so the surviving edge count
-    is tracked while the batch is built rather than checked afterwards.
-    Sizing the batch by node count alone is what previously let one batch
-    delete the whole network, leaving a map of names with no routes.
+    Harm tiers, lowest first: anonymous junctions before names, connected
+    candidates before cut vertices. The sort makes the escalation explicit -
+    fragmentation is cheaper than name death, name death is cheaper than
+    stranding, and the validator owns stranding outright. The batch is
+    validated as one unit rather than per candidate: recomputing cuts after
+    every candidate is O(V+E) each and measured in tens of seconds on a dense
+    extract.
     """
-    scored = [
-        # Higher is more important; sort ascending so the batch takes the worst.
-        (id_, (1000 if n.name is not None else 0) + _landmark_score(n))
-        for id_, n in ((n.id, n) for n in graph.nodes)
-    ]
-    scored.sort(key=lambda t: t[1])
-
     incident: dict[str, int] = {}
     for e in graph.edges:
         incident[e.from_] = incident.get(e.from_, 0) + 1
         incident[e.to] = incident.get(e.to, 0) + 1
 
-    out: list[str] = []
     keep: dict[str, None] = {n.id: None for n in graph.nodes}
     cuts = _articulation_points(graph.nodes, graph.edges, keep)
     edges_left = len(graph.edges)
-    for id_, _score in scored:
-        if len(out) >= limit:
+    # Harm tiers, lowest first: anonymous junctions before names, connected
+    # candidates before cut vertices. The sort makes the escalation explicit -
+    # fragmentation is cheaper than name death, name death is cheaper than
+    # stranding, and the validator owns stranding outright.
+    scored = [
+        # Higher is more important; sort ascending so the batch takes the worst.
+        (
+            n.id,
+            (2 if n.name is not None else 0) + (1 if n.id in cuts else 0),
+            (1000 if n.name is not None else 0) + _landmark_score(n),
+        )
+        for n in graph.nodes
+    ]
+    scored.sort(key=lambda t: (t[1], t[2]))
+
+    candidates: list[str] = []
+    for id_, tier, _score in scored:
+        if len(candidates) >= limit:
             break
-        if id_ in skip or id_ in cuts:
+        # Sorted by tier, so with fragmentation withheld the first cut vertex
+        # ends the connected supply.
+        if not allow_cuts and tier >= 1:
+            break
+        if id_ in skip:
             continue
         # Keep at least two edges so the map stays navigable. Vacant on
         # edgeless graphs: with nothing to keep connected, unnamed nodes thin
@@ -355,13 +381,23 @@ def _pick_batch(graph: SpatialGraph, skip: set, limit: int) -> list[str]:
         cost = incident.get(id_, 0)
         if edges_left >= 2 and edges_left - cost < 2:
             continue
-        out.append(id_)
-        # Do not let a batch split a cycle node by node: re-derive the cut
-        # vertices against the graph this batch has already built.
+        candidates.append(id_)
         keep.pop(id_, None)
-        cuts = _articulation_points(graph.nodes, graph.edges, keep)
         edges_left -= cost
-    return out
+
+    # Validate the batch on scratch copies of the graph. Every named node is a
+    # landmark here, and the name floor does not apply - this stage is the
+    # last resort, so a landmark whose whole access dies with the batch may go
+    # with it rather than strand. No batch among the candidates may strand a
+    # name either way.
+    named_ids = {n.id for n in graph.nodes if n.name is not None}
+    scratch_nodes = list(graph.nodes)
+    scratch_edges = list(graph.edges)
+    scratch_keep: dict[str, None] = {n.id: None for n in graph.nodes}
+    applied = apply_removals_validated(
+        candidates, scratch_nodes, scratch_edges, scratch_keep, named_ids, named_ids, not allow_cuts
+    )
+    return [id_ for id_ in candidates if id_ in applied]
 
 
 def _landmark_score(n: GraphNode) -> int:

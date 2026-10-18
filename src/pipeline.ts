@@ -3,7 +3,7 @@ import { encodeDocument } from './wire/encode.js';
 import { decodeDocument } from './wire/decode.js';
 import { fromGeoJson, type IngestOptions } from './ingest/geojson.js';
 import { compile, type CompileOptions } from './compile/compiler.js';
-import { fitToBudget, articulationPoints, contractAnonymousChains, type BudgetOptions, type BudgetResult } from './budget/budget.js';
+import { fitToBudget, articulationPoints, contractAnonymousChains, applyRemovalsValidated, type BudgetOptions, type BudgetResult } from './budget/budget.js';
 import { emitGraph, type EmitOptions, type EmitResult } from './emit/yaml.js';
 import { gridScaleFor, type GridScale } from './geo/scale.js';
 import type { GeoJsonFeature, GeoJsonFeatureCollection } from './ingest/geojson.js';
@@ -80,8 +80,7 @@ export interface MapletResult {
 export function toMaplet(
   input: GeoJsonFeatureCollection | GeoJsonFeature[],
   req: MapletRequest = {},
-): MapletResult {
-  const envelope = req.envelope ??
+): MapletResult {  const envelope = req.envelope ??
     (req.bbox
       ? ({ type: 'bbox', ...req.bbox } satisfies Envelope)
       : undefined);
@@ -177,6 +176,10 @@ function emitAndVerify(
   //    and more useful than 137 separate lines.
   let batch = Math.max(1, Math.min(8, Math.floor(graph.nodes.length / 40)));
   let stalls = 0;
+  // Pressure valve, mirroring fitToBudget: cut vertices join the candidate
+  // pool only after connected pruning is exhausted, so the graph fragments
+  // only when staying whole cannot reach the budget.
+  let allowCuts = false;
 
   for (let guard = 0; guard < 3000 && result.tokens > budget; guard++) {
     // Keep a minimal but *navigable* skeleton. A map with no nodes answers no
@@ -186,8 +189,10 @@ function emitAndVerify(
     // for - but it must leave at least one connected pair.
     // A connected pair is worth protecting; edgelessness is not a shape.
     // With no edges there is nothing to keep navigable, so the loop may
-    // thin unnamed nodes until the output fits. Named nodes are never
-    // picked here - the safety net (or keepOrphans) owns that decision.
+    // thin unnamed nodes until the output fits. Anonymous candidates fill the
+    // batch first; a named node is picked only when its whole access dies with
+    // the batch (the validator couples it to its holder) or nothing anonymous
+    // remains at hard pressure. The safety net still owns edgeless orphans.
     if (graph.nodes.length <= 2) break;
     if (graph.edges.length === 2) break; // one pair left: the floor
 
@@ -199,16 +204,25 @@ function emitAndVerify(
     const named = new Set(
       graph.nodes.filter((n) => n.name !== undefined).map((n) => n.id),
     );
-    const victims = pickBatch(graph, holding, cap).filter(
+    const victims = pickBatch(graph, holding, cap, allowCuts).filter(
       (id) => graph.edges.length >= 2 || !named.has(id),
     );
     if (victims.length === 0) {
-      // Nothing safe left at this batch size. Shrink the batch and retry, which
-      // reaches the protected nodes one at a time instead of stalling.
+      // No connected candidate at all: connected pruning is exhausted. Admit
+      // cut vertices rather than spend names - mirroring the pressure valve in
+      // fitToBudget. With the valve open this doubles as the halve-and-retry
+      // path, which reaches the protected nodes one at a time.
       if (batch > 1) {
         batch = Math.floor(batch / 2);
         stalls++;
         if (stalls > 6) break;
+        if (batch === 1 && !allowCuts) {
+          // True exhaustion: empty even one at a time, so connected pruning
+          // cannot reach the budget. Open the pressure valve rather than
+          // spend names - mirroring fitToBudget.
+          allowCuts = true;
+          stalls = 0;
+        }
         continue;
       }
       break;
@@ -278,47 +292,71 @@ function emitAndVerify(
  * Up to `limit` node ids to drop, worst-first, never orphaning a named
  * landmark and never taking the last connections.
  *
- * Each node takes its incident edges with it, so the surviving edge count is
- * tracked while the batch is built rather than checked afterwards. Sizing the
- * batch by node count alone is what previously let one batch delete the whole
- * network, leaving a map of names with no routes.
+ * Two rules order the suffering, both about what an agent loses first:
+ * anonymous junctions go before names, whatever their degrees say - the
+ * stage that owns this call has already thinned the network, and after it
+ * a name is the only thing on the map worth more than a bend. And the
+ * batch is validated as one unit rather than per candidate: recomputing
+ * cuts after every candidate is O(V+E) each and measured in tens of
+ * seconds on a dense extract, while a batch-level validation with
+ * rollback-and-bisection costs a handful of the same passes per batch and
+ * enforces the identical invariant - no removal, and no combination of
+ * removals in the batch, may split a surviving component.
  */
 function pickBatch(
   graph: BudgetResult['graph'],
   skip: Set<string>,
   limit: number,
+  allowCuts = false,
 ): string[] {
-  const scored = graph.nodes.map((n) => ({
-    id: n.id,
-    // Higher is more important; sort ascending so the batch takes the worst.
-    score: (n.name !== undefined ? 1000 : 0) + landmarkScore(n),
-  }));
-  scored.sort((a, b) => a.score - b.score);
-
   const incident = new Map<string, number>();
   for (const e of graph.edges) {
     incident.set(e.from, (incident.get(e.from) ?? 0) + 1);
     incident.set(e.to, (incident.get(e.to) ?? 0) + 1);
   }
 
-  const out: string[] = [];
   const keep = new Set(graph.nodes.map((n) => n.id));
-  let cuts = articulationPoints(graph.nodes, graph.edges, keep);
+  const cuts = articulationPoints(graph.nodes, graph.edges, keep);
   let edgesLeft = graph.edges.length;
-  for (const { id } of scored) {
-    if (out.length >= limit) break;
-    if (skip.has(id) || cuts.has(id)) continue;
+  // Harm tiers, lowest first: anonymous junctions before names, connected
+  // candidates before cut vertices. The sort makes the escalation explicit -
+  // fragmentation is cheaper than name death, name death is cheaper than
+  // stranding, and the validator owns stranding outright.
+  const scored = graph.nodes.map((n) => ({
+    id: n.id,
+    tier: (n.name !== undefined ? 2 : 0) + (cuts.has(n.id) ? 1 : 0),
+    score: (n.name !== undefined ? 1000 : 0) + landmarkScore(n),
+  }));
+  scored.sort((a, b) => a.tier - b.tier || a.score - b.score);
+
+  const candidates: string[] = [];
+  for (const { id, tier } of scored) {
+    if (candidates.length >= limit) break;
+    // Sorted by tier, so with fragmentation withheld the first cut vertex ends
+    // the connected supply.
+    if (!allowCuts && tier >= 1) break;
+    if (skip.has(id)) continue;
     // Keep at least two edges so the map stays navigable. Vacant on edgeless
     // graphs: with nothing to keep connected, unnamed nodes thin freely and
     // named ones are filtered by the caller, never here.
     const cost = incident.get(id) ?? 0;
     if (edgesLeft >= 2 && edgesLeft - cost < 2) continue;
-    out.push(id);
+    candidates.push(id);
     keep.delete(id);
-    cuts = articulationPoints(graph.nodes, graph.edges, keep);
     edgesLeft -= cost;
   }
-  return out;
+
+  // Validate the batch on scratch copies of the graph. Every named node is a
+  // landmark here, and the name floor does not apply - this stage is the last
+  // resort, so a landmark whose whole access dies with the batch may go with
+  // it rather than strand. No batch among the candidates may strand a name
+  // either way.
+  const namedIds = new Set(graph.nodes.filter((n) => n.name !== undefined).map((n) => n.id));
+  const scratchNodes = [...graph.nodes];
+  const scratchEdges = [...graph.edges];
+  const scratchKeep = new Set(graph.nodes.map((n) => n.id));
+  const applied = applyRemovalsValidated(candidates, scratchNodes, scratchEdges, scratchKeep, namedIds, namedIds, !allowCuts);
+  return candidates.filter((id) => applied.has(id));
 }
 
 /** Increment an aggregated omission count, keeping one entry per layer. */

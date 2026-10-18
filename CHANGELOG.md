@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — landmark recall and pruning cost (issue #3)
+
+Fixes the budgeter regression the benchmark surfaced in 0.4.11; report at
+<https://github.com/Unselfisheologism/supercarto/issues/3>. At low budgets
+the connected-first pruning exhausted its anonymous street supply and fell
+through to named landmarks — sf-cbd at budget 1024 named 3 places where
+0.4.9 named 10 — and dense extracts paid for per-removal articulation
+recomputes with tens of seconds of compile time.
+
+- **Names are the last resort, not the pressure valve** (`budget.ts` /
+  `budget.py`): the selection walk takes anonymous candidates first and a
+  named node only above its floor; cut vertices join the candidate pool
+  only after connected pruning is proven unable to reach the budget plus
+  overhead. The batch validator (`applyRemovalsValidated`) never strands a
+  landmark: a batch that would leave a name with no road either couples the
+  landmark to its last access (one removal: name and dead end go together),
+  or withdraws the culprit so the access survives.
+- **Connectivity stays where it is affordable**: no pre-batch component is
+  ever split while the fragmentation valve is shut. The valve is validated
+  per batch — one component-count pass, plus a bisected rollback when a
+  batch refuses — replacing the per-removal Tarjan. Synthetic-dense at
+  budget 8192 stays a single component; synthetic-dense at 512-4096 and
+  sf-cbd at 1024 fragment only to save names. sf-cbd, budget 1024: 10
+  named places, 986 tokens.
+- **Compiles faster for it**: sf-cbd 5.3s → 3.6s; synthetic-pacific (4,570
+  features) 43.5s → 13.6s.
+- **Tests**: `test/connectivity.test.ts` (+ `python/tests/test_connectivity.py`)
+  re-express the tiered promise — no stranding, no cross-merging, mirrored
+  edges — plus a canary that full connectivity holds exactly where it is
+  affordable. Parity gate byte-identical on all fixtures, including the
+  bench set (sf-cbd 512/1024/4096, synthetic-pacific 512/1024/4096).
+
 ## Unreleased — milestone 4: the agent moves (session views)
 
 The planning doc's differentiator #5 — a moving agent that keeps a persistent
