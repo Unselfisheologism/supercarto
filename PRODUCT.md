@@ -34,7 +34,7 @@ runs the same question past the same model three ways:
 | | supercarto | raw GeoJSON | no map |
 |---|---|---|---|
 | omission / nearest / connectivity | 9/9 | ~4/9 | 0/9 |
-| full certificate (scoreC) | 36/44 | 14/41 | 0/44 |
+| full certificate (scoreC) | 38/47 | 15/44 | 0/47 |
 
 - [Live certificate](https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/certificate.md) — every number re-derivable from committed archives, no model calls.
 - [Live leaderboard](https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/leaderboard.md) — per model, per arm.

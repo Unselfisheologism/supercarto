@@ -222,7 +222,7 @@ The score now ships with its own reproduction recipe (`scoreC certificate`,
 re-derived from raw answer archives without model calls), a per-model
 leaderboard, and adapter arms: a rival tool registers itself with a single
 `{ name, prepare }` module and gets the same tasks, models and pass rules.
-The current certificate: supercarto 36/44 · geojson 14/41 · none 0/44
+The current certificate: supercarto 38/47 · geojson 15/44 · none 0/47
 across every archived run.
 
 - [Live certificate](https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/certificate.md)
