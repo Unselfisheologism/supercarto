@@ -47,6 +47,14 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresTraffic: false,
   },
   {
+    name: 'localize',
+    signature: 'localize(scr,lat,lon,radius,layers,budget)',
+    use: 'move within an open map session; returns only what changed',
+    requiresElevation: false,
+    requiresWeather: false,
+    requiresTraffic: false,
+  },
+  {
     name: 'route',
     signature: 'route(from,to,mode)',
     use: 'how to get from A to B',

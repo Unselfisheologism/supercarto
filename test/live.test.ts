@@ -309,6 +309,81 @@ describe('bboxAreaSqm', () => {
   });
 });
 
+describe('moveView: the agent moves', () => {
+  // The airport story in miniature. The first step's maplets give the agent
+  // its session state; the second step moves a cafe and adds one, and the
+  // session must report exactly that, and nothing else.
+  const cafe = (id: number, lon: number, name: string) => ({
+    type: 'Feature' as const,
+    id,
+    properties: { amenity: 'cafe', name },
+    geometry: { type: 'Point' as const, coordinates: [lon, 37.78] },
+  });
+  const step1 = cafe(20, -122.4155, 'Terminal East'),
+    step1b = cafe(21, -122.4045, 'Terminal West');
+  const step2 = [
+    cafe(20, -122.4150, 'Terminal East'), // moved ~90m east
+    cafe(21, -122.4045, 'Terminal West'), // unchanged: same cell
+    cafe(22, -122.4100, 'Mezzanine Bar'), // newcomer
+  ];
+
+  class MovingSource implements MapSource {
+    readonly name = 'moving';
+    readonly description = 'steps the features on each fetch';
+    private i = 0;
+    constructor(private readonly steps: GeoJsonFeature[][]) {}
+    async available(): Promise<boolean> {
+      return true;
+    }
+    async fetch(_req: SourceRequest): Promise<SourceResult> {
+      const features = this.steps[Math.min(this.i, this.steps.length - 1)];
+      this.i++;
+      return { features: [...features], source: this.name, truncated: false, elapsedMs: 1, warnings: [] };
+    }
+  }
+
+  it('reports a walk as +/~/- and replaces the agent state', async () => {
+    const carto = new SuperCarto({
+      sources: [new MovingSource([[step1, step1b], step2])],
+      weather: false,
+      heat: false,
+    });
+    const first = await carto.maplet({
+      lat: 37.78, lon: -122.41, radiusM: 400, layers: ['poi'], budget: 4096,
+    });
+    expect(first.scr.startsWith('SCR 1')).toBe(true);
+
+    const move = await carto.moveView({
+      scr: first.scr, lat: 37.78, lon: -122.41, radiusM: 400, layers: ['poi'], budget: 4096,
+    });
+    expect(move.counts).toEqual({ added: 1, removed: 0, updated: 1 });
+    expect(move.report).toMatch(/~ 20 Terminal East \(poi\) \(geometry\)/);
+    expect(move.report).toMatch(/\+ 22 Mezzanine Bar \(poi\)/);
+    expect(move.report).not.toMatch(/- 21/);
+    expect(move.scr.startsWith('SCR 1')).toBe(true);
+
+    // A move reprinting the same step: nothing changed at all.
+    const again = await carto.moveView({
+      scr: move.scr, lat: 37.78, lon: -122.41, radiusM: 400, layers: ['poi'], budget: 4096,
+    });
+    expect(again.report).toBe('');
+  });
+
+  it('refuses a move outside the session envelope instead of lying', async () => {
+    const carto = new SuperCarto({
+      sources: [new MovingSource([[step1, step1b]])],
+      weather: false,
+      heat: false,
+    });
+    const first = await carto.maplet({
+      lat: 37.78, lon: -122.41, radiusM: 400, layers: ['poi'], budget: 4096,
+    });
+    await expect(
+      carto.moveView({ scr: first.scr, lat: 37.9, lon: -122.41, radiusM: 5000 }),
+    ).rejects.toThrow(/leaves the session envelope/);
+  });
+});
+
 describe('OverpassSource', () => {
   const OVERPASS_RESPONSE = {
     elements: [

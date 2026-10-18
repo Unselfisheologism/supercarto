@@ -693,3 +693,81 @@ def test_linestring_clipping_keeps_the_in_range_stretch():
     res = do([{"type": "way", "id": 10, "tags": {"highway": "residential"}, "geometry": line_far}])
     line = [list(c) for c in res["features"][0]["geometry"]["coordinates"]]
     assert line == [[2.0, 1.0], [2.5, 1.0]]
+
+
+# --------------------------------------------------------------------------
+# move_view: the agent moves (port of the TS `moveView: the agent moves`
+# describe block).
+# --------------------------------------------------------------------------
+
+
+def _cafe(fid, lon, name):
+    return {
+        "type": "Feature",
+        "id": fid,
+        "properties": {"amenity": "cafe", "name": name},
+        "geometry": {"type": "Point", "coordinates": [lon, 37.78]},
+    }
+
+
+class MovingSource:
+    """A source whose features change step by step: the walk."""
+
+    def __init__(self, steps):
+        self.steps = steps
+        self.i = 0
+
+    def available(self):
+        return True
+
+    def fetch(self, request):
+        features = list(self.steps[min(self.i, len(self.steps) - 1)])
+        self.i += 1
+        return {
+            "features": features,
+            "source": "moving",
+            "elapsedMs": 1,
+            "warnings": [],
+            "truncated": False,
+        }
+
+
+def _stub_carto(steps):
+    from supercarto.live import SuperCarto
+
+    return SuperCarto(sources=[MovingSource(steps)], weather=False, heat=False)
+
+
+def test_move_view_reports_a_walk_as_deltas_and_replaces_state():
+    carto = _stub_carto([
+        [_cafe(20, -122.4155, "Terminal East"), _cafe(21, -122.4045, "Terminal West")],
+        [
+            _cafe(20, -122.4150, "Terminal East"),  # moved ~90m east
+            _cafe(21, -122.4045, "Terminal West"),  # unchanged: same cell
+            _cafe(22, -122.4100, "Mezzanine Bar"),  # newcomer
+        ],
+    ])
+    first = carto.maplet(lat=37.78, lon=-122.41, radius_m=400, layers=["poi"], budget=4096)
+    assert first["scr"].startswith("SCR 1")
+
+    move = carto.move_view(first["scr"], lat=37.78, lon=-122.41, radius_m=400,
+                           layers=["poi"], budget=4096)
+    assert move["counts"] == {"added": 1, "removed": 0, "updated": 1}
+    assert "~ 20 Terminal East (poi) (geometry)" in move["report"]
+    assert "+ 22 Mezzanine Bar (poi)" in move["report"]
+    assert "- 21" not in move["report"]
+    assert move["scr"].startswith("SCR 1")
+
+    # A move reprinting the same step: nothing changed at all.
+    again = carto.move_view(move["scr"], lat=37.78, lon=-122.41, radius_m=400,
+                            layers=["poi"], budget=4096)
+    assert again["report"] == ""
+
+
+def test_move_view_refuses_to_leave_the_session_envelope():
+    carto = _stub_carto([
+        [_cafe(20, -122.4155, "Terminal East"), _cafe(21, -122.4045, "Terminal West")],
+    ])
+    first = carto.maplet(lat=37.78, lon=-122.41, radius_m=400, layers=["poi"], budget=4096)
+    with pytest.raises(ValueError, match="leaves the session envelope"):
+        carto.move_view(first["scr"], lat=37.9, lon=-122.41, radius_m=5000)

@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — milestone 4: the agent moves (session views)
+
+The planning doc's differentiator #5 — a moving agent that keeps a persistent
+spatial memory without re-paying tokens for what it already knows — is now a
+product on both sides:
+
+- **Diff engine ported** (`python/src/supercarto/diff.py`): the `+/−/~`
+  engine was TypeScript-only before. The port compares by wire feature id
+  (stable because ingest prefers the source's own id), resolves layer/class/
+  attributes by name and content, and compares geometry exactly on grid
+  integers. Gated by a new `diff` step in `scripts/parity/check.sh` —
+  canonical change lists and rendered diff text must be byte-identical.
+- **Session views** (`src/session/session.ts` /
+  `python/src/supercarto/session.py`): `moveMaplet(scr, features, opts)` takes
+  the agent's current map (an SCR string), re-ingests the new view's features
+  under the *session's* envelope so quantization never drifts, and returns
+  only the delta plus the replaced compact state. The LLM context pays for
+  the diff; the harness keeps the SCR in its own RAM.
+- **The `localize` tool** (`src/server/mcp.ts`, `toolcatalog.ts` /
+  `toolcatalog.py`): MCP surface for the same engine, with the catalogue
+  invariant updated on both sides. `get_maplet` gained `returnScr` so a
+  harness can seed a session; `localize` returns the diff as its first
+  content block and the updated state as the second — the caller's memory
+  slot, not another read for the model.
+- **Live wiring** (`src/live.ts`): `SuperCarto.moveView` fetches the new
+  view and refuses moves that leave the session envelope with an instruction
+  to open a new session, rather than serving a diff that a foreign grid would
+  make a lie.
+- Python stdio client gained `localize`, and the package re-exports the
+  diff engine (`diff_documents`, `render_diff`, `FeatureChange`) and session
+  core (`move_maplet`, `session_doc`).
+
 ## Unreleased — milestone 3: clipped polygons survive
 
 `clipGeometry` used to match vertices by object reference, while the vertex

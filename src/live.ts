@@ -1,10 +1,12 @@
 import { toMaplet, type MapletResult } from './pipeline.js';
+import { moveMaplet, sessionDoc, type SessionMoveResult } from './session/session.js';
 import {
   bboxAround,
   normalizeBbox,
   type BboxQuery,
   type MapSource,
   type SourceRequest,
+  type SourceResult,
 } from './source/types.js';
 import { OverpassSource, type OverpassOptions } from './source/overpass.js';
 import {
@@ -124,6 +126,27 @@ export interface LiveResult extends MapletResult {
   sourceTruncated: boolean;
 }
 
+export interface MoveViewRequest {
+  /** The agent's current map: the SCR a previous maplet or move returned. */
+  scr: string;
+  lat: number;
+  lon: number;
+  /** Radius in metres. Default 300. */
+  radiusM?: number;
+  layers?: string[];
+  budget?: number;
+  signal?: AbortSignal;
+  compile?: CompileOptions;
+}
+
+export interface MoveViewLiveResult extends SessionMoveResult {
+  /** The upstream source that served this move. */
+  fetchedFrom: string;
+  fetchMs: number;
+  warnings: string[];
+  sourceTruncated: boolean;
+}
+
 export class SuperCarto {
   private readonly sources: MapSource[];
   private readonly router: RoutingSource;
@@ -230,6 +253,62 @@ export class SuperCarto {
     }
         return {
       ...result,
+      fetchedFrom: fetched.source,
+      fetchMs: fetched.elapsedMs,
+      warnings: fetched.warnings,
+      sourceTruncated: fetched.truncated,
+    };
+  }
+
+  /**
+   * One move of a session: the agent's stored SCR in, the +/-/~ delta out.
+   *
+   * This is the `localize` tool's engine. It fetches the new view's features,
+   * re-ingests them under the *session's* envelope rather than the request
+   * box's own, diffs against the agent's map, and returns the changed places
+   * plus the replaced state. The agent keeps its map in local RAM; the LLM
+   * context pays only for the diff.
+   *
+   * Moves outside the session envelope are refused rather than served with a
+   * lying diff: a foreign grid would mark every untouched place dirty.
+   */
+  async moveView(req: MoveViewRequest): Promise<MoveViewLiveResult> {
+    const prev = sessionDoc(req.scr);
+    const env = prev.envelope;
+    if (env.type !== 'bbox') {
+      throw new Error(
+        'a session move needs a bbox session envelope; open a session with get_maplet first',
+      );
+    }
+    const radiusM = req.radiusM ?? 300;
+    const bbox = normalizeBbox(bboxAround(req.lat, req.lon, radiusM));
+    if (
+      env.west > bbox.west ||
+      env.south > bbox.south ||
+      env.east < bbox.east ||
+      env.north < bbox.north
+    ) {
+      throw new Error(
+        `the move leaves the session envelope ` +
+        `(BBOX ${env.west} ${env.south} ${env.east} ${env.north}); ` +
+        `call get_maplet again to open a new session`,
+      );
+    }
+
+    const fetched = await this.fetchFeatures(bbox, req.layers ?? [], req.signal);
+    const move = moveMaplet(
+      req.scr,
+      { type: 'FeatureCollection', features: fetched.features },
+      {
+        layers: req.layers ?? null,
+        budget: req.budget ?? this.defaultBudget,
+        radiusLabel: formatRadius(radiusM),
+        capabilities: this.capabilities,
+        ...(req.compile ? { compile: req.compile } : {}),
+      },
+    );
+    return {
+      ...move,
       fetchedFrom: fetched.source,
       fetchMs: fetched.elapsedMs,
       warnings: fetched.warnings,
@@ -356,25 +435,40 @@ export class SuperCarto {
       return { doc: hit.doc, source: 'cache', elapsedMs: 0, warnings: [], truncated: false };
     }
 
+    const res = await this.fetchFeatures(bbox, layers, signal);
+    const doc = fromGeoJson(
+      { type: 'FeatureCollection', features: res.features },
+      { envelope: { type: 'bbox', ...bbox }, source: res.source },
+    );
+    this.remember(key, doc);
+    return {
+      doc,
+      source: res.source,
+      elapsedMs: res.elapsedMs,
+      warnings: res.warnings,
+      truncated: res.truncated,
+    };
+  }
+
+  /**
+   * Fetch through the sources, trying each until one answers.
+   *
+   * Split out of `document` so session moves can ingest the same features
+   * under the *session's* envelope rather than the request box's own - the
+   * one-envelope rule that makes the diff compare geometry exactly.
+   */
+  private async fetchFeatures(
+    bbox: BboxQuery,
+    layers: string[],
+    signal?: AbortSignal,
+  ): Promise<SourceResult> {
     const request: SourceRequest = { bbox, layers, maxFeatures: 50_000, signal };
 
     let lastError: unknown;
     for (const source of this.sources) {
       if (!(await source.available())) continue;
       try {
-        const res = await source.fetch(request);
-        const doc = fromGeoJson(
-          { type: 'FeatureCollection', features: res.features },
-          { envelope: { type: 'bbox', ...bbox }, source: res.source },
-        );
-        this.remember(key, doc);
-        return {
-          doc,
-          source: res.source,
-          elapsedMs: res.elapsedMs,
-          warnings: res.warnings,
-          truncated: res.truncated,
-        };
+        return await source.fetch(request);
       } catch (err) {
         lastError = err;
       }

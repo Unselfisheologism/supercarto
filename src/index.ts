@@ -32,6 +32,8 @@ export {
 export * from './wire/types.js';
 export { diffDocuments, renderDiff } from './diff/diff.js';
 export type { ChangeOp, FeatureChange } from './diff/diff.js';
+export { moveMaplet, sessionDoc } from './session/session.js';
+export type { SessionCounts, SessionMoveOptions, SessionMoveResult } from './session/session.js';
 
 // --- Ingestion --------------------------------------------------------------
 export { fromGeoJson, KEY_IDS as INGEST_KEY_IDS } from './ingest/geojson.js';

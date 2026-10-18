@@ -23,6 +23,7 @@ from typing import Any
 
 __all__ = [
     "ConnectionError",
+    "LocalizeResult",
     "MapletResult",
     "RouteResult",
     "SuperCarto",
@@ -67,6 +68,20 @@ class MapletResult:
 
     warnings: list[str] = field(default_factory=list)
     """Problems the source reported. A non-empty list means the map is partial."""
+
+
+@dataclass
+class LocalizeResult:
+    """A one-move delta for a moving agent.
+
+    ``report`` is the ``+``/``-``/``~`` text the model reads; ``scr`` is the
+    updated session state. The caller keeps ``scr`` in its own RAM and passes
+    it back on the next :meth:`localize` call, so the chat context never
+    re-pays for the places the agent already knows.
+    """
+
+    report: str
+    scr: str
 
 
 @dataclass
@@ -312,6 +327,40 @@ class SuperCarto:
             args["query"] = query
         text = await self._call("search_places", args)
         return [line[2:].strip() for line in text.splitlines() if line.startswith("- ")]
+
+    async def localize(
+        self,
+        scr: str,
+        lat: float,
+        lon: float,
+        radius_m: int = 300,
+        budget: int = 1024,
+        layers: list[str] | None = None,
+    ) -> LocalizeResult:
+        """One move of a session: stored SCR in, only the delta out.
+
+        ``report`` carries the +/-/~ change text; ``scr`` is the updated
+        session state. Keep ``scr`` in the caller's own memory and pass it
+        back on the next move - the chat context pays only for the diff.
+        """
+        args: dict[str, Any] = {"scr": scr, "lat": lat, "lon": lon, "radiusM": radius_m, "budget": budget}
+        if layers:
+            args["layers"] = layers
+
+        result = await self._request(_TOOLS_CALL, {"name": "localize", "arguments": args})
+        if result.get("isError"):
+            raise ToolError(_content_text(result) or "localize failed")
+
+        blocks = [b.get("text", "") for b in result.get("content") or [] if isinstance(b, dict)]
+        if not blocks:
+            raise ToolError("localize returned no content")
+        report = blocks[0].strip()
+        state = ""
+        if len(blocks) > 1:
+            lines = blocks[1].splitlines()
+            # The state block leads with a marker line the reader should skip.
+            state = "\n".join(lines[1:]).strip() if lines else ""
+        return LocalizeResult(report=report, scr=state)
 
     async def weather(self, lat: float, lon: float, hours: int = 12) -> WeatherResult:
         """Current conditions and forecast. Needs no API key.

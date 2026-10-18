@@ -77,6 +77,13 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
             description: `Token budget for the response. Default 1024, hard cap ${maxTokens}.`,
             default: 1024,
           },
+          returnScr: {
+            type: 'boolean',
+            description:
+              'Also return the wire SCR in a second content block. Keep it: it is ' +
+              "the session state a later localize() call moves within, and the " +
+              'agent stores it in its own RAM rather than the chat context.',
+          },
         },
         required: ['lat', 'lon'],
       },
@@ -99,7 +106,87 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
           header.push('# NOTE: source hit its feature cap; this area is denser than the cap allows.');
         }
         for (const w of result.warnings) header.push(`# WARNING: ${w}`);
-        return text([...header, '', yaml].join('\n'));
+        const out = text([...header, '', yaml].join('\n'));
+        if (args.returnScr === true) {
+          out.content.push({
+            type: 'text',
+            text: `--- session state (for the caller's memory, not for the reader)\n${result.scr}`,
+          });
+        }
+        return out;
+      },
+    },
+
+    {
+      name: 'localize',
+      description:
+        'Move within a map session you already hold. Pass the session SCR ' +
+        "(from get_maplet with returnScr, or from the last localize) and your " +
+        "new position; the answer is only the delta: + places that entered " +
+        "view, - places that left it, ~ places that moved or updated. Store " +
+        'the updated SCR from the second content block and discard the old one.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scr: {
+            type: 'string',
+            description: 'Session state: the SCR string from the previous get_maplet or localize.',
+          },
+          lat: { type: 'number', description: 'Latitude in WGS84 degrees.' },
+          lon: { type: 'number', description: 'Longitude in WGS84 degrees.' },
+          radiusM: {
+            type: 'number',
+            description: 'Radius in metres. Default 300.',
+            default: 300,
+          },
+          layers: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Semantic layers to include, e.g. ["road", "poi"]. Default all.',
+          },
+          budget: {
+            type: 'number',
+            description: `Token budget for the re-fit view. Default 1024, hard cap ${maxTokens}.`,
+            default: 1024,
+          },
+        },
+        required: ['scr', 'lat', 'lon'],
+      },
+      handler: async (args) => {
+        const scr = typeof args.scr === 'string' ? args.scr : '';
+        let move: Awaited<ReturnType<typeof carto.moveView>>;
+        try {
+          move = await carto.moveView({
+            scr,
+            lat: requireNumber(args, 'lat'),
+            lon: requireNumber(args, 'lon'),
+            radiusM: optionalNumber(args, 'radiusM', 300),
+            layers: stringArray(args.layers),
+            budget: clampBudget(args.budget, 1024, maxTokens),
+          });
+        } catch (err) {
+          // A refused move (outside the session envelope, no source) is an
+          // instruction the agent can act on, not a stack trace.
+          return error(err instanceof Error ? err.message : String(err));
+        }
+        const header = [
+          `# localize (${move.fetchedFrom}) ` +
+          `+${move.counts.added} -${move.counts.removed} ~${move.counts.updated}`,
+        ];
+        if (move.sourceTruncated) {
+          header.push('# NOTE: source hit its feature cap; this view is denser than the cap allows.');
+        }
+        for (const w of move.warnings) header.push(`# WARNING: ${w}`);
+        const report = [...header, ...(move.report ? ['', move.report] : [])].join('\n');
+        return {
+          content: [
+            { type: 'text', text: report },
+            {
+              type: 'text',
+              text: `--- session state (for the caller's memory, not for the reader)\n${move.scr}`,
+            },
+          ],
+        };
       },
     },
 

@@ -41,9 +41,11 @@ from .client import (
     WeatherResult,
     default_server_command,
 )
+from .diff import FeatureChange, diff_documents, render_diff
 from .pipeline import compile_file, to_maplet
+from .session import move_maplet, session_doc
 
-__version__ = "0.4.10"
+__version__ = "0.4.11"
 
 
 def compile_maplet(geojson: str, **kwargs: Any) -> dict[str, Any]:
@@ -53,6 +55,7 @@ def compile_maplet(geojson: str, **kwargs: Any) -> dict[str, Any]:
 
 __all__ = [
     "DaylightResult",
+    "FeatureChange",
     "MapletResult",
     "RouteResult",
     "SuperCarto",
@@ -65,5 +68,9 @@ __all__ = [
     "compile_file",
     "compile_maplet",
     "default_server_command",
+    "diff_documents",
+    "move_maplet",
+    "render_diff",
+    "session_doc",
     "to_maplet",
 ]

@@ -23,6 +23,7 @@ from .pipeline import to_maplet
 from .project import grid_to_lonlat
 from .routing import OsrmRouter, straight_line_route
 from .scale import grid_scale_for
+from .session import move_maplet, session_doc
 from .traffic import HereFlow, TomTomFlow, TrafficRouter
 from .types import Feature, ScrDocument, js_round
 from .weather import OpenMeteoWeather
@@ -185,6 +186,87 @@ class SuperCarto:
         }
 
     # ------------------------------------------------------------------
+    # Sessions: the agent moves
+    # ------------------------------------------------------------------
+
+    def move_view(
+        self,
+        scr: str,
+        lat: float,
+        lon: float,
+        radius_m: float | None = None,
+        layers: list[str] | None = None,
+        budget: int | None = None,
+        compile: dict | None = None,
+    ) -> dict:
+        """One move of a session: the agent's stored SCR in, the +/-/~ delta
+        out.
+
+        This is the ``localize`` tool's engine. It fetches the new view's
+        features, re-ingests them under the *session's* envelope rather than
+        the request box's own, diffs against the agent's map, and returns the
+        changed places plus the replaced state.
+
+        Moves outside the session envelope are refused rather than served
+        with a lying diff: a foreign grid would mark every untouched place
+        dirty.
+        """
+        from .overpass import bbox_around, normalize_bbox
+
+        prev = session_doc(scr)
+        env = prev.envelope
+        if env.type != "bbox":
+            raise ValueError(
+                "a session move needs a bbox session envelope; "
+                "open a session with get_maplet first"
+            )
+        radius_m = radius_m if radius_m is not None else 300
+        bbox = normalize_bbox(bbox_around(lat, lon, radius_m))
+        if (
+            env.west > bbox["west"]
+            or env.south > bbox["south"]
+            or env.east < bbox["east"]
+            or env.north < bbox["north"]
+        ):
+            raise ValueError(
+                f"the move leaves the session envelope (BBOX {env.west} {env.south} "
+                f"{env.east} {env.north}); call get_maplet again to open a new session"
+            )
+
+        # The compiler's time input is a datetime; a request hand-carries it
+        # as an ISO string (as the JSON tool layer does).
+        compile_opts = compile
+        if compile_opts and isinstance(compile_opts.get("now"), str):
+            from datetime import datetime, timezone
+
+            compile_opts = {
+                **compile_opts,
+                "now": datetime.fromisoformat(
+                    compile_opts["now"].replace("Z", "+00:00")
+                ).astimezone(timezone.utc),
+            }
+
+        fetched = self._fetch_features(bbox, layers or [])
+        move = move_maplet(
+            scr,
+            {"type": "FeatureCollection", "features": fetched["features"]},
+            {
+                "layers": layers,
+                "budget": budget if budget is not None else self.default_budget,
+                "radiusLabel": format_radius(radius_m),
+                "capabilities": self.capabilities,
+                **({"compile": compile_opts} if compile_opts is not None else {}),
+            },
+        )
+        move.update(
+            fetchedFrom=fetched["source"],
+            fetchMs=fetched["elapsedMs"],
+            warnings=fetched["warnings"],
+            sourceTruncated=fetched["truncated"],
+        )
+        return move
+
+    # ------------------------------------------------------------------
     # Routing
     # ------------------------------------------------------------------
 
@@ -304,6 +386,28 @@ class SuperCarto:
                 "truncated": False,
             }
 
+        res = self._fetch_features(bbox, layers)
+        doc = from_geojson(
+            {"type": "FeatureCollection", "features": res["features"]},
+            {"envelope": {"type": "bbox", **bbox}, "source": res["source"]},
+        )
+        self.remember(key, doc)
+        return {
+            "doc": doc,
+            "source": res["source"],
+            "elapsedMs": res["elapsedMs"],
+            "warnings": res["warnings"],
+            "truncated": res["truncated"],
+        }
+
+    def _fetch_features(self, bbox: dict, layers: list[str]) -> dict:
+        """Fetch through the sources, trying each until one answers.
+
+        Split out of ``document`` so session moves can ingest the same
+        features under the *session's* envelope rather than the request box's
+        own - the one-envelope rule that makes the diff compare geometry
+        exactly.
+        """
         request = {"bbox": bbox, "layers": layers, "maxFeatures": 50_000}
 
         last_error: BaseException | None = None
@@ -311,19 +415,7 @@ class SuperCarto:
             if not has_available(source):
                 continue
             try:
-                res = source.fetch(request)
-                doc = from_geojson(
-                    {"type": "FeatureCollection", "features": res["features"]},
-                    {"envelope": {"type": "bbox", **bbox}, "source": res["source"]},
-                )
-                self.remember(key, doc)
-                return {
-                    "doc": doc,
-                    "source": res["source"],
-                    "elapsedMs": res["elapsedMs"],
-                    "warnings": res["warnings"],
-                    "truncated": res["truncated"],
-                }
+                return source.fetch(request)
             except Exception as err:  # noqa: BLE001 - mirrors the TS catch-all
                 last_error = err
 

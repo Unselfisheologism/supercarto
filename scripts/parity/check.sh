@@ -74,4 +74,18 @@ else
        <(python3 -c "print(open('$work/pmtiles.py.json').read()[:400])") 2>/dev/null | head -6 | sed 's/^/    /'
   fail=1
 fi
+
+# State-diff gate: both sides ingest the same two views under one envelope,
+# diff them by wire feature id, and render the + / - / ~ report. Canonical
+# JSON reports must be byte-identical.
+df_ok=1
+node scripts/parity/diff-ts.mjs >"$work/diff.ts.json" 2>"$work/diff.ts.err" || df_ok=0
+python3 scripts/parity/diff-py.py >"$work/diff.py.json" 2>"$work/diff.py.err" || df_ok=0
+if [ $df_ok -eq 1 ] && cmp -s "$work/diff.ts.json" "$work/diff.py.json"; then
+  echo "PASS diff (+/-/-/~ engine: move, rename, tag, enter, leave)"
+else
+  echo "FAIL diff"
+  diff "$work/diff.ts.json" "$work/diff.py.json" 2>/dev/null | head -6 | sed 's/^/    /'
+  fail=1
+fi
 exit $fail
