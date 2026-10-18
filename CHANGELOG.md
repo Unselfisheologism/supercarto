@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — route demoted from navigation to feasibility
+
+The benchmark's honest finding — the public demo OSRM answers `Ok` with
+physically impossible distances on foot profiles, and nothing in the response
+looks wrong — pointed at a product defect, not just a fixture problem: the
+strongest-sounding tool was the least verified one.
+
+- **`route` defaults to a feasibility answer**: straight-line distance, the
+  initial compass direction, and an instruction that ends in "then verify the
+  approach on arrival". It claims exactly what it can compute and nothing
+  more. `FeasibilityRouter` (TS `src/source/routing.ts`, Python
+  `routing.py`) is the new default; an OSRM instance is now a strictly
+  explicit choice, for operators who host and verify their own engine.
+- Tool catalogue copy updated on both sides (byte-parity held: SCR encodes
+  the catalogue, so both languages changed the string identically), and the
+  MCP `route` description now states the exact contract.
+- Tests on both sides pin the demotion: an unconfigured `SuperCarto` answers
+  `straight-line`/`walk-approx` offline and the instruction ends in the
+  verify clause.
+
 ## Unreleased — landmark recall and pruning cost (issue #3)
 
 Fixes the budgeter regression the benchmark surfaced in 0.4.11; report at
@@ -167,7 +187,8 @@ varint parsing).
 ## Unreleased — Python-native live sources (milestone 2a)
 
 The pip package can now **fetch and compile any location on earth without
-Node**: Overpass (OSM data), Open-Meteo (weather) and OSRM (turn-by-turn
+Node**: Overpass (OSM data), Open-Meteo (weather) and the feasibility router
+(routing demoted to feasibility; OSRM remains an explicit opt-in)
 routing) are ported over `urllib`, keeping the package at zero runtime
 dependencies. All under the same byte-parity gate as milestone 1.
 
@@ -177,7 +198,8 @@ dependencies. All under the same byte-parity gate as milestone 1.
   retry with layer-dropping / box-shrinking / best-result retention,
   implausible-coordinate rejection), `weather.py` (Open-Meteo with null-safe
   cells, WMO code prose, NaN "unknown" degradation), `routing.py` (OSRM with
-  maneuver→sentence prose and the labelled `*-approx` fallback),
+  maneuver→sentence prose and the labelled `*-approx` fallback, which is now
+  the default route source after the feasibility demotion),
   `heat.py` (poi density + slope layers), `terrain.py` (Terrarium elevation
   tiles, raw decoding + bilinear sampling), and `live.py` (the `SuperCarto`
   orchestration: document cache with TTL/eviction, heat derivation,

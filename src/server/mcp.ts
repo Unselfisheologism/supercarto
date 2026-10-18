@@ -193,10 +193,11 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
     {
       name: 'route',
       description:
-        'Get turn-by-turn directions between two coordinates. Returns prose ' +
-        'instructions, which are far more reliable for an agent to follow than ' +
-        'raw geometry. Falls back to a clearly-labelled approximation when no ' +
-        'routing engine is reachable.',
+        'Feasibility between two coordinates: straight-line distance, the ' +
+        'compass direction to head, and nothing that pretends to be turn-by-' +
+        'turn navigation. Turn-by-turn comes only from a routing engine the ' +
+        'operator has verified; the default answer ends in "verify the ' +
+        'approach on arrival", which is the honest limit of what it computes.',
       inputSchema: {
         type: 'object',
         properties: {

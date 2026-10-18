@@ -57,7 +57,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
   {
     name: 'route',
     signature: 'route(from,to,mode)',
-    use: 'how to get from A to B',
+    use: 'straight-line distance, direction, and walking feasibility between two points; verify the approach on arrival',
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,

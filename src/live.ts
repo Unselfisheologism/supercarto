@@ -10,7 +10,7 @@ import {
 } from './source/types.js';
 import { OverpassSource, type OverpassOptions } from './source/overpass.js';
 import {
-  OsrmRouter,
+  FeasibilityRouter,
   straightLineRoute,
   type RouteRequest,
   type RouteResult,
@@ -163,7 +163,15 @@ export class SuperCarto {
 
   constructor(opts: SuperCartoOptions = {}) {
     this.sources = opts.sources ?? [new OverpassSource(opts.overpass)];
-    this.router = opts.router ?? new OsrmRouter();
+    // Routing defaults to feasibility, not navigation. A router that answers
+    // with confidence but cannot be verified is the worst thing on the
+    // palette: measured on the public demo OSRM, a short northward walk in
+    // sf-cbd came back physically impossible, and nothing in the response
+    // looks wrong. So the default route source claims only what it can
+    // compute - straight-line distance and direction - and ends in "verify
+    // the approach on arrival". Pass a router you have verified yourself to
+    // get turn-by-turn.
+    this.router = opts.router ?? new FeasibilityRouter();
     this.elevation = opts.elevation;
     // Weather defaults on: the source needs no key, so there is no reason to
     // make an operator opt in to something they would otherwise have to add
@@ -313,14 +321,14 @@ export class SuperCarto {
     };
   }
 
-  /** Route between two points, with turn-by-turn prose for the model. */
+  /** Route between two points: feasibility by default, navigation with a verified router. */
   async route(req: RouteRequest): Promise<RouteResult> {
     try {
       return await this.router.route(req);
     } catch {
       // A routing failure must not become an exception the agent has to handle:
-      // fall back to an explicitly-labelled approximation, which is honest about
-      // not knowing the turns rather than inventing them.
+      // fall back to the feasibility answer, which is honest about not knowing
+      // the turns rather than inventing them.
       return straightLineRoute(req.from, req.to, req.mode);
     }
   }

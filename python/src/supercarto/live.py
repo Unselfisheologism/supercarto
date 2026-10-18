@@ -21,7 +21,7 @@ from .ingest import from_geojson
 from .overpass import OverpassSource
 from .pipeline import to_maplet
 from .project import grid_to_lonlat
-from .routing import OsrmRouter, straight_line_route
+from .routing import FeasibilityRouter, straight_line_route
 from .scale import grid_scale_for
 from .session import move_maplet, session_doc, session_envelope_contains
 from .traffic import HereFlow, TomTomFlow, TrafficRouter
@@ -44,13 +44,14 @@ class SuperCarto:
     """The live service: coordinates in, token-budgeted topology out.
 
     Sync by design. Accepts injected sources for tests; the defaults are
-    Overpass for data, Open-Meteo for weather, OSRM for routing.
+    Overpass for data, Open-Meteo for weather, and the feasibility router
+    (see ``routing.py``, which OSRM becomes only when passed explicitly).
     """
 
     def __init__(
         self,
         sources: list | None = None,
-        router: OsrmRouter | None = None,
+        router: Any | None = None,
         elevation: Any | None = None,
         weather: Any | None = None,
         traffic: list | None = None,
@@ -62,7 +63,15 @@ class SuperCarto:
         defaultBudget: int = 1024,
     ):
         self.sources = sources or [OverpassSource(**(overpass or {}))]
-        self.router = router or OsrmRouter()
+        # Routing defaults to feasibility, not navigation. A router that
+        # answers with confidence but cannot be verified is the worst thing
+        # on the palette: measured on the public demo OSRM, a short northward
+        # walk in sf-cbd came back physically impossible, and nothing in the
+        # response looks wrong. The default route source claims only what it
+        # can compute - straight-line distance and direction - and ends in
+        # "verify the approach on arrival". Pass a router you have verified
+        # yourself to get turn-by-turn.
+        self.router = router or FeasibilityRouter()
         self.elevation = elevation
         # Weather defaults on: the source needs no key, so there is no reason
         # to make an operator opt in to something they would otherwise have to
@@ -268,13 +277,14 @@ class SuperCarto:
     # ------------------------------------------------------------------
 
     def route(self, req: dict) -> dict:
-        """Route between two points, with turn-by-turn prose for the model."""
+        """Route between two points: feasibility by default, navigation with a
+        verified router."""
         try:
             return self.router.route(req)
         except Exception:  # noqa: BLE001 - mirrors the TS catch-all
             # A routing failure must not become an exception the agent has to
-            # handle: fall back to an explicitly-labelled approximation, which
-            # is honest about not knowing the turns rather than inventing them.
+            # handle: fall back to the feasibility answer, which is honest
+            # about not knowing the turns rather than inventing them.
             return straight_line_route(req["from"], req["to"], req.get("mode") or "walk")
 
     def route_with_traffic(self, req: dict) -> dict:

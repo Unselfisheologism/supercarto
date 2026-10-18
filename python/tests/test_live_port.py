@@ -19,6 +19,7 @@ from supercarto import overpass as ov
 from supercarto import routing
 from supercarto import weather as wx
 from supercarto.heat import density_to_heat, slope_to_heat
+from supercarto.live import SuperCarto
 from supercarto.terrain import decode_raw_terrarium, sample_bilinear, tiles_for
 
 # ---------------------------------------------------------------------------
@@ -524,6 +525,25 @@ def test_straight_line_modes_scale_speeds():
     walk = routing.straight_line_route(a, b, "walk")["route"]
     drive = routing.straight_line_route(a, b, "drive")["route"]
     assert drive.time < walk.time
+
+
+def test_straight_line_ends_in_the_verify_instruction():
+    # The feasibility answer is complete when it tells the model what remains
+    # unverified. An instruction that stops at the distance claims more
+    # precision than two points and a bearing can give.
+    out = routing.straight_line_route({"lat": 10.0, "lon": 10.0}, {"lat": 10.01, "lon": 10.0})
+    assert out["route"].steps[0].instruction.endswith("then verify the approach on arrival")
+
+
+def test_route_on_unconfigured_client_is_feasibility():
+    # Demotion of route from navigation to feasibility: the default claims
+    # only what it computes, so no OSRM call happens unless an operator opts
+    # in with a verified engine.
+    carto = SuperCarto(sources=[], weather=False)
+    out = carto.route({"from": {"lat": 10.0, "lon": 10.0}, "to": {"lat": 10.01, "lon": 10.0}})
+    assert out["source"] == "straight-line"
+    assert out["route"].mode == "walk-approx"
+    assert out["route"].steps[0].instruction.endswith("then verify the approach on arrival")
 
 
 # ---------------------------------------------------------------------------

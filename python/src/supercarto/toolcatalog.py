@@ -31,7 +31,7 @@ class ToolDescriptor:
 TOOL_CATALOG: list[ToolDescriptor] = [
     ToolDescriptor("get_maplet", "get_maplet(lat,lon,radius,layers,budget)", "what is near this coordinate", False, False, False),
     ToolDescriptor("localize", "localize(scr,lat,lon,radius,layers,budget)", "move within an open map session; returns only what changed", False, False, False),
-    ToolDescriptor("route", "route(from,to,mode)", "how to get from A to B", False, False, False),
+    ToolDescriptor("route", "route(from,to,mode)", "straight-line distance, direction, and walking feasibility between two points; verify the approach on arrival", False, False, False),
     ToolDescriptor("search_places", "search_places(lat,lon,radius,query,limit)", "find places by name or type", False, False, False),
     ToolDescriptor("expand_feature", "expand_feature(id)", "exact geometry for a feature in this maplet", False, False, False),
     ToolDescriptor("get_terrain", "get_terrain(lat,lon,radiusM,samples)", "ground elevation and slope around a coordinate", True, False, False),

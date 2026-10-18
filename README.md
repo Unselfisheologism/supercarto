@@ -213,7 +213,10 @@ a rival map tool can run the same test and try to beat the score.
 
 Current headline there: 9/9 for the compact graph against ~4/9 raw and 0/9
 with no map, on two AI models. Route questions are unmeasurable (the public
-test router gives impossible answers) — stated, not hidden.
+test router gives impossible answers) — so `route` is demoted to a
+**feasibility** answer: straight-line distance, compass direction, then
+"verify the approach on arrival". Turn-by-turn requires a router you host and
+have verified; OSRM is opt-in, not default. Stated, not hidden.
 
 The score now ships with its own reproduction recipe (`scoreC certificate`,
 re-derived from raw answer archives without model calls), a per-model
@@ -392,7 +395,9 @@ Visvalingam-Whyatt simplification, GeoJSON ingestion with OSM classification,
 topology compilation with junction welding and landmark attachment, token
 budgeting with connectivity guarantees, YAML emission, **indoor floor graphs
 with vertical circulation**, **place-density heatmaps**, live Overpass, **PMTiles
-with a built-in MVT decoder**, OSRM turn-by-turn routing, **keyless weather with
+with a built-in MVT decoder**, **routing demoted to feasibility** (straight-line
+distance and direction by default; OSRM turn-by-turn is opt-in for an engine you
+have verified — the public demo router returns impossible distances), **keyless weather with
 a degraded path that refuses to invent readings**, **traffic with an honest
 free-flow fallback**, terrain elevation and slope, MCP over stdio, HTTP API, CLI,
 a Python client, and a **task-level benchmark with OSRM ground truth**.

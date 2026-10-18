@@ -1,8 +1,20 @@
-"""Turn-by-turn routing — port of ``src/source/routing.ts``.
+"""Routing — demoted from navigation to feasibility. Port of
+``src/source/routing.ts``.
 
 A language model gains nothing from four hundred route coordinates. It gains
-everything from "turn left on 5th Street". So a route is produced as prose
-steps, with the full geometry left behind for code.
+everything from "head north about a kilometre, then verify on arrival". So
+what this module ships by default is a *feasibility answer*: straight-line
+distance, compass direction, and an explicit instruction to verify the last
+stretch on arrival. It does not ship turn-by-turn directions unless the
+operator configures a routing engine they have verified themselves, because
+the strongest-sounding tool must also be the most verified one — measured on
+the public demo OSRM, a northward walk in sf-cbd returned an impossible 35 m
+for a 50 m displacement (see supercarto-bench, "route unmeasurable").
+Feasibility is checkable; unverifiable turn-by-turn is a lie told with
+confidence.
+
+The shape of a route is unchanged: prose steps for the model, full geometry
+left behind for code.
 """
 
 from __future__ import annotations
@@ -24,11 +36,17 @@ DEFAULT_BEARINGS = [
 
 
 class OsrmRouter:
-    """OSRM, the reference routing engine.
+    """OSRM, the reference routing engine — opt-in only now.
 
     Its `/route/v1` response already contains what a model needs: per-leg
     distance, duration, and a maneuver bearing with a type. That maps directly
     onto SCR's `ROUTE` and `STEP` records without any geometry work.
+
+    It is no longer the default. The shared demo server answers `Ok` with
+    physically impossible distances on foot profiles (measured: 35 m of
+    walking for a 50 m straight-line displacement in sf-cbd). Point this at
+    an OSRM you host and have verified, or leave it unset and the feasibility
+    answer (see ``FeasibilityRouter``) is what the route tool reports.
     """
 
     name = "osrm"
@@ -149,16 +167,31 @@ class OsrmRouter:
         return self.bearings[((idx % 8) + 8) % 8]
 
 
-def straight_line_route(
-    from_: dict, to: dict, mode: str = "walk"
-) -> dict:
-    """Build a lightweight straight-line route for when no routing engine is
-    configured.
+class FeasibilityRouter:
+    """The default route source: a feasibility answer, not navigation.
 
     It is explicitly not turn-by-turn, and the mode name says so, because an
     agent that believes it has real turn instructions when it has two points
     and a distance will confidently send someone the wrong way. The dist/time
-    figures are present; the instruction is honest about its own inadequacy.
+    figures are present; the instruction is honest about its own inadequacy
+    and ends in the one thing that makes a straight-line claim useful: verify
+    on arrival.
+    """
+
+    name = "feasibility"
+
+    def route(self, req: dict) -> dict:
+        return straight_line_route(
+            req["from"], req["to"], req.get("mode") or "walk"
+        )
+
+
+def straight_line_route(
+    from_: dict, to: dict, mode: str = "walk"
+) -> dict:
+    """Build a feasibility route: the straight-line distance, the initial
+    compass direction, and the instruction that ends this tool's contract -
+    verify the approach on arrival.
     """
     # Great-circle distance, then a flat-world conversion to metres.
     R = 6371008.8
@@ -198,8 +231,8 @@ def straight_line_route(
                 RouteStep(
                     n=1,
                     instruction=(
-                        f"head {dir_word} toward the destination "
-                        f"(approx {distance}m, no routing engine configured)"
+                        f"head {dir_word} toward the destination (approx {distance}m, "
+                        "no routing engine configured) then verify the approach on arrival"
                     ),
                     dist=distance,
                 )

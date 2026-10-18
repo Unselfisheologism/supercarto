@@ -1206,6 +1206,26 @@ describe('straightLineRoute', () => {
     const drive = straightLineRoute(a, b, 'drive').route.time!;
     expect(drive).toBeLessThan(walk);
   });
+
+  it('ends in the verify instruction, which is the tool contract', () => {
+    // The feasibility answer is complete when it tells the model what remains
+    // unverified. An instruction that stops at the distance claims more
+    // precision than two points and a bearing can give.
+    const r = straightLineRoute(a, b);
+    expect(r.route.steps[0]!.instruction.endsWith('then verify the approach on arrival')).toBe(true);
+  });
+
+  it('is what route answers on an unconfigured SuperCarto', () => {
+    // Demotion of route from navigation to feasibility: the default claims
+    // only what it computes, so no OSRM call happens unless an operator opts
+    // in with a verified engine.
+    const carto = new SuperCarto({ sources: [] });
+    return carto.route({ from: a, to: b, mode: 'walk' }).then((r) => {
+      expect(r.source).toBe('straight-line');
+      expect(r.route.mode).toBe('walk-approx');
+      expect(r.route.steps[0]!.instruction.endsWith('then verify the approach on arrival')).toBe(true);
+    });
+  });
 });
 
 describe('SuperCarto.route', () => {
