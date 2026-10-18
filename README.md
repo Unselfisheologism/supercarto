@@ -225,6 +225,11 @@ leaderboard, and adapter arms: a rival tool registers itself with a single
 The current certificate: supercarto 36/44 · geojson 14/41 · none 0/44
 across every archived run.
 
+- [Live certificate](https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/certificate.md)
+  — every number, re-derivable from committed archives with no model calls.
+- [Live leaderboard](https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/leaderboard.md)
+  — per model and per arm, including the free models you can run yourself.
+
 What this repo keeps is a quick token-cost check:
 
 ```bash
