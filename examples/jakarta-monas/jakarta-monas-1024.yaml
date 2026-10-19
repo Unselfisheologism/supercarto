@@ -1,0 +1,82 @@
+map:
+  center: "-6.1754, 106.8272"
+  radius: 300m
+  source: geojson
+  sun: down, elevation: -38.7deg, twilight: night, azimuth: 289deg, sunrise: "2026-10-18T22:42:00Z", sunset: "2026-10-19T10:58:00Z"
+  note: Simplified for reasoning; call expand_feature for exact geometry.
+nodes:
+  n1: {type: intersection}
+  n5: {type: intersection}
+  n6: {type: intersection}
+  n7: {type: intersection}
+  n8: {type: intersection}
+  n10: {type: intersection}
+  n15: {type: intersection}
+  n16: {type: intersection}
+  n28: {type: intersection}
+  n39: {type: intersection}
+  n40: {type: intersection}
+  n46: {type: intersection}
+  n70: {type: intersection}
+  n78: {type: intersection}
+  n82: {type: intersection}
+  n108: {type: poi, name: Loket, tags: [ticket]}
+  n112: {type: area, name: Monas Barat, tags: [park]}
+  n113: {type: area, name: Taman Monas, tags: [park]}
+  n123: {type: area, name: Monas Selatan, tags: [park]}
+  n124: {type: area, name: Monas Timur, tags: [park]}
+  n125: {type: area, name: Monas Utara, tags: [park]}
+  n137: {type: area, name: Taman Air Mancur Pesona Monas, tags: [fountain]}
+  n138: {type: area, name: Monumen Nasional, tags: ["yes"]}
+edges:
+  n5->n6: {dist: 70m, dir: southeast, path: sidewalk}
+  n6->n5: {dist: 70m, dir: northwest, path: sidewalk}
+  n6->n7: {dist: 86m, dir: southeast, path: sidewalk}
+  n7->n6: {dist: 86m, dir: northwest, path: sidewalk}
+  n39->n40: {dist: 75m, dir: southwest, path: sidewalk}
+  n40->n39: {dist: 75m, dir: northeast, path: sidewalk}
+  n78->n108: {dist: 113m, dir: west, path: access}
+  n108->n78: {dist: 113m, dir: east, path: access}
+  n8->n112: {dist: 125m, dir: southwest, path: access}
+  n112->n8: {dist: 125m, dir: northeast, path: access}
+  n7->n113: {dist: 107m, dir: east, path: access}
+  n113->n7: {dist: 107m, dir: west, path: access}
+  n40->n123: {dist: 148m, dir: southeast, path: access}
+  n123->n40: {dist: 148m, dir: northwest, path: access}
+  n46->n124: {dist: 153m, dir: northeast, path: access}
+  n124->n46: {dist: 153m, dir: southwest, path: access}
+  n6->n125: {dist: 157m, dir: northeast, path: access}
+  n125->n6: {dist: 157m, dir: southwest, path: access}
+  n8->n137: {dist: 206m, dir: southwest, path: access}
+  n137->n8: {dist: 206m, dir: northeast, path: access}
+  n39->n138: {dist: 199m, dir: northeast, path: access}
+  n138->n39: {dist: 199m, dir: southwest, path: access}
+  n5->n1: {dist: 231m, dir: northwest, path: sidewalk}
+  n1->n5: {dist: 231m, dir: southeast, path: sidewalk}
+  n8->n10: {dist: 159m, dir: northwest, path: sidewalk}
+  n10->n8: {dist: 159m, dir: southeast, path: sidewalk}
+  n15->n10: {dist: 229m, dir: southeast, path: sidewalk}
+  n10->n15: {dist: 229m, dir: northwest, path: sidewalk}
+  n10->n5: {dist: 36m, dir: northeast, path: sidewalk}
+  n5->n10: {dist: 36m, dir: southwest, path: sidewalk}
+  n82->n78: {dist: 159m, dir: southwest, path: sidewalk}
+  n78->n82: {dist: 159m, dir: northeast, path: sidewalk}
+  n82->n70: {dist: 39m, dir: southeast, path: road}
+  n70->n82: {dist: 39m, dir: northwest, path: road}
+  n16->n40: {dist: 119m, dir: northeast, path: sidewalk}
+  n40->n16: {dist: 119m, dir: southwest, path: sidewalk}
+  n28->n46: {dist: 182m, dir: northwest, path: sidewalk}
+  n46->n28: {dist: 182m, dir: southeast, path: sidewalk}
+omitted:
+  - {layer: waypoint, count: 81}
+  - {layer: building, count: 12}
+  - {layer: area, count: 19}
+  - {layer: poi, count: 3}
+  - {layer: road, count: 11}
+tools:
+  - get_maplet(lat,lon,radius,layers,budget)
+  - localize(scr,lat,lon,radius,layers,budget)
+  - route(from,to,mode)
+  - search_places(lat,lon,radius,query,limit)
+  - expand_feature(id)
+  - get_daylight(lat,lon,at)

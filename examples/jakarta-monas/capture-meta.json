@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-10-19T13:35:14.524Z",
+  "endpoint": "https://overpass-api.de/api/interpreter",
+  "center": { "lat": -6.1754, "lon": 106.8272, "label": "Monas, Central Jakarta" },
+  "radiusM": 300,
+  "bbox": { "west": 106.824489, "south": -6.178113, "east": 106.829911, "north": -6.172687 },
+  "attempts": 1,
+  "truncated": false,
+  "attribution": "© OpenStreetMap contributors, ODbL — https://www.openstreetmap.org/copyright",
+  "warnings": [
+    "discarded 1 feature(s) with coordinates outside the requested area; the upstream data was inconsistent with the query"
+  ]
+}

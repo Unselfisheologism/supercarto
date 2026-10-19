@@ -40,6 +40,7 @@
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --exclude test/mcp.e2e.test.ts --exclude test/live.test.ts",
+    "example:jakarta-monas": "tsx examples/jakarta-monas/compile-offline.ts && tsx examples/jakarta-monas/path-check.ts",
     "cli": "tsx src/cli/main.ts",
     "bench": "tsx src/cli/main.ts bench",
     "fixture": "tsx src/cli/gen-fixture.ts",

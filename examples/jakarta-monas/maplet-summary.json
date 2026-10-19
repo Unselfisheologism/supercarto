@@ -1,0 +1,564 @@
+{
+  "example": "jakarta-monas",
+  "purpose": "Reproducible compact Jakarta street graph: how much context a token-budgeted graph adds over a place list.",
+  "data": {
+    "source": "raw-overpass.json, captured from Overpass exactly once",
+    "captureTimestamp": "2026-10-19T13:35:14.524Z",
+    "center": {
+      "lat": -6.1754,
+      "lon": 106.8272,
+      "label": "Monas, Central Jakarta"
+    },
+    "radiusMeters": 300,
+    "bbox": {
+      "west": 106.824489,
+      "south": -6.178113,
+      "east": 106.829911,
+      "north": -6.172687
+    },
+    "attempts": 1,
+    "truncated": false,
+    "attribution": "© OpenStreetMap contributors, ODbL — https://www.openstreetmap.org/copyright",
+    "warnings": [
+      "discarded 1 feature(s) with coordinates outside the requested area; the upstream data was inconsistent with the query"
+    ],
+    "caveat": "Real Jakarta data, one capture. Not synthetic and not re-fetchable without a new capture."
+  },
+  "determinism": {
+    "offlineInputs": [
+      "jakarta-monas.geojson",
+      "capture-meta.json",
+      "raw-overpass.json"
+    ],
+    "timeInputsFixed": "now=2026-10-19T13:35:14.524Z, utcOffsetMinutes=420 (WIB)",
+    "command": "npm run example:jakarta-monas"
+  },
+  "tokenEstimates": "All token figures are engine estimates (characters/4), not tokenizer counts.",
+  "budgets": [
+    {
+      "id": 1024,
+      "file": "jakarta-monas-1024.yaml",
+      "report": {
+        "budget": 1024,
+        "bytes": 3629,
+        "chars": 3629,
+        "tokenEstimate": 908,
+        "nodes": 23,
+        "edges": 38,
+        "namedPlaces": [
+          {
+            "id": "n108",
+            "name": "Loket",
+            "kind": "poi",
+            "tags": [
+              "ticket"
+            ]
+          },
+          {
+            "id": "n112",
+            "name": "Monas Barat",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n113",
+            "name": "Taman Monas",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n123",
+            "name": "Monas Selatan",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n124",
+            "name": "Monas Timur",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n125",
+            "name": "Monas Utara",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n137",
+            "name": "Taman Air Mancur Pesona Monas",
+            "kind": "area",
+            "tags": [
+              "fountain"
+            ]
+          },
+          {
+            "id": "n138",
+            "name": "Monumen Nasional",
+            "kind": "area",
+            "tags": [
+              "yes"
+            ]
+          }
+        ],
+        "streetConnections": 2,
+        "blockedEdges": 0,
+        "disconnectedGroups": [
+          {
+            "id": 0,
+            "nodes": [
+              "n1",
+              "n5",
+              "n10",
+              "n15",
+              "n8",
+              "n137",
+              "n112",
+              "n6",
+              "n125",
+              "n7",
+              "n113"
+            ]
+          },
+          {
+            "id": 1,
+            "nodes": [
+              "n16",
+              "n40",
+              "n123",
+              "n39",
+              "n138"
+            ]
+          },
+          {
+            "id": 2,
+            "nodes": [
+              "n28",
+              "n46",
+              "n124"
+            ]
+          },
+          {
+            "id": 3,
+            "nodes": [
+              "n70",
+              "n82",
+              "n78",
+              "n108"
+            ]
+          }
+        ],
+        "omissions": [
+          {
+            "layer": "waypoint",
+            "count": 81,
+            "near": "unspecified"
+          },
+          {
+            "layer": "building",
+            "count": 12,
+            "near": "unspecified"
+          },
+          {
+            "layer": "area",
+            "count": 19,
+            "near": "unspecified"
+          },
+          {
+            "layer": "poi",
+            "count": 3,
+            "near": "unspecified"
+          },
+          {
+            "layer": "road",
+            "count": 11,
+            "near": "unspecified"
+          }
+        ],
+        "partial": true,
+        "drops": {
+          "nodes": 126,
+          "edges": 0
+        },
+        "warnings": [
+          "discarded 1 feature(s) with coordinates outside the requested area; the upstream data was inconsistent with the query",
+          "budget omissions recorded below"
+        ]
+      }
+    },
+    {
+      "id": 2048,
+      "file": "jakarta-monas-2048.yaml",
+      "report": {
+        "budget": 2048,
+        "bytes": 6560,
+        "chars": 6560,
+        "tokenEstimate": 1640,
+        "nodes": 70,
+        "edges": 62,
+        "namedPlaces": [
+          {
+            "id": "n108",
+            "name": "Loket",
+            "kind": "poi",
+            "tags": [
+              "ticket"
+            ]
+          },
+          {
+            "id": "n112",
+            "name": "Monas Barat",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n113",
+            "name": "Taman Monas",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n123",
+            "name": "Monas Selatan",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n124",
+            "name": "Monas Timur",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n125",
+            "name": "Monas Utara",
+            "kind": "area",
+            "tags": [
+              "park"
+            ]
+          },
+          {
+            "id": "n137",
+            "name": "Taman Air Mancur Pesona Monas",
+            "kind": "area",
+            "tags": [
+              "fountain"
+            ]
+          },
+          {
+            "id": "n138",
+            "name": "Monumen Nasional",
+            "kind": "area",
+            "tags": [
+              "yes"
+            ]
+          }
+        ],
+        "streetConnections": 8,
+        "blockedEdges": 0,
+        "disconnectedGroups": [
+          {
+            "id": 0,
+            "nodes": [
+              "n1",
+              "n5",
+              "n10",
+              "n15",
+              "n8",
+              "n137",
+              "n112",
+              "n6",
+              "n125",
+              "n7",
+              "n113"
+            ]
+          },
+          {
+            "id": 1,
+            "nodes": [
+              "n16",
+              "n61",
+              "n58",
+              "n27",
+              "n45",
+              "n40",
+              "n123",
+              "n39",
+              "n138"
+            ]
+          },
+          {
+            "id": 2,
+            "nodes": [
+              "n28",
+              "n57",
+              "n52",
+              "n38",
+              "n51",
+              "n46",
+              "n124"
+            ]
+          },
+          {
+            "id": 3,
+            "nodes": [
+              "n70",
+              "n105",
+              "n82",
+              "n104",
+              "n78",
+              "n108",
+              "n77"
+            ]
+          },
+          {
+            "id": 4,
+            "nodes": [
+              "n85",
+              "n88"
+            ]
+          },
+          {
+            "id": 5,
+            "nodes": [
+              "n109"
+            ]
+          },
+          {
+            "id": 6,
+            "nodes": [
+              "n110"
+            ]
+          },
+          {
+            "id": 7,
+            "nodes": [
+              "n111"
+            ]
+          },
+          {
+            "id": 8,
+            "nodes": [
+              "n114"
+            ]
+          },
+          {
+            "id": 9,
+            "nodes": [
+              "n115"
+            ]
+          },
+          {
+            "id": 10,
+            "nodes": [
+              "n116"
+            ]
+          },
+          {
+            "id": 11,
+            "nodes": [
+              "n117"
+            ]
+          },
+          {
+            "id": 12,
+            "nodes": [
+              "n118"
+            ]
+          },
+          {
+            "id": 13,
+            "nodes": [
+              "n119"
+            ]
+          },
+          {
+            "id": 14,
+            "nodes": [
+              "n120"
+            ]
+          },
+          {
+            "id": 15,
+            "nodes": [
+              "n121"
+            ]
+          },
+          {
+            "id": 16,
+            "nodes": [
+              "n122"
+            ]
+          },
+          {
+            "id": 17,
+            "nodes": [
+              "n126"
+            ]
+          },
+          {
+            "id": 18,
+            "nodes": [
+              "n127"
+            ]
+          },
+          {
+            "id": 19,
+            "nodes": [
+              "n128"
+            ]
+          },
+          {
+            "id": 20,
+            "nodes": [
+              "n129"
+            ]
+          },
+          {
+            "id": 21,
+            "nodes": [
+              "n130"
+            ]
+          },
+          {
+            "id": 22,
+            "nodes": [
+              "n131"
+            ]
+          },
+          {
+            "id": 23,
+            "nodes": [
+              "n132"
+            ]
+          },
+          {
+            "id": 24,
+            "nodes": [
+              "n133"
+            ]
+          },
+          {
+            "id": 25,
+            "nodes": [
+              "n134"
+            ]
+          },
+          {
+            "id": 26,
+            "nodes": [
+              "n135"
+            ]
+          },
+          {
+            "id": 27,
+            "nodes": [
+              "n136"
+            ]
+          },
+          {
+            "id": 28,
+            "nodes": [
+              "n139"
+            ]
+          },
+          {
+            "id": 29,
+            "nodes": [
+              "n140"
+            ]
+          },
+          {
+            "id": 30,
+            "nodes": [
+              "n141"
+            ]
+          },
+          {
+            "id": 31,
+            "nodes": [
+              "n142"
+            ]
+          },
+          {
+            "id": 32,
+            "nodes": [
+              "n143"
+            ]
+          },
+          {
+            "id": 33,
+            "nodes": [
+              "n144"
+            ]
+          },
+          {
+            "id": 34,
+            "nodes": [
+              "n145"
+            ]
+          },
+          {
+            "id": 35,
+            "nodes": [
+              "n146"
+            ]
+          },
+          {
+            "id": 36,
+            "nodes": [
+              "n147"
+            ]
+          },
+          {
+            "id": 37,
+            "nodes": [
+              "n148"
+            ]
+          },
+          {
+            "id": 38,
+            "nodes": [
+              "n149"
+            ]
+          }
+        ],
+        "omissions": [
+          {
+            "layer": "waypoint",
+            "count": 79,
+            "near": "unspecified"
+          }
+        ],
+        "partial": true,
+        "drops": {
+          "nodes": 79,
+          "edges": 0
+        },
+        "warnings": [
+          "discarded 1 feature(s) with coordinates outside the requested area; the upstream data was inconsistent with the query",
+          "budget omissions recorded below",
+          "budget omissions recorded below"
+        ]
+      }
+    }
+  ]
+}
