@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { toMaplet } from '../../src/pipeline.js';
 import type { SpatialGraph } from '../../src/compile/graph.js';
 import type { GeoJsonFeatureCollection } from '../../src/ingest/geojson.js';
+import { budgetWarnings } from './report-helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UTC_OFFSET_MINUTES = 7 * 60; // WIB, Jakarta: UTC+7, no DST.
@@ -62,9 +63,14 @@ interface BudgetReport {
   nodes: number;
   edges: number;
   namedPlaces: Array<{ id: string; name: string; kind: string; tags: string[] }>;
-  streetConnections: number;
+  edgeClasses: { road: number; sidewalk: number; access: number; other: number };
   blockedEdges: number;
-  disconnectedGroups: Array<{ id: number; nodes: string[] }>;
+  components: {
+    total: number;
+    withEdges: number;
+    singletons: number;
+    singletonKinds: Record<string, number>;
+  };
   omissions: Array<{ layer: string; count: number; near: string }>;
   partial: boolean;
   drops: { nodes: number; edges: number };
@@ -94,8 +100,6 @@ function components(g: SpatialGraph): Map<string, number> {
   return label;
 }
 
-const gisWarnings = [...meta.warnings];
-
 const budgets: Array<{ id: number; file: string; report: BudgetReport }> = [];
 
 for (const budget of BUDGETS) {
@@ -118,15 +122,40 @@ for (const budget of BUDGETS) {
     list.push(id);
     groups.set(comp, list);
   }
+  // Which groups carry at least one edge; everything else is a singleton.
+  const touching = new Set<string>();
+  for (const e of g.edges) {
+    touching.add(e.from);
+    touching.add(e.to);
+  }
+  const withEdges = [...groups.values()].filter((ns) => ns.some((id) => touching.has(id)));
+  const singletons = [...groups.values()].filter((ns) => !ns.some((id) => touching.has(id)));
+  const singletonKinds = new Map<string, number>();
+  for (const ns of singletons) {
+    for (const id of ns) {
+      const kind = g.nodes.find((n) => n.id === id)!.kind;
+      singletonKinds.set(kind, (singletonKinds.get(kind) ?? 0) + 1);
+    }
+  }
 
   /**
-   * Street connections are the emitted directed edges on a road-class path,
-   * counted mid-arrows: a two-way street contributes 2 edges in 1 connection.
+   * Edge classes are directed counts (unit: directed edges). A two-way street
+   * is recorded twice, once per direction.
    */
-  const streetEdges = g.edges.filter((e) => e.path === 'road' && !e.blocked);
+  const classOf = (e: { path?: string }) => e.path ?? 'none';
+  const edgeClasses = { road: 0, sidewalk: 0, access: 0, other: 0 };
+  for (const e of g.edges) {
+    const k = classOf(e);
+    if (k === 'road') edgeClasses.road++;
+    else if (k === 'sidewalk') edgeClasses.sidewalk++;
+    else if (k === 'access') edgeClasses.access++;
+    else edgeClasses.other++;
+  }
   const blocked = g.edges.filter((e) => e.blocked);
 
-  if (g.omitted.length > 0) gisWarnings.push('budget omissions recorded below');
+  // Fresh warnings per budget: the capture warnings, plus an omissions note
+  // only when this budget dropped something. Nothing leaks between budgets.
+  const warnings = budgetWarnings(meta.warnings, g.omitted);
 
   const file = `jakarta-monas-${budget}.yaml`;
   writeFileSync(join(HERE, file), result.yaml);
@@ -140,17 +169,22 @@ for (const budget of BUDGETS) {
     nodes: g.nodes.length,
     edges: g.edges.length,
     namedPlaces: named.map((n) => ({ id: n.id, name: n.name!, kind: n.kind, tags: n.tags ?? [] })),
-    streetConnections: streetEdges.length,
+    edgeClasses,
     blockedEdges: blocked.length,
-    disconnectedGroups: [...groups.entries()].map(([id, nodes]) => ({ id, nodes })),
+    components: {
+      total: groups.size,
+      withEdges: withEdges.length,
+      singletons: singletons.length,
+      singletonKinds: Object.fromEntries(singletonKinds),
+    },
     omissions: g.omitted.map((o) => ({ layer: o.layer, count: o.count, near: o.near })),
     partial: g.partial,
     drops: { nodes: result.metrics.droppedNodes, edges: result.metrics.droppedEdges },
-    warnings: gisWarnings.slice(),
+    warnings,
   };
 
   budgets.push({ id: budget, file, report });
-  console.log(`${file}: ${report.bytes}B ≈${report.tokenEstimate} tok (estimate; chars/4), ${named.length} named places, ${report.streetConnections} street connections, ${groups.size} disconnected group(s)`);
+  console.log(`${file}: ${report.bytes}B ≈${report.tokenEstimate} tok (estimate; chars/4), ${named.length} named places, edges ${edgeClasses.road} road / ${edgeClasses.sidewalk} sidewalk / ${edgeClasses.access} access (directed), components total ${groups.size} withEdges ${withEdges.length} singletons ${singletons.length}`);
 }
 
 if (!existsSync(join(HERE, 'raw-overpass.json'))) {
@@ -170,7 +204,7 @@ const summary = {
     attempts: meta.attempts,
     truncated: meta.truncated,
     attribution: meta.attribution,
-    warnings: gisWarnings.slice(0, meta.warnings.length),
+    warnings: meta.warnings,
     caveat: 'Real Jakarta data, one capture. Not synthetic and not re-fetchable without a new capture.',
   },
   determinism: {

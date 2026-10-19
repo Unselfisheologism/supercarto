@@ -150,7 +150,31 @@ const run = (): void => {
     );
 
     console.log(`\n=== budget ${budget} ===`);
-    console.log(`disconnected groups: ${groups.length}`);
+    // Components, with units: each count is a number of components; kinds are
+    // numbers of singleton nodes grouped by their node kind.
+    const touching = new Set<string>();
+    for (const e of g.edges) {
+      touching.add(e.from);
+      touching.add(e.to);
+    }
+    const groupNodes = new Map<number, string[]>();
+    for (const [id, comp] of labels) {
+      const list = groupNodes.get(comp) ?? [];
+      list.push(id);
+      groupNodes.set(comp, list);
+    }
+    const edgeGroups = [...groupNodes.values()].filter((ns) => ns.some((id) => touching.has(id)));
+    const singletons = [...groupNodes.values()].filter((ns) => !ns.some((id) => touching.has(id)));
+    const kinds = new Map<string, number>();
+    for (const ns of singletons) {
+      for (const id of ns) {
+        const kind = g.nodes.find((n) => n.id === id)!.kind;
+        kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+      }
+    }
+    const kindLine = [...kinds.entries()].map(([k, n]) => `${k} ${n}`).join(', ');
+    console.log(`components (unit: components): total ${groupNodes.size}, withEdges ${edgeGroups.length}, singletons ${singletons.length}`);
+    console.log(`singletons (unit: nodes): ${kindLine || 'none'}`);
     for (const [name, target] of PAIRS) {
       const a = g.nodes.find((n) => n.name === name);
       const b = g.nodes.find((n) => n.name === target);
@@ -171,47 +195,65 @@ const run = (): void => {
         const f = e.features.map((id) => `${id}(${rawById.get(id)?.tags?.name ?? rawById.get(id)?.tags?.highway ?? rawById.get(id)?.tags?.leisure ?? 'way'})`);
         console.log(`    ${e.from}->${e.to} | ${distM(e)} | ${e.dir} | ${e.path ?? '-'} | ${f.join(', ')}`);
       }
-      // Audit every claimed join against the raw capture.
-      //   path road/sidewalk/access-on-a-way: the endpoint nodes must weld to
-      //     a vertex of the way the edge claims to walk on, present in the raw
-      //     capture.
-      //   path access: a compiler-built proximity link from a place to its
-      //     nearest network node - a straight-line claim, not a street join.
-      //     Reported as such; asserting a turn there would be inventing one.
-      let audited = 0;
-      let streetJoins = 0;
-      let accessLinks = 0;
-      let unverified = 0;
+      // Path composition, unit: directed edges. Every count below names its
+      // unit; no count is inferred from another count.
+      const composition = { road: 0, sidewalk: 0, access: 0, other: 0 };
       for (const e of path) {
+        const k = e.path ?? 'other';
+        composition[k === 'road' || k === 'sidewalk' || k === 'access' ? k : 'other']++;
+      }
+      console.log(`  path composition (unit: directed edges): ${path.length} = ${composition.sidewalk} sidewalk + ${composition.access} access + ${composition.road} road + ${composition.other} other`);
+
+      // Audit:
+      //   Street edges (path road/sidewalk): scored per endpoint join, unit
+      //     endpoint joins. Each endpoint's retained geometry must weld (share
+      //     a vertex within tolerance) with the raw way the edge claims to
+      //     walk on, present in the raw capture.
+      //   Access edges: scored per edge, unit access edges. Compiler-built
+      //     straight-line proximity links from a place to its nearest network
+      //     vertex - NOT verified entrances and NOT walking routes. Recorded
+      //     when both ends exist in the raw data; the straight line itself is
+      //     a compiler claim, and asserting a walkable turn there would be
+      //     inventing one.
+      let endpointJoins = 0;
+      let endpointJoinsVerified = 0;
+      let endpointJoinsUnverified = 0;
+      let accessEdges = 0;
+      let accessEdgesWithRawEnds = 0;
+      for (const e of path) {
+        if (e.path === 'access') {
+          accessEdges++;
+          const endsRaw = ['from', 'to'].every((side) => {
+            const node = g.nodes.find((n) => n.id === e[side])!;
+            return node.features.some((id) => rawById.has(id));
+          });
+          if (endsRaw) accessEdgesWithRawEnds++;
+          continue;
+        }
         for (const side of ['from', 'to'] as const) {
-          audited++;
+          endpointJoins++;
           const node = g.nodes.find((n) => n.id === e[side])!;
           const els = node.features.map((id) => rawById.get(id)).filter((x) => x !== undefined);
           if (els.length === 0) {
-            unverified++;
+            endpointJoinsUnverified++;
             console.log(`  UNVERIFIED: none of node ${node.id}'s OSM features ${node.features} are in the raw capture`);
             continue;
           }
           const ways = e.features.map((id) => rawById.get(id)).filter((x) => x !== undefined);
-          if (e.path === 'access') {
-            // Straight-line proximity link: check what it can honestly claim.
-            if (ways.length > 0) accessLinks++;
-            else console.log(`  UNVERIFIED: ${e.from}->${e.to} has no raw way behind it`);
-            continue;
-          }
           if (ways.length === 0) {
-            unverified++;
+            endpointJoinsUnverified++;
             console.log(`  UNVERIFIED: no raw way behind ${e.from}->${e.to}`);
             continue;
           }
-          if (els.some((ely) => joinsWithin(ely!, ways))) streetJoins++;
+          if (els.some((ely) => joinsWithin(ely!, ways))) endpointJoinsVerified++;
           else {
-            unverified++;
+            endpointJoinsUnverified++;
             console.log(`  UNVERIFIED: node ${node.id} welds to none of the claimed way(s) ${e.features}`);
           }
         }
       }
-      console.log(`  join audit: ${streetJoins} street joins verified, ${accessLinks} compiler access links (both ends in raw data, straight-line claim), ${unverified} unverified, of ${audited} endpoint joins`);
+      console.log(`  street-join audit (unit: endpoint joins): ${endpointJoinsVerified}/${endpointJoins} verified, ${endpointJoinsUnverified} unverified`);
+      console.log(`  access-edge audit (unit: access edges): ${accessEdgesWithRawEnds}/${accessEdges} with both ends in raw-overpass.json; these are one straight-line approximation each, not entrances or walking routes. See README.md.`);
     }
   }
 };

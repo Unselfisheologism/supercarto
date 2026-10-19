@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { toMaplet } from '../src/pipeline.js';
+import { budgetWarnings } from '../examples/jakarta-monas/report-helpers.js';
 import type { GeoJsonFeatureCollection } from '../src/ingest/geojson.js';
 
 const EXAMPLE = new URL('../examples/jakarta-monas/', import.meta.url);
@@ -58,13 +59,18 @@ function parseMaplet(yaml: string): Parsed {
       nodes.set(m[1]!, { type, name });
     }
     if (section === 'e') {
-      const m = line.match(/^  (n\d+)->(n\d+): \{.*\}$/);
-      if (m) edges.set(`${m[1]}->${m[2]}`, m[0]);
+      const m = line.match(/^  (n\d+)->(n\d+): \{(.*)\}$/);
+      if (m) edges.set(`${m[1]}->${m[2]}`, m[3]!);
     }
   }
   const names = new Map<string, string>();
   for (const [id, n] of nodes) if (n.name) names.set(n.name, id);
   return { nodes, edges, names };
+}
+
+/** Edge class of one emitted edge, read from its YAML body. */
+function edgeClass(parsed: Parsed, key: string): string {
+  return parsed.edges.get(key)?.match(/path: (\w+)/)?.[1] ?? 'none';
 }
 
 /** Reachability over directed edges. Plain BFS, written here on purpose. */
@@ -118,6 +124,53 @@ function weakComponents(parsed: Parsed): number {
     }
   }
   return groups;
+}
+
+/** Component breakdown over weak adjacency, with units as in path-check.ts. */
+function componentStats(parsed: Parsed): {
+  total: number; withEdges: number; singletons: number; singletonKinds: Record<string, number>;
+} {
+  const adj = neighbors(parsed, false);
+  const touching = new Set<string>();
+  for (const key of parsed.edges.keys()) {
+    const [a, b] = key.split('->');
+    touching.add(a!);
+    touching.add(b!);
+  }
+  const seen = new Set<string>();
+  let withEdges = 0;
+  let singletons = 0;
+  const singletonKinds = new Map<string, number>();
+  for (const id of parsed.nodes.keys()) {
+    if (seen.has(id)) continue;
+    const stack = [id];
+    const group: string[] = [];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      group.push(cur);
+      stack.push(...(adj.get(cur) ?? []));
+    }
+    if (group.some((n) => touching.has(n))) withEdges++;
+    else {
+      singletons++;
+      const kind = parsed.nodes.get(id)!.type;
+      singletonKinds.set(kind, (singletonKinds.get(kind) ?? 0) + 1);
+    }
+  }
+  const total = withEdges + singletons;
+  return { total, withEdges, singletons, singletonKinds: Object.fromEntries(singletonKinds) };
+}
+
+/** Directed edge counts by class, read from the YAML. Unit: directed edges. */
+function edgeClassCounts(parsed: Parsed): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const key of parsed.edges.keys()) {
+    const c = edgeClass(parsed, key);
+    counts[c] = (counts[c] ?? 0) + 1;
+  }
+  return counts;
 }
 
 const y1024 = read('jakarta-monas-1024.yaml');
@@ -208,6 +261,72 @@ describe('jakarta-monas connectivity, re-derived here', () => {
   it('fragmentation is where the artifacts recorded it', () => {
     expect(weakComponents(p1024)).toBe(4);
     expect(weakComponents(p2048)).toBe(39);
+  });
+});
+
+describe('jakarta-monas corrected counts and warning handling', () => {
+  it('counts directed edges by class, matching the summary', () => {
+    // Unit: directed edges. A two-way street appears twice, once per direction.
+    expect(edgeClassCounts(p1024)).toEqual({ access: 16, road: 2, sidewalk: 20 });
+    expect(edgeClassCounts(p2048)).toEqual({ access: 16, road: 8, sidewalk: 38 });
+    const summary = JSON.parse(read('maplet-summary.json'));
+    expect(summary.budgets[0].report.edgeClasses).toEqual({ road: 2, sidewalk: 20, access: 16, other: 0 });
+    expect(summary.budgets[1].report.edgeClasses).toEqual({ road: 8, sidewalk: 38, access: 16, other: 0 });
+  });
+
+  it('reports components as total, withEdges and singletons, with singleton kinds', () => {
+    expect(componentStats(p1024)).toEqual({
+      total: 4, withEdges: 4, singletons: 0, singletonKinds: {},
+    });
+    expect(componentStats(p2048)).toEqual({
+      total: 39, withEdges: 5, singletons: 34,
+      singletonKinds: { poi: 3, area: 21, building: 10 },
+    });
+    const summary = JSON.parse(read('maplet-summary.json'));
+    expect(summary.budgets[0].report.components).toEqual(componentStats(p1024));
+    expect(summary.budgets[1].report.components).toEqual(componentStats(p2048));
+  });
+
+  it('counts access links per edge along the tested path: 2 access edges, not 4 endpoints', () => {
+    // Unit: directed edges. The path carries 2 access edges, and no count is
+    // derived by doubling endpoints.
+    for (const p of [p1024, p2048]) {
+      const classes = PATH_EDGES.map((key) => edgeClass(p, key));
+      expect(classes.filter((c) => c === 'access')).toHaveLength(2);
+      expect(classes.filter((c) => c === 'sidewalk')).toHaveLength(4);
+      expect(classes.filter((c) => c === 'road')).toHaveLength(0);
+      // And the same path in the reverse direction carries the mirror pair.
+      const reverse = [...PATH_EDGES].reverse().map((key) => {
+        const [a, b] = key.split('->');
+        return `${b}->${a}`;
+      });
+      expect(reverse.map((key) => edgeClass(p, key)).filter((c) => c === 'access')).toHaveLength(2);
+    }
+  });
+
+  it('rebuilds warnings fresh per budget and adds the omissions note only when omitted', () => {
+    const summary = JSON.parse(read('maplet-summary.json'));
+    const captureWarnings = JSON.parse(read('capture-meta.json')).warnings as string[];
+    for (const b of summary.budgets) {
+      // Fresh start: the capture warnings, exactly once each, unaccumulated.
+      expect(b.report.warnings.slice(0, captureWarnings.length)).toEqual(captureWarnings);
+      expect(b.report.warnings.filter((w: string) => captureWarnings.includes(w))).toHaveLength(captureWarnings.length);
+      const hasOmissions = b.report.omissions.length > 0;
+      expect(b.report.warnings.some((w: string) => w.startsWith('budget omissions'))).toBe(hasOmissions);
+      // The omissions note, when present, is exactly this budget's omission.
+      expect(b.report.warnings.filter((w: string) => w.startsWith('budget omissions'))).toHaveLength(hasOmissions ? 1 : 0);
+    }
+    // Leak regression: 2,048 must not inherit 1,024's omission line.
+    expect(summary.budgets[1].report.warnings.some((w: string) => w.includes('12 building(s)'))).toBe(false);
+  });
+
+  it('adds no omissions note when a budget drops nothing', () => {
+    // The note rule: capture warnings + exactly one note iff omissions exist.
+    const empty = budgetWarnings(['capture warning A'], []);
+    expect(empty).toEqual(['capture warning A']);
+    expect(empty.some((w) => w.startsWith('budget omissions'))).toBe(false);
+    const present = budgetWarnings(['capture warning A'], [{ layer: 'road', count: 11 }]);
+    expect(present).toEqual(['capture warning A', 'budget omissions: 11 road(s) (unit: features omitted)']);
   });
 });
 

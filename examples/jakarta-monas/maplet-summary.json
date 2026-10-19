@@ -111,53 +111,19 @@
             ]
           }
         ],
-        "streetConnections": 2,
+        "edgeClasses": {
+          "road": 2,
+          "sidewalk": 20,
+          "access": 16,
+          "other": 0
+        },
         "blockedEdges": 0,
-        "disconnectedGroups": [
-          {
-            "id": 0,
-            "nodes": [
-              "n1",
-              "n5",
-              "n10",
-              "n15",
-              "n8",
-              "n137",
-              "n112",
-              "n6",
-              "n125",
-              "n7",
-              "n113"
-            ]
-          },
-          {
-            "id": 1,
-            "nodes": [
-              "n16",
-              "n40",
-              "n123",
-              "n39",
-              "n138"
-            ]
-          },
-          {
-            "id": 2,
-            "nodes": [
-              "n28",
-              "n46",
-              "n124"
-            ]
-          },
-          {
-            "id": 3,
-            "nodes": [
-              "n70",
-              "n82",
-              "n78",
-              "n108"
-            ]
-          }
-        ],
+        "components": {
+          "total": 4,
+          "withEdges": 4,
+          "singletons": 0,
+          "singletonKinds": {}
+        },
         "omissions": [
           {
             "layer": "waypoint",
@@ -192,7 +158,7 @@
         },
         "warnings": [
           "discarded 1 feature(s) with coordinates outside the requested area; the upstream data was inconsistent with the query",
-          "budget omissions recorded below"
+          "budget omissions: 81 waypoint(s), 12 building(s), 19 area(s), 3 poi(s), 11 road(s) (unit: features omitted)"
         ]
       }
     },
@@ -272,275 +238,23 @@
             ]
           }
         ],
-        "streetConnections": 8,
+        "edgeClasses": {
+          "road": 8,
+          "sidewalk": 38,
+          "access": 16,
+          "other": 0
+        },
         "blockedEdges": 0,
-        "disconnectedGroups": [
-          {
-            "id": 0,
-            "nodes": [
-              "n1",
-              "n5",
-              "n10",
-              "n15",
-              "n8",
-              "n137",
-              "n112",
-              "n6",
-              "n125",
-              "n7",
-              "n113"
-            ]
-          },
-          {
-            "id": 1,
-            "nodes": [
-              "n16",
-              "n61",
-              "n58",
-              "n27",
-              "n45",
-              "n40",
-              "n123",
-              "n39",
-              "n138"
-            ]
-          },
-          {
-            "id": 2,
-            "nodes": [
-              "n28",
-              "n57",
-              "n52",
-              "n38",
-              "n51",
-              "n46",
-              "n124"
-            ]
-          },
-          {
-            "id": 3,
-            "nodes": [
-              "n70",
-              "n105",
-              "n82",
-              "n104",
-              "n78",
-              "n108",
-              "n77"
-            ]
-          },
-          {
-            "id": 4,
-            "nodes": [
-              "n85",
-              "n88"
-            ]
-          },
-          {
-            "id": 5,
-            "nodes": [
-              "n109"
-            ]
-          },
-          {
-            "id": 6,
-            "nodes": [
-              "n110"
-            ]
-          },
-          {
-            "id": 7,
-            "nodes": [
-              "n111"
-            ]
-          },
-          {
-            "id": 8,
-            "nodes": [
-              "n114"
-            ]
-          },
-          {
-            "id": 9,
-            "nodes": [
-              "n115"
-            ]
-          },
-          {
-            "id": 10,
-            "nodes": [
-              "n116"
-            ]
-          },
-          {
-            "id": 11,
-            "nodes": [
-              "n117"
-            ]
-          },
-          {
-            "id": 12,
-            "nodes": [
-              "n118"
-            ]
-          },
-          {
-            "id": 13,
-            "nodes": [
-              "n119"
-            ]
-          },
-          {
-            "id": 14,
-            "nodes": [
-              "n120"
-            ]
-          },
-          {
-            "id": 15,
-            "nodes": [
-              "n121"
-            ]
-          },
-          {
-            "id": 16,
-            "nodes": [
-              "n122"
-            ]
-          },
-          {
-            "id": 17,
-            "nodes": [
-              "n126"
-            ]
-          },
-          {
-            "id": 18,
-            "nodes": [
-              "n127"
-            ]
-          },
-          {
-            "id": 19,
-            "nodes": [
-              "n128"
-            ]
-          },
-          {
-            "id": 20,
-            "nodes": [
-              "n129"
-            ]
-          },
-          {
-            "id": 21,
-            "nodes": [
-              "n130"
-            ]
-          },
-          {
-            "id": 22,
-            "nodes": [
-              "n131"
-            ]
-          },
-          {
-            "id": 23,
-            "nodes": [
-              "n132"
-            ]
-          },
-          {
-            "id": 24,
-            "nodes": [
-              "n133"
-            ]
-          },
-          {
-            "id": 25,
-            "nodes": [
-              "n134"
-            ]
-          },
-          {
-            "id": 26,
-            "nodes": [
-              "n135"
-            ]
-          },
-          {
-            "id": 27,
-            "nodes": [
-              "n136"
-            ]
-          },
-          {
-            "id": 28,
-            "nodes": [
-              "n139"
-            ]
-          },
-          {
-            "id": 29,
-            "nodes": [
-              "n140"
-            ]
-          },
-          {
-            "id": 30,
-            "nodes": [
-              "n141"
-            ]
-          },
-          {
-            "id": 31,
-            "nodes": [
-              "n142"
-            ]
-          },
-          {
-            "id": 32,
-            "nodes": [
-              "n143"
-            ]
-          },
-          {
-            "id": 33,
-            "nodes": [
-              "n144"
-            ]
-          },
-          {
-            "id": 34,
-            "nodes": [
-              "n145"
-            ]
-          },
-          {
-            "id": 35,
-            "nodes": [
-              "n146"
-            ]
-          },
-          {
-            "id": 36,
-            "nodes": [
-              "n147"
-            ]
-          },
-          {
-            "id": 37,
-            "nodes": [
-              "n148"
-            ]
-          },
-          {
-            "id": 38,
-            "nodes": [
-              "n149"
-            ]
+        "components": {
+          "total": 39,
+          "withEdges": 5,
+          "singletons": 34,
+          "singletonKinds": {
+            "poi": 3,
+            "area": 21,
+            "building": 10
           }
-        ],
+        },
         "omissions": [
           {
             "layer": "waypoint",
@@ -555,8 +269,7 @@
         },
         "warnings": [
           "discarded 1 feature(s) with coordinates outside the requested area; the upstream data was inconsistent with the query",
-          "budget omissions recorded below",
-          "budget omissions recorded below"
+          "budget omissions: 79 waypoint(s) (unit: features omitted)"
         ]
       }
     }
