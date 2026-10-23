@@ -14,6 +14,52 @@
   <meta name="twitter:title" content="supercarto - LLM-native spatial middleware">
   <meta name="twitter:description" content="Compiles geospatial data into token-budgeted topological graphs that an AI agent can reason over directly.">
   <meta name="twitter:image" content="https://supercarto.pages.dev/og-image.png">
+  <link rel="canonical" href="https://supercarto.pages.dev/">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "supercarto",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Node.js 20+, Python 3.10+",
+    "abstract": "Compiles geospatial data into token-budgeted topological graphs that an AI agent can reason over directly.",
+    "description": "LLM-native spatial middleware. Give an AI agent a map of any location on earth as a token-budgeted topological graph, with indoor floors, weather, and traffic, that it can reason over directly. Ships as an npm package, a CLI, an HTTP API, and an MCP tool server.",
+    "softwareVersion": "0.4.11",
+    "encodingFormat": ["application/yaml", "application/json"],
+    "isAccessibleForFree": true,
+    "license": "https://opensource.org/licenses/Apache-2.0",
+    "url": "https://supercarto.pages.dev/",
+    "downloadUrl": "https://www.npmjs.com/package/supercarto",
+    "codeRepository": "https://github.com/Unselfisheologism/supercarto",
+    "author": { "@type": "Organization", "name": "supercarto" },
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Why not just paste GeoJSON into the prompt?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Raw GeoJSON costs thousands of tokens per blocks-sized extract, and models reason badly and hallucinate over raw coordinates. In head-to-head task benchmarks, a compiled supercarto graph scores 38/47 while raw GeoJSON for the same places scores 15/44 and no map scores 0/47." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does supercarto need an API key for map data?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. Live OpenStreetMap data over Overpass needs no key, and Open-Meteo weather and Terrarium elevation need no key either. For production volume you can point supercarto at your own PMTiles archive. Live traffic is the only feature that needs a key (TomTom or HERE)." }
+      },
+      {
+        "@type": "Question",
+        "name": "How does supercarto give an agent a map without overflowing the context window?",
+        "acceptedAnswer": { "@type": "Answer", "text": "You set a token budget. The compiler ranks features, keeps named landmarks, removes anonymous intersections first, and guarantees the surviving network stays connected. Every removal is recorded in an omitted: section, so the model can tell 'not there' from 'not shown'." }
+      }
+    ]
+  }
+  </script>
   <link rel="stylesheet" href="webtui.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -70,6 +116,25 @@ omitted:
 tools:
   - expand_node(id)
   - route(from,to,mode)</pre>
+  </section>
+
+  <section>
+    <h2>Measured, not claimed</h2>
+    <p>Same questions, same models, same places. The only variable is what sits in the context window: a compiled supercarto graph, raw GeoJSON, or no map at all. Scripts, scoring, and raw answer archives are public and re-derivable — no model calls needed to verify the score.</p>
+    <div class="scroll">
+    <table box-="square">
+      <thead><tr><th>Context</th><th>Score</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>supercarto graph</td><td><b>38/47</b></td><td>Token-budgeted topological YAML</td></tr>
+        <tr><td>Raw GeoJSON</td><td>15/44</td><td>25x more tokens, worse answers</td></tr>
+        <tr><td>No map</td><td>0/47</td><td>The model invents places</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="row">
+      <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/certificate.md">Full certificate</a>
+      <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/leaderboard.md">Leaderboard</a>
+    </div>
   </section>
 
   <section>
