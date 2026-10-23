@@ -10,6 +10,9 @@ import type { GeoJsonFeature, GeoJsonFeatureCollection } from './ingest/geojson.
 import type { GraphNode, SpatialGraph } from './compile/graph.js';
 import type { Capabilities } from './toolcatalog.js';
 
+/** One encoder for the process; `TextEncoder` runs everywhere `Buffer` does not. */
+const wireTextEncoder = new TextEncoder();
+
 export interface MapletRequest {
   /** Slippy tile envelope, or a bbox. */
   readonly envelope?: Envelope;
@@ -129,8 +132,8 @@ export function toMaplet(
     metrics: {
       budget,
       tokens: emitted.result.tokens,
-      wireBytes: Buffer.byteLength(scr, 'utf8'),
-      wireTokens: Math.ceil(Buffer.byteLength(scr, 'utf8') / 4),
+      wireBytes: wireTextEncoder.encode(scr).length,
+      wireTokens: Math.ceil(wireTextEncoder.encode(scr).length / 4),
       yamlTokens: emitted.result.tokens,
       nodes: emitted.graph.nodes.length,
       edges: emitted.graph.edges.length,
@@ -496,8 +499,8 @@ export function fromScr(
     metrics: {
       budget,
       tokens: emitted.result.tokens,
-      wireBytes: Buffer.byteLength(scr, 'utf8'),
-      wireTokens: Math.ceil(Buffer.byteLength(scr, 'utf8') / 4),
+      wireBytes: wireTextEncoder.encode(scr).length,
+      wireTokens: Math.ceil(wireTextEncoder.encode(scr).length / 4),
       yamlTokens: emitted.result.tokens,
       nodes: emitted.graph.nodes.length,
       edges: emitted.graph.edges.length,

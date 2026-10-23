@@ -3152,6 +3152,7 @@ function gridScaleFor(doc) {
 __name(gridScaleFor, "gridScaleFor");
 
 // ../../src/pipeline.ts
+var wireTextEncoder = new TextEncoder();
 function toMaplet(input, req = {}) {
   const envelope = req.envelope ?? (req.bbox ? { type: "bbox", ...req.bbox } : void 0);
   let doc = req.doc ?? fromGeoJson(input, { ...req.ingest, ...envelope ? { envelope } : {} });
@@ -3183,8 +3184,8 @@ function toMaplet(input, req = {}) {
     metrics: {
       budget,
       tokens: emitted.result.tokens,
-      wireBytes: Buffer.byteLength(scr, "utf8"),
-      wireTokens: Math.ceil(Buffer.byteLength(scr, "utf8") / 4),
+      wireBytes: wireTextEncoder.encode(scr).length,
+      wireTokens: Math.ceil(wireTextEncoder.encode(scr).length / 4),
       yamlTokens: emitted.result.tokens,
       nodes: emitted.graph.nodes.length,
       edges: emitted.graph.edges.length,
