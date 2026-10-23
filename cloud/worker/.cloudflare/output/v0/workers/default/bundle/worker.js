@@ -4115,6 +4115,191 @@ function straightLineRoute(from, to, mode = "walk") {
 }
 __name(straightLineRoute, "straightLineRoute");
 
+// ../../src/source/zlibsafe.ts
+function nodeRuntime() {
+  return globalThis.process !== void 0;
+}
+__name(nodeRuntime, "nodeRuntime");
+var nodeZlibPromise;
+async function nodeZlib() {
+  if (!nodeRuntime()) return void 0;
+  nodeZlibPromise ??= import(zlibSpecs[0]);
+  return await nodeZlibPromise;
+}
+__name(nodeZlib, "nodeZlib");
+var zlibSpecs = ["node:zlib"];
+async function inflate(buf) {
+  const zlib = await nodeZlib();
+  if (zlib) return zlib.inflateSync(buf);
+  return await webDecompress(buf, "deflate");
+}
+__name(inflate, "inflate");
+async function webDecompress(buf, format) {
+  const source = new Response(new Uint8Array(buf)).body;
+  if (!source) throw new Error("could not open a decompression stream");
+  const deflate = source.pipeThrough(new DecompressionStream(format));
+  return new Uint8Array(await new Response(deflate).arrayBuffer());
+}
+__name(webDecompress, "webDecompress");
+async function decompress(buf, compression, what) {
+  if (compression === 0 || compression === 1) return buf;
+  const zlib = await nodeZlib();
+  switch (compression) {
+    case 2: {
+      if (zlib) return zlib.gunzipSync(buf);
+      return await webDecompress(buf, "gzip");
+    }
+    case 3: {
+      if (zlib?.brotliDecompressSync) return zlib.brotliDecompressSync(buf);
+      throw new Error(
+        `PMTiles ${what} uses brotli, which needs Node's zlib (this runtime has no brotli decoder)`
+      );
+    }
+    case 4: {
+      if (zlib?.zstdDecompressSync) return zlib.zstdDecompressSync(buf);
+      throw new Error(`PMTiles ${what} uses zstd, which needs Node 22.15 or later`);
+    }
+    default:
+      throw new Error(`unknown PMTiles compression ${compression}`);
+  }
+}
+__name(decompress, "decompress");
+
+// ../../src/source/png.ts
+var PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+async function decodePngTerrarium(buf) {
+  const parsed = parsePng(buf);
+  if (!parsed) return void 0;
+  const { header, idat } = parsed;
+  let raw;
+  try {
+    raw = await inflate(concat(idat));
+  } catch {
+    return void 0;
+  }
+  const pixels = defilter(raw, header);
+  if (!pixels) return void 0;
+  const [ir, ig, ib] = header.channels;
+  const data = new Float32Array(header.width * header.height);
+  for (let p = 0; p < data.length; p++) {
+    const o = p * header.stride;
+    data[p] = (pixels[o + ir] ?? 0) * 256 + (pixels[o + ig] ?? 0) + (pixels[o + ib] ?? 0) / 256 - 32768;
+  }
+  return { width: header.width, height: header.height, data };
+}
+__name(decodePngTerrarium, "decodePngTerrarium");
+function parsePng(buf) {
+  if (buf.length < 8) return void 0;
+  for (let i = 0; i < 8; i++) {
+    if (buf[i] !== PNG_SIGNATURE[i]) return void 0;
+  }
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let off = 8;
+  let header;
+  const idat = [];
+  while (off + 8 <= buf.length) {
+    const len = dv.getUint32(off, false);
+    if (len > 2147483647 || off + 12 + len > buf.length) return void 0;
+    const type = ascii(buf, off + 4);
+    const body = off + 8;
+    if (type === "IHDR") {
+      if (len !== 13) return void 0;
+      header = readHeader(buf, body, dv);
+      if (!header) return void 0;
+    } else if (type === "IDAT") {
+      idat.push(buf.slice(body, body + len));
+    } else if (type === "IEND") {
+      break;
+    }
+    off += 12 + len;
+  }
+  if (!header || idat.length === 0) return void 0;
+  return { header, idat };
+}
+__name(parsePng, "parsePng");
+function readHeader(buf, at, dv) {
+  const width = dv.getUint32(at, false);
+  const height = dv.getUint32(at + 4, false);
+  const depth = buf[at + 8];
+  const color = buf[at + 9];
+  const compression = buf[at + 10];
+  const filter = buf[at + 11];
+  const interlace = buf[at + 12];
+  if (width === 0 || width > 65536 || height === 0 || height > 65536) return void 0;
+  if (compression !== 0 || filter !== 0 || interlace !== 0) return void 0;
+  if (depth !== 8) return void 0;
+  if (color !== 2 && color !== 6) return void 0;
+  const stride = color === 2 ? 3 : 4;
+  return { width, height, stride, channels: [0, 1, 2] };
+}
+__name(readHeader, "readHeader");
+function defilter(raw, header) {
+  const { width, height, stride } = header;
+  const rowlen = width * stride;
+  if (raw.length < height * (rowlen + 1)) return void 0;
+  const out = new Uint8Array(height * rowlen);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (rowlen + 1)];
+    const src = y * (rowlen + 1) + 1;
+    const dst = y * rowlen;
+    for (let i = 0; i < rowlen; i++) {
+      const x = src + i;
+      const cur = raw[x] ?? 0;
+      const left = i >= stride ? out[dst + i - stride] ?? 0 : 0;
+      const up = y > 0 ? out[dst - rowlen + i] ?? 0 : 0;
+      const upleft = y > 0 && i >= stride ? out[dst - rowlen + i - stride] ?? 0 : 0;
+      switch (filter) {
+        case 0:
+          out[dst + i] = cur;
+          break;
+        case 1:
+          out[dst + i] = cur + left & 255;
+          break;
+        case 2:
+          out[dst + i] = cur + up & 255;
+          break;
+        case 3:
+          out[dst + i] = cur + (left + up >> 1) & 255;
+          break;
+        case 4:
+          out[dst + i] = cur + paeth(left, up, upleft) & 255;
+          break;
+        default:
+          return void 0;
+      }
+    }
+  }
+  return out;
+}
+__name(defilter, "defilter");
+function paeth(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+__name(paeth, "paeth");
+function concat(parts) {
+  if (parts.length === 1) return parts[0];
+  let total = 0;
+  for (const part of parts) total += part.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const part of parts) {
+    out.set(part, off);
+    off += part.length;
+  }
+  return out;
+}
+__name(concat, "concat");
+function ascii(buf, at) {
+  return String.fromCharCode(buf[at] ?? 0, buf[at + 1] ?? 0, buf[at + 2] ?? 0, buf[at + 3] ?? 0);
+}
+__name(ascii, "ascii");
+
 // ../../src/source/terrain.ts
 var TerrariumElevation = class {
   static {
@@ -4146,7 +4331,7 @@ var TerrariumElevation = class {
       );
       if (!res0.ok) continue;
       const buf = new Uint8Array(await res0.arrayBuffer());
-      const pixels = decodeRawTerrarium(buf);
+      const pixels = pngSignature(buf) ? await decodePngTerrarium(buf) : decodeRawTerrarium(buf);
       if (!pixels) continue;
       for (let i = 0; i < out.length; i++) {
         const v = sampleBilinear(pixels, pixels.width, pixels.height, i % res, Math.floor(i / res), res);
@@ -4162,6 +4347,10 @@ var TerrariumElevation = class {
     return { bbox, width: res, height: res, values: out, min, max };
   }
 };
+function pngSignature(buf) {
+  return buf.length >= 8 && buf[0] === 137 && buf[1] === 80 && buf[2] === 78 && buf[3] === 71 && buf[4] === 13 && buf[5] === 10 && buf[6] === 26 && buf[7] === 10;
+}
+__name(pngSignature, "pngSignature");
 function decodeRawTerrarium(buf) {
   if (buf.length < 8) return void 0;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -4169,9 +4358,9 @@ function decodeRawTerrarium(buf) {
   const height = dv.getUint32(4, true);
   const expected = width * height * 2;
   if (buf.length < 8 + expected) return void 0;
-  const data = new Int16Array(width * height);
+  const data = new Float32Array(width * height);
   for (let i = 0; i < data.length; i++) {
-    data[i] = dv.getInt16(8 + i * 2, false);
+    data[i] = (dv.getInt16(8 + i * 2, false) - 32768) / 256;
   }
   return { width, height, data };
 }
@@ -4191,7 +4380,7 @@ function sampleBilinear(grid, gw, gh, x, y, res) {
   const d = elev(grid.data, gw, gh, x1, y1);
   const top = a + (b - a) * tx;
   const bot = c + (d - c) * tx;
-  return (top + (bot - top) * ty - 32768) / 256;
+  return top + (bot - top) * ty;
 }
 __name(sampleBilinear, "sampleBilinear");
 function elev(data, w, h, x, y) {
@@ -5462,50 +5651,6 @@ function utf8(buf) {
 }
 __name(utf8, "utf8");
 
-// ../../src/source/zlibsafe.ts
-function nodeRuntime() {
-  return globalThis.process !== void 0;
-}
-__name(nodeRuntime, "nodeRuntime");
-var nodeZlibPromise;
-async function nodeZlib() {
-  if (!nodeRuntime()) return void 0;
-  nodeZlibPromise ??= import(zlibSpecs[0]);
-  return await nodeZlibPromise;
-}
-__name(nodeZlib, "nodeZlib");
-var zlibSpecs = ["node:zlib"];
-async function webDecompress(buf, format) {
-  const source = new Response(new Uint8Array(buf)).body;
-  if (!source) throw new Error("could not open a decompression stream");
-  const deflate = source.pipeThrough(new DecompressionStream(format));
-  return new Uint8Array(await new Response(deflate).arrayBuffer());
-}
-__name(webDecompress, "webDecompress");
-async function decompress(buf, compression, what) {
-  if (compression === 0 || compression === 1) return buf;
-  const zlib = await nodeZlib();
-  switch (compression) {
-    case 2: {
-      if (zlib) return zlib.gunzipSync(buf);
-      return await webDecompress(buf, "gzip");
-    }
-    case 3: {
-      if (zlib?.brotliDecompressSync) return zlib.brotliDecompressSync(buf);
-      throw new Error(
-        `PMTiles ${what} uses brotli, which needs Node's zlib (this runtime has no brotli decoder)`
-      );
-    }
-    case 4: {
-      if (zlib?.zstdDecompressSync) return zlib.zstdDecompressSync(buf);
-      throw new Error(`PMTiles ${what} uses zstd, which needs Node 22.15 or later`);
-    }
-    default:
-      throw new Error(`unknown PMTiles compression ${compression}`);
-  }
-}
-__name(decompress, "decompress");
-
 // ../../src/source/protomaps.ts
 var PMTILES_MAGIC = "PMTiles";
 var HEADER_BYTES = 127;
@@ -6184,7 +6329,7 @@ function createHandler(opts = {}) {
     }
     if (!hasDecodedSamples(grid)) {
       return json(headers, 503, {
-        error: "elevation tiles were fetched but none decoded into samples: the endpoint serves PNG-encoded tiles and the bundled zero-dependency decoder reads raw Terrarium buffers only"
+        error: "elevation tiles were fetched but none decoded into samples: the endpoint did not serve a readable Terrarium tile body (PNG or raw) for this area"
       });
     }
     const values = Array.from(grid.values).filter((v) => Number.isFinite(v));

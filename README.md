@@ -457,9 +457,10 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-416 tests passing: 284 unit (including 26 for the GTFS layer), 120 against
-live sources, and 12 MCP end-to-end. Outputs are byte-identical to the Python
-port — the parity engine runs on every push.
+423 tests passing: 291 unit (including 26 for the GTFS layer and 7 for the
+PNG elevation decoder), 120 against live sources, and 12 MCP end-to-end.
+Outputs are byte-identical to the Python port — the parity engine runs on
+every push.
 Verified against live OpenStreetMap, live Open-Meteo, and the live MCP server
 driven from Python.
 

@@ -1,6 +1,7 @@
 import type { HeatLayer } from '../wire/types.js';
 import type { BboxQuery, MapSource, SourceRequest, SourceResult } from './types.js';
 
+import { decodePngTerrarium } from './png.js';
 import { plainFetch } from './types.js';
 
 /**
@@ -10,9 +11,10 @@ import { plainFetch } from './types.js';
  * street is 40m above another. For anything that reasons about grade - a drone
  * route, a flood, a cyclist - elevation is the missing dimension.
  *
- * The source is a tiled elevation service returning binary 16-bit samples,
- * which is the common shape (Terrarium encoding, used by AWS Terrain Tiles and
- * several open mirrors).
+ * The source is a tiled elevation service, the shape AWS Terrain Tiles uses
+ * (Terrarium encoding) and several open mirrors serve unchanged. Both the
+ * standard PNG tile body and the raw-sample variant decode here, with no
+ * runtime npm dependencies.
  */
 
 export interface ElevationGrid {
@@ -37,9 +39,12 @@ export interface ElevationSource {
 /**
  * Terrarium-encoded elevation tiles.
  *
- * Encoding is `elevation = (raw - 32768) / 256` metres, where `raw` is a
- * big-endian signed 16-bit sample. This is the AWS Terrain Tiles format, and
- * several open endpoints serve it unchanged.
+ * Terrarium tiles come in two body shapes: the standard PNG encoding
+ * (`elevation = (R * 256 + G + B / 256) - 32768`, what AWS Terrain Tiles and
+ * most mirrors serve) and a raw variant (`width`/`height` uint32 LE header,
+ * then big-endian 16-bit samples) used by endpoints that want to skip image
+ * decoding. Both decoders are dependency-free (`png.ts` for PNG); both decode
+ * into metre-valued samples and share one bilinear sampler.
  */
 export class TerrariumElevation implements ElevationSource {
   readonly name = 'terrarium';
@@ -75,11 +80,13 @@ export class TerrariumElevation implements ElevationSource {
         { signal },
       );
       if (!res0.ok) continue;
-      // Decoding a PNG needs an image decoder; this implementation works when
-      // the endpoint serves raw float16 instead, which keeps the dependency
-      // surface at zero and is what the `raw` endpoint below expects.
+      // Two accepted body shapes: PNG (the standard Terrarium encoding) and
+      // the raw-sample variant. Anything else skips the tile; a grid of no
+      // decoded samples is reported as absent upstream, never as flat data.
       const buf = new Uint8Array(await res0.arrayBuffer());
-      const pixels = decodeRawTerrarium(buf);
+      const pixels = pngSignature(buf)
+        ? await decodePngTerrarium(buf)
+        : decodeRawTerrarium(buf);
       if (!pixels) continue;
       for (let i = 0; i < out.length; i++) {
         const v = sampleBilinear(pixels, pixels.width, pixels.height, i % res, Math.floor(i / res), res);
@@ -101,12 +108,23 @@ export class TerrariumElevation implements ElevationSource {
 interface RawElevation {
   width: number;
   height: number;
-  data: Int16Array;
+  /** Decoded elevation in metres. */
+  data: Float32Array;
+}
+
+/** PNG tiles start with the 8-byte PNG signature. */
+function pngSignature(buf: Uint8Array): boolean {
+  return (
+    buf.length >= 8 &&
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a
+  );
 }
 
 /**
  * Decode a raw Terrarium buffer: `width`, `height` as uint32 LE, then
- * big-endian int16 samples.
+ * big-endian int16 samples, decoded to metres by the encoding
+ * `elevation = (sample - 32768) / 256`.
  */
 function decodeRawTerrarium(buf: Uint8Array): RawElevation | undefined {
   if (buf.length < 8) return undefined;
@@ -115,10 +133,10 @@ function decodeRawTerrarium(buf: Uint8Array): RawElevation | undefined {
   const height = dv.getUint32(4, true);
   const expected = width * height * 2;
   if (buf.length < 8 + expected) return undefined;
-  const data = new Int16Array(width * height);
+  const data = new Float32Array(width * height);
   for (let i = 0; i < data.length; i++) {
     // Terrarium stores samples big-endian.
-    data[i] = dv.getInt16(8 + i * 2, false);
+    data[i] = (dv.getInt16(8 + i * 2, false) - 32768) / 256;
   }
   return { width, height, data };
 }
@@ -145,10 +163,10 @@ function sampleBilinear(
   const d = elev(grid.data, gw, gh, x1, y1);
   const top = a + (b - a) * tx;
   const bot = c + (d - c) * tx;
-  return (top + (bot - top) * ty - 32768) / 256;
+  return top + (bot - top) * ty;
 }
 
-function elev(data: Int16Array, w: number, h: number, x: number, y: number): number {
+function elev(data: Float32Array, w: number, h: number, x: number, y: number): number {
   const cx = Math.max(0, Math.min(w - 1, x));
   const cy = Math.max(0, Math.min(h - 1, y));
   return data[cy * w + cx] ?? 0;

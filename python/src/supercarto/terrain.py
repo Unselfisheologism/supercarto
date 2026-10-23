@@ -4,9 +4,10 @@ Web Mercator flattens the earth, so a 2D map cannot tell a model that one
 street is 40m above another. For anything that reasons about grade - a drone
 route, a flood, a cyclist - elevation is the missing dimension.
 
-The source is a tiled elevation service returning binary 16-bit samples, which
-is the common shape (Terrarium encoding, used by AWS Terrain Tiles and several
-open mirrors).
+The source is a tiled elevation service, the shape AWS Terrain Tiles uses
+(Terrarium encoding) and several open mirrors serve unchanged. Both the
+standard PNG tile body and the raw-sample variant decode here, with no runtime
+dependencies beyond the stdlib.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import struct
 from collections.abc import Callable
 
 from .net import http_fetch
+from .png import decode_png_terrarium
 from .types import HeatCell, HeatLayer
 
 
@@ -33,12 +35,23 @@ class ElevationGrid:
         self.max = maximum
 
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _png_signature(body: bytes) -> bool:
+    return body[:8] == PNG_SIGNATURE
+
+
 class TerrariumElevation:
     """Terrarium-encoded elevation tiles.
 
-    Encoding is `elevation = (raw - 32768) / 256` metres, where `raw` is a
-    big-endian signed 16-bit sample. This is the AWS Terrain Tiles format, and
-    several open endpoints serve it unchanged.
+    Terrarium tiles come in two body shapes: the standard PNG encoding
+    (`elevation = R * 256 + G + B / 256 - 32768` metres, what AWS Terrain
+    Tiles and most mirrors serve) and a raw variant (`width`/`height` uint32
+    LE header, then big-endian 16-bit samples, `(sample - 32768) / 256`
+    metres) used by endpoints that want to skip image decoding. Both decoders
+    are dependency-free; both decode into metre-valued samples and share one
+    bilinear sampler.
     """
 
     name = "terrarium"
@@ -70,16 +83,21 @@ class TerrariumElevation:
                 continue
             if not res0.ok:
                 continue
-            # Decoding a PNG needs an image decoder; this implementation works
-            # when the endpoint serves raw float16 instead, which keeps the
-            # dependency surface at zero and is what the `raw` endpoint below
-            # expects.
-            pixels = decode_raw_terrarium(res0.bytes)
+            # Two accepted body shapes: PNG (the standard Terrarium encoding)
+            # and the raw-sample variant. Anything else skips the tile; a grid
+            # of no decoded samples is reported as absent upstream, never as
+            # flat data.
+            body = res0.bytes
+            pixels = (
+                decode_png_terrarium(body)
+                if _png_signature(body)
+                else decode_raw_terrarium(body)
+            )
             if not pixels:
                 continue
             width, height, data = pixels
             for i in range(len(out)):
-                v = sample_bilinear(data, width, height, i % res, i // res, res)
+                v = sample_bilinear((width, height, data), width, height, i % res, i // res, res)
                 out[i] = v
                 minimum = min(minimum, v)
                 maximum = max(maximum, v)
@@ -96,12 +114,13 @@ class TerrariumElevation:
         return http_fetch(url)
 
 
-FakeGrid = tuple[int, int, list[int]] | None
+RawElevationT = tuple[int, int, list[float]] | None
 
 
-def decode_raw_terrarium(body: bytes) -> FakeGrid:
+def decode_raw_terrarium(body: bytes) -> tuple[int, int, list[float]] | None:
     """Decode a raw Terrarium buffer: `width`, `height` as uint32 LE, then
-    big-endian int16 samples."""
+    big-endian int16 samples, decoded to metres by the encoding
+    `elevation = (sample - 32768) / 256`."""
     if len(body) < 8:
         return None
     width = struct.unpack_from("<I", body, 0)[0]
@@ -109,14 +128,16 @@ def decode_raw_terrarium(body: bytes) -> FakeGrid:
     expected = width * height * 2
     if len(body) < 8 + expected:
         return None
-    data: list[int] = []
+    data: list[float] = []
     for i in range(width * height):
         # Terrarium stores samples big-endian.
-        data.append(struct.unpack_from(">h", body, 8 + i * 2)[0])
+        data.append((struct.unpack_from(">h", body, 8 + i * 2)[0] - 32768) / 256)
     return width, height, data
 
 
-def sample_bilinear(grid: tuple[int, int, list[int]], gw: int, gh: int, x: int, y: int, res: int) -> float:
+def sample_bilinear(grid: tuple[int, int, list[float]], gw: int, gh: int, x: int, y: int, res: int) -> float:
+    """Bilinear interpolation over a decoded metre-valued grid (no offsets:
+    both decoder paths already deliver metres)."""
     fx = (x / max(1, res - 1)) * (gw - 1)
     fy = (y / max(1, res - 1)) * (gh - 1)
     x0 = math.floor(fx)
@@ -132,10 +153,10 @@ def sample_bilinear(grid: tuple[int, int, list[int]], gw: int, gh: int, x: int, 
     d = _elev(data, gw, gh, x1, y1)
     top = a + (b - a) * tx
     bot = c + (d - c) * tx
-    return (top + (bot - top) * ty - 32768) / 256
+    return top + (bot - top) * ty
 
 
-def _elev(data: list[int], w: int, h: int, x: int, y: int) -> int:
+def _elev(data: list[float], w: int, h: int, x: int, y: int) -> float:
     cx = max(0, min(w - 1, x))
     cy = max(0, min(h - 1, y))
     if 0 <= cy * w + cx < len(data):

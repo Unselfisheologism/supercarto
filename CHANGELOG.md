@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.3 — Real elevation: `/terrain` decodes PNG Terrarium tiles
+
+`/terrain` answered an honest 503 at the hosted endpoint because every
+real-world Terrarium tile is PNG-encoded and the bundled zero-dependency
+decoder read a raw-sample variant only - realistic endpoints fetched fine and
+decoded to nothing. Worse, once PNG decoding existed, the shared formula was
+wrong by a factor of 256: the two live checks that proved it were Denver
+reading 6.2 m (should be ~1600 m) and the Everest region reading 34 m.
+
+- `src/source/png.ts` + port: chunk parser, scanline filters (None, Sub, Up,
+  Average, Paeth) and the Terrarium formula `R*256 + G + B/256 - 32768`
+  metres, for 8-bit RGB/RGBA, non-interlaced. Palettes, 16-bit depth and
+  interlace are hard rejects, not guesses. Inflate is the Web
+  `DecompressionStream` in Workers and Node's `zlib` under Node, via
+  `zlibsafe.ts` - still zero runtime npm dependencies.
+- The raw-sample decoder now also decodes to metres `((s - 32768) / 256)`,
+  and the bilinear sampler is pure interpolation over metre-valued grids.
+- Hosted `/terrain` returns real elevation: SF −25..143 m, Denver
+  1568..1646 m, Everest region 5023..6948 m, verified live. The honest-503
+  reason stays for tiles that genuinely fail to decode.
+
 ## 0.5.2 — PMTiles reads real archives at the true latitude
 
 The tile-y conversion flipped every remote PMTiles fetch about the equator:

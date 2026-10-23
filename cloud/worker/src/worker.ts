@@ -433,14 +433,13 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
       return json(headers, 404, { error: 'no elevation source is configured for this deployment' });
     }
     if (!hasDecodedSamples(grid)) {
-      // The bundled decoder reads raw-Terrarium buffers; an endpoint serving
-      // real PNG tiles yields no samples. An all-zero field on the ocean floor
-      // would read as a flat plain - reported as absent instead.
+      // Tiles were reached but none decoded. An all-zero field on the ocean
+      // floor would read as a flat plain - reported as absent instead.
       return json(headers, 503, {
         error:
           'elevation tiles were fetched but none decoded into samples: ' +
-          'the endpoint serves PNG-encoded tiles and the bundled zero-dependency ' +
-          'decoder reads raw Terrarium buffers only',
+          'the endpoint did not serve a readable Terrarium tile body ' +
+          '(PNG or raw) for this area',
       });
     }
 

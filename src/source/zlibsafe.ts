@@ -21,6 +21,7 @@
 /** The subset of node:zlib this module uses, all synchronous and buffer-based. */
 interface NodeZlib {
   gunzipSync: (buf: Uint8Array) => Uint8Array;
+  inflateSync: (buf: Uint8Array) => Uint8Array;
   brotliDecompressSync?: (buf: Uint8Array) => Uint8Array;
   zstdDecompressSync?: (buf: Uint8Array) => Uint8Array;
 }
@@ -48,6 +49,19 @@ async function nodeZlib(): Promise<NodeZlib | undefined> {
 }
 
 const zlibSpecs: string[] = ['node:zlib'];
+
+/**
+ * Inflate a zlib-wrapped stream (RFC 1950: the PNG IDAT format).
+ *
+ * Same runtime split as `decompress`: Node uses the synchronous
+ * `inflateSync`, everywhere else Web `DecompressionStream('deflate')`, which
+ * Workerd exposes for exactly this wrapper format.
+ */
+export async function inflate(buf: Uint8Array): Promise<Uint8Array> {
+  const zlib = await nodeZlib();
+  if (zlib) return zlib.inflateSync(buf);
+  return await webDecompress(buf, 'deflate');
+}
 
 /**
  * Inflate with the web-standard `DecompressionStream`, which Workerd exposes

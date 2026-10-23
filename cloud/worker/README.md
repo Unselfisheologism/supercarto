@@ -54,9 +54,10 @@ the project — "not there" is not "not shown":
   conditions are the failure this library refuses to make.
 - **indoor floor plans** — indoor floor plans are local files. No filesystem
   here, so indoor layers are absent rather than fabricated.
-- **terrain elevation** — the route is served, but Terrarium tiles are
-  PNG-encoded and the zero-dependency decoder reads raw Terrarium buffers
-  only, so a live endpoint answers an honest 503 with that reason.
+- **terrain elevation** — works against standard Terrarium endpoints. PNG
+  tiles decode through the built-in zero-dependency PNG decoder (zlib via the
+  Web `DecompressionStream` in Workers, Node's `zlib` under Node). If a tile
+  body does not decode, the route answers an honest 503 with that reason.
 
 ## Rate limiting
 
