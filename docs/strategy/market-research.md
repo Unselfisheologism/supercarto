@@ -174,17 +174,34 @@ infra exists.
 
 ### D3 — GTFS (transit) — the next provable feature, and fills a live gap
 
-The sparkgeo gap table lists **public transit (GTFS) as zero-coverage** in
-the entire MCP market. supercarto already has transport nodes, a token
-budget, and an honesty vocabulary. GTFS ingestion (station adjacency,
-schedule-derived `hours:` semantics) would make supercarto the only keyless
-agent map that can answer "can you be somewhere by 9?" with real schedule
-awareness. PlaceRoot explicitly declined schedules; Mapbox's MCP has none.
-**Top pick for the next feature.**
+The sparkgeo gap table listed **public transit (GTFS) as zero-coverage** in
+the entire MCP market at research time. supercarto already has transport
+nodes, a token budget, and an honesty vocabulary. GTFS ingestion would make
+supercarto the only keyless agent map that can answer "can you be somewhere
+by 9?" with real schedule awareness. PlaceRoot explicitly declined schedules;
+Mapbox's MCP has none. **Top pick for the next feature.**
 
 > **Status 2026-10-23: shipped in 0.5.0.** `get_transit` over any static
 > GTFS feed, three honest service states, budget-honouring, TS suite green
 > (412 tests) and parity-checked against the Python port.
+>
+> **Competitive correction, same day: the zero-coverage window closed
+> mid-quarter.** A check on release day found 8+ transit-only GTFS MCP
+> servers, most created March–July 2026 with 0–2 stars: jdamcd/gtfs-mcp
+> (MTA + realtime), bokangsibolla/gtfs-mcp (worldwide feed catalog),
+> bribroder/gtfs-mcp (CSA routing + realtime), cyanheads/transitland,
+> ttc-mcp (Toronto), gtfs-one-mcp (WordPress-based agencies), a hosted
+> transitmcp.com (NYC/DC/SF), and metronorth-mcp. The sparkgeo table is
+> behind reality here. The honest restatement of the wedge: all of them are
+> **transit-only servers** — an agent must already know it has a transit
+> question, get coordinates from a geocoder elsewhere, and cannot see a
+> departures board next to the streets, terrain, weather and daylight of
+> the same place in one budgeted answer. supercarto ships GTFS as one tool
+> inside the maplet, which none of them do, but the "nobody has transit"
+> claim is dead and must not be reused in copy. If transit demand proves
+> the wedge, the natural follow-up is GTFS-Realtime (delays are what
+> riders actually ask about) and a `route` that mixes walking spans with
+> transit spans.
 
 ### D4 — Coverage gaps as data partnerships (later)
 

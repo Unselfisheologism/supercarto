@@ -147,13 +147,18 @@
   </section>
 
   <section>
-    <h2>The gap that is next: transit</h2>
-    <p>Whole capabilities are still missing. The clearest one is transit
-    schedules: a routine agent task - "can you be somewhere by 9?" - is
-    unanswerable by every keyless map tool for agents today, and GTFS, the
-    open schedule format behind every journey planner, has no agent-facing
-    server in any tracking catalog right now. That is a gap, not a verdict.
-    Watch it close.</p>
+    <h2>The gap that was next: transit</h2>
+    <p>When this survey was first written, transit schedules were the
+    clearest missing capability: the routine agent task - "can you be
+    somewhere by 9?" - had no answer from any map tool for agents, and
+    tracking catalogs showed no agent-facing GTFS server. That gap has now
+    started to close from both directions. Dedicated transit-only MCP
+    servers exist (MTA, Toronto, and worldwide feed catalogs), and
+    supercarto itself now ships <code>get_transit</code>: stops, lines and
+    first/last departures from any static GTFS feed, inside the same
+    token-budgeted maplet as the streets, terrain, weather and daylight of
+    one place - not as a separate server an agent must already know to
+    consult.</p>
   </section>
 
   <section>
@@ -165,8 +170,8 @@
     public benchmark - same questions, same models, only the context changes -
     the compiled graph scores 38/47 against 15/44 for raw GeoJSON and 0/47 for
     no map. Every number is re-derivable from committed answer archives
-    without a model call. Indoor multi-storey graphs, keyless weather, and
-    honest degraded paths ship in the core; transit is the next layer.</p>
+    without a model call. Indoor multi-storey graphs, keyless weather,
+    honest degraded paths, and GTFS transit schedules ship in the core.</p>
     <div class="row">
       <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/certificate.md">Read the certificate</a>
       <a is-="button" box-="square" href="https://supercarto.pages.dev/#install">Install supercarto</a>
