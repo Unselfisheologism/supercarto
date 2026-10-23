@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-webtui-theme="catppuccin-mocha">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Can you be somewhere by 9? Transit schedules for AI agents - supercarto</title>
+  <meta name="description" content="supercarto 0.5.0 adds get_transit: stops, lines and first/last departures from any static GTFS feed, inside the token-budgeted maplet. Release notes on the honesty rules: three service states, past-midnight times kept, and why the tool disappears without a feed.">
+  <link rel="canonical" href="https://supercarto.pages.dev/blog/get-transit-gtfs-schedules-for-agents">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:title" content="Can you be somewhere by 9? Transit schedules for AI agents">
+  <meta property="og:description" content="supercarto 0.5.0 ships get_transit over any static GTFS feed - one tool inside the same maplet as streets, terrain and weather. Release notes on the honesty rules.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supercarto.pages.dev/blog/get-transit-gtfs-schedules-for-agents">
+  <meta property="og:image" content="https://supercarto.pages.dev/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Can you be somewhere by 9? Transit schedules for AI agents",
+    "datePublished": "2026-10-23",
+    "dateModified": "2026-10-23",
+    "author": { "@type": "Organization", "name": "supercarto" },
+    "publisher": { "@type": "Organization", "name": "supercarto" },
+    "url": "https://supercarto.pages.dev/blog/get-transit-gtfs-schedules-for-agents",
+    "about": ["GTFS", "transit schedules", "MCP map server", "AI agents"]
+  }
+  </script>
+  <link rel="stylesheet" href="../webtui.css">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+
+  <header>
+    <nav>
+      <a is-="badge" variant-="foreground0" cap-="round" href="https://supercarto.pages.dev/">supercarto</a>
+      <a is-="badge" variant-="background2" cap-="round">release notes - 0.5.0</a>
+    </nav>
+    <h1>Can you be somewhere by 9? Transit schedules for AI agents</h1>
+    <p class="lede">The question sounds simple, and for an agent it has been
+    unanswerable honestly: a schedule is a table of departures that varies by
+    day, agency and timezone, and every plausible-sounding shortcut invents
+    one. supercarto 0.5.0 answers it from real data, with rules strict enough
+    to print in public.</p>
+    <time datetime="2026-10-23">October 23, 2026</time>
+  </header>
+
+  <div is-="separator"></div>
+
+  <section>
+    <h2>What shipped</h2>
+    <p>Set one environment variable to any static GTFS feed - a directory of
+    tables or a single .zip:</p>
+    <p><code>SUPERCARTO_GTFS=./city-gtfs.zip</code></p>
+    <p>That is the whole install. <code>get_transit</code> appears in the MCP
+    tool list, <code>/transit</code> answers over HTTP, and the CLI grows
+    <code>supercarto transit --feed city-gtfs.zip --lat 36.913 --lon -116.77
+    --radius 3km</code>. No feed configured? The tool is simply absent - like
+    traffic, a schedule is only as fresh as an operator's last import, so
+    serving one is an operator's decision, not a default.</p>
+    <p>The output is the same shape an agent already reads from a maplet, one
+    example straight from a live run:</p>
+  <pre>
+transit:
+  center: "36.913, -116.77"
+  radius: 3.0km
+  feed: sample-feed
+  note: Stop distances are straight-line. Schedule from GTFS feed for 2007-01-11 in America/Los_Angeles.
+nodes:
+  STAGECOACH: {type: stop, name: "Stagecoach Hotel &amp; Casino", tags: [bus], routes: ["30", "40"], first: 06:00, last: 06:58}
+  NADAV: {type: stop, name: "North Ave / D Ave N", tags: [bus], routes: ["40"], first: 06:14, last: 06:44}
+edges:
+  NADAV-&gt;DADAN: {dist: 601m, dir: south, path: bus 40}
+  </pre>
+    <p>Routes and first/last departures come from the schedule for the
+    queried day. The adjacency edges come from the geometry, so they survive
+    even when the timetable does not.</p>
+  </section>
+
+  <section>
+    <h2>The honesty rules, stated in full</h2>
+    <p>Transit is adversarial to the plausible-sounding shortcut. Three rules
+    in this release:</p>
+    <p><b>1. Three service states, never two.</b> A running day shows today's
+    routes and departures. A date with nothing running keeps the stops, with
+    <code>routes: []</code> and a note saying no service runs - "no transit"
+    is not "no stops". A feed with no calendar shows the whole network and
+    declares the service window unknown rather than labelling whole-feed
+    facts as today's schedule. An agent that can tell these apart will not
+    tell a rider that the line they are standing at is running.</p>
+    <p><b>2. Times past midnight stay past midnight.</b> GTFS writes a
+    departure after the service day's midnight as <code>25:10</code>.
+    Re-rendering it as <code>01:10</code> fits the eye and strands the person
+    waiting. supercarto therefore renders <code>25:10</code>, in the feed's
+    own timezone, with the evaluated instant in the <code>note</code>.</p>
+    <p><b>3. Every caveat rides in the map.</b> Straight-line distances are
+    labelled as straight-line; the feed's timezone and the schedule date
+    travel in the <code>note</code>; nothing is stated for a day the feed
+    does not cover. If the answering model reads only one line of the
+    output, it still cannot invent a schedule.</p>
+  </section>
+
+  <section>
+    <h2>How it fits the market</h2>
+    <p>Dedicated transit MCP servers exist - for the MTA, Toronto, Transitland
+    feeds. They are worth having, and they answer a transit question an agent
+    already knows it has. supercarto ships transit as one tool inside the
+    maplet, next to the streets, terrain, weather and daylight of the same
+    place, cut to one token budget with every omission recorded. The agent
+    does not decide between "explore a place" and "read a timetable"; it
+    walks one stop list.</p>
+    <p>On the realism of it all: the implementation adds both an RFC 4180 CSV
+    parser (quoted fields, CRLF, UTF-8 BOM) and a minimal zip reader (STORE +
+    DEFLATE) as in-repo code - zero new dependencies, same as every
+    supercarto release so far. The token budget is hard, re-measured on the
+    delivered output, with connectivity-preserving pruning and an
+    <code>omitted:</code> record of every drop. 412 tests passing, outputs
+    byte-identical to the Python port, and the feature was verified against
+    real data in all three service states.</p>
+  </section>
+
+  <section>
+    <h2>Next</h2>
+    <p>Natural follow-ups in order of rider pain: GTFS-Realtime (a delay is
+    what changes the answer for someone already standing at the stop), and a
+    <code>route</code> that mixes walking spans with transit spans under the
+    feasibility stance. Neither has a date yet; the honesty rules get
+    designed before the code.</p>
+    <div class="row">
+      <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto">GitHub</a>
+      <a is-="button" box-="square" href="https://www.npmjs.com/package/supercarto">npm</a>
+      <a is-="button" box-="square" href="https://supercarto.pages.dev/">Install</a>
+    </div>
+  </section>
+
+  <div is-="separator"></div>
+
+  <footer>
+    <p>Written Oct 2026, on the release of supercarto 0.5.0. Read the
+    landscape survey in <a href="https://supercarto.pages.dev/blog/maps-for-ai-agents-2026">Maps
+    for AI agents: the 2026 landscape</a>. supercarto is open source under
+    Apache-2.0.</p>
+    <nav>
+      <a href="https://supercarto.pages.dev/">Home</a>
+      <a href="https://github.com/Unselfisheologism/supercarto">GitHub</a>
+      <a href="https://www.npmjs.com/package/supercarto">npm</a>
+    </nav>
+  </footer>
+
+</main>
+</body>
+</html>
