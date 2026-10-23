@@ -386,6 +386,17 @@ get a second copy.
 curl 'localhost:8787/maplet?lat=35.6833&lon=139.762&radiusM=400&budget=1500&format=yaml'
 ```
 
+### Hosted mode (experimental, not yet deployed)
+
+The compile path is Workers-compatible (fetch-based sources, no Node built-ins),
+and `cloud/worker/` packages it as a Cloudflare Worker: the same `/maplet`,
+`/scr`, weather, daylight and terrain surface as the local HTTP API above, with
+per-IP rate limiting and ODbL attribution on every map response. It is
+deliberately a subset — transit and traffic are not served, because a Worker has
+no filesystem for a GTFS feed and hosted mode ships no flow-provider keys, and
+`GET /` states that openly. See `cloud/worker/README.md`. Nothing is deployed
+under this option yet.
+
 ---
 
 ## CLI
