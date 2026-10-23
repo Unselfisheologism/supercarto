@@ -1,0 +1,13 @@
+{
+  "name": "supercarto-compile-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npx vitest run -c vitest.config.ts",
+    "deploy": "cf deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.152.0"
+  }
+}
