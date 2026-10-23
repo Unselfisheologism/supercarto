@@ -35,6 +35,13 @@ export interface ToolDescriptor {
   requiresElevation: boolean;
   requiresWeather: boolean;
   requiresTraffic: boolean;
+  /**
+   * Same rule as traffic, one layer earlier: `get_transit` only exists when a
+   * GTFS feed is configured. Advertising a schedule tool with no schedule
+   * behind it teaches a model to trust a "no feed" answer that looks like
+   * "no service", which is an honest-refusal design turned into a lie.
+   */
+  requiresTransit: boolean;
 }
 
 export const TOOL_CATALOG: readonly ToolDescriptor[] = [
@@ -45,6 +52,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'localize',
@@ -53,6 +61,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'route',
@@ -61,6 +70,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'search_places',
@@ -69,6 +79,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'expand_feature',
@@ -77,6 +88,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'get_terrain',
@@ -85,6 +97,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: true,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'get_weather',
@@ -93,6 +106,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: true,
     requiresTraffic: false,
+    requiresTransit: false,
   },
   {
     name: 'get_traffic',
@@ -101,6 +115,16 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: true,
+    requiresTransit: false,
+  },
+  {
+    name: 'get_transit',
+    signature: 'get_transit(lat,lon,radiusM,budget)',
+    use: 'transit stops, lines, and service times around a coordinate, from a configured GTFS feed',
+    requiresElevation: false,
+    requiresWeather: false,
+    requiresTraffic: false,
+    requiresTransit: true,
   },
   {
     name: 'get_daylight',
@@ -109,6 +133,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresElevation: false,
     requiresWeather: false,
     requiresTraffic: false,
+    requiresTransit: false,
   },
 ];
 
@@ -122,6 +147,7 @@ export interface Capabilities {
   elevation?: boolean;
   weather?: boolean;
   traffic?: boolean;
+  transit?: boolean;
 }
 
 /**
@@ -148,5 +174,6 @@ function available(t: ToolDescriptor, c: Capabilities): boolean {
   if (t.requiresElevation && !c.elevation) return false;
   if (t.requiresWeather && !c.weather) return false;
   if (t.requiresTraffic && !c.traffic) return false;
+  if (t.requiresTransit && !c.transit) return false;
   return true;
 }

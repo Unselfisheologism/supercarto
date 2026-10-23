@@ -338,7 +338,7 @@ describe('moveView: the agent moves', () => {
       return true;
     }
     async fetch(_req: SourceRequest): Promise<SourceResult> {
-      const features = this.steps[Math.min(this.i, this.steps.length - 1)];
+      const features = this.steps[Math.min(this.i, this.steps.length - 1)] ?? [];
       this.i++;
       return { features: [...features], source: this.name, truncated: false, elapsedMs: 1, warnings: [] };
     }
