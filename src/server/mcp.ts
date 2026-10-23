@@ -324,6 +324,10 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
   if (carto.hasElevation) tools.push(getTerrainTool(carto));
   if (carto.hasWeather) tools.push(getWeatherTool(carto));
   if (carto.hasTraffic) tools.push(getTrafficTool(carto));
+  // Transit mirrors traffic: offered only when a GTFS feed is configured, and
+  // always absent - never a "no feed" stub - when it is not, so a missing tool
+  // means "no schedule source here" and can never read as "no service".
+  if (carto.hasTransit) tools.push(getTransitTool(carto, maxTokens));
   // Daylight needs no source and no credential, so it is unconditional.
   tools.push(getDaylightTool());
   // A maplet advertises its tools from the same catalogue, so a tool served
@@ -372,6 +376,7 @@ function capabilitiesOf(carto: SuperCarto | undefined, override?: Partial<Capabi
     elevation: carto?.hasElevation ?? false,
     weather: carto?.hasWeather ?? true,
     traffic: carto?.hasTraffic ?? false,
+    transit: carto?.hasTransit ?? false,
   };
   return { ...base, ...override };
 }
@@ -651,6 +656,68 @@ function getTrafficTool(carto: SuperCarto): McpTool {
       }
       lines.push('', `source: ${res.source}`);
       return text(lines.join('\n'));
+    },
+  };
+}
+
+/**
+ * Transit schedule from the configured GTFS feed.
+ *
+ * The description states the honest contract outright, because an agent that
+ * reads a stop list without it has no way to discover that the distances are
+ * straight-line or that "no departure times" can mean "no service today"
+ * rather than missing data. The tool's absence from a deployment is the honest
+ * refusal for a missing feed; everything inside the tool must say what it is.
+ */
+function getTransitTool(carto: SuperCarto, maxTokens: number): McpTool {
+  return {
+    name: 'get_transit',
+    description:
+      'Transit stops, lines, and service times around a coordinate, read from ' +
+      "the operator's configured GTFS feed. It names the lines stopping near a " +
+      'point and the first and last departures between them, which is what an ' +
+      'agent needs before telling someone to wait or to walk instead. ' +
+      'Distances between consecutive stops are straight-line; the map note ' +
+      'labels them. First and last departures are schedule values for the ' +
+      "queried date in the feed's timezone; a stop with no service that day " +
+      'reports none rather than an invented time. The tool exists only when a ' +
+      'feed is configured, so its absence means a schedule source is missing, ' +
+      'never that no service exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lat: { type: 'number' },
+        lon: { type: 'number' },
+        radiusM: { type: 'number', default: 400 },
+        budget: {
+          type: 'number',
+          description: `Token budget for the response. Default 1024, hard cap ${maxTokens}.`,
+          default: 1024,
+        },
+        now: {
+          type: 'string',
+          description:
+            'ISO 8601 instant to judge the service day against. Defaults to ' +
+            'now. Interpreted in the feed timezone.',
+        },
+      },
+      required: ['lat', 'lon'],
+    },
+    handler: async (args) => {
+      const budget = clampBudget(args.budget, 1024, maxTokens);
+      const t = await carto.transitAt({
+        lat: requireNumber(args, 'lat'),
+        lon: requireNumber(args, 'lon'),
+        radiusM: optionalNumber(args, 'radiusM', 400),
+        budget,
+        now: typeof args.now === 'string' && args.now !== '' ? args.now : undefined,
+      });
+      const header = [
+        `# transit @ ${t.feedName}`,
+        `# tokens ${t.tokens}/${budget}  stops ${t.stops}  edges ${t.edges}`,
+      ];
+      if (t.prunedStops > 0) header.push(`# NOTE: ${t.prunedStops} stop(s) pruned to fit the budget.`);
+      return text([...header, '', t.yaml].join('\n'));
     },
   };
 }

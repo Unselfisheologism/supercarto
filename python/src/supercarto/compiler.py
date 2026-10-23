@@ -615,11 +615,14 @@ def _compile_heat(doc: ScrDocument, env, max_hotspots: int) -> list[HeatSummary]
         # document's quantised extent.
         scale = doc.extent / h.resolution if h.resolution > 0 else 1
 
-        # A layer whose cells are all the same value carries no information:
-        # a flat terrain slope layer is always exactly that, and asserting it
-        # burns budget.
+        # A layer whose cells are all zero carries no information: a flat
+        # terrain slope layer is always exactly that, and asserting it burns
+        # budget. A layer whose cells are uniform but NONZERO is different: a
+        # uniformly steep escarpment or a uniformly crowded district is a fact
+        # an agent acts on, so dropping it would claim an absent slope for
+        # terrain that is actively dangerous to cross.
         distinct = {c.value for c in cells}
-        if len(distinct) <= 1:
+        if len(distinct) == 0 or (len(distinct) == 1 and next(iter(distinct)) == 0):
             continue
 
         # Zero is the absence of a hotspot, not a weak one. Ranking by value

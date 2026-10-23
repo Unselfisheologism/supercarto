@@ -104,10 +104,16 @@ class StubElevation implements ElevationSource {
     const width = res;
     const height = res;
     const values = new Float32Array(width * height);
+    const centre = res / 2;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        // Rises about 100m across the box: a real hill, not noise.
-        values[y * width + x] = x * 100;
+        // A smooth hill whose grades stay under the 20% presentation clamp, so
+        // the emitted top-16 cells carry distinct values. A linear ramp would
+        // make every in-bounds cell grade identically, and clamped-to-equal
+        // cells would make the layer collapse again for the wrong reason.
+        const dx = x - centre;
+        const dy = y - centre;
+        values[y * width + x] = 20 * Math.exp(-(dx * dx + dy * dy) / 50);
       }
     }
     return {
@@ -116,7 +122,7 @@ class StubElevation implements ElevationSource {
       height,
       values,
       min: 0,
-      max: (width - 1) * 100,
+      max: 20,
     };
   }
 }
@@ -220,10 +226,21 @@ describe('bboxAreaSqm', () => {
       values: new Float32Array([0, 10, 20, 30]),
       min: 0, max: 30,
     };
+    // Registers every catalogued tool when every capability is available
     const carto = new SuperCarto({
       sources: [new StubSource([])],
       elevation: { name: 'stub-terrain', fetch: async () => grid },
       traffic: [{ name: 'stub-flow', configured: () => true, flow: async () => undefined }],
+      // `get_transit` is capability-gated like traffic, so the whole-catalogue
+      // assertion needs a feed present, not just keys.
+      transit: {
+        name: 'stub-transit',
+        feedName: 'stub feed',
+        querySlice: () => ({
+          yaml: 'transit: {}\n', tokens: 4, budget: 1024,
+          feedName: 'stub feed', stops: 0, edges: 0, prunedStops: 0,
+        }),
+      },
     });
     const tools = defineTools(carto, 8192);
     expect(() => assertToolsMatchCatalog(tools, carto)).not.toThrow();
@@ -269,7 +286,7 @@ describe('bboxAreaSqm', () => {
     // Every capability on. `advertisedTools(true)` alone means elevation-only now
     // that there are three independently gated tools, so passing a full
     // capability object is the only way to ask "is the whole catalogue reachable".
-    const lines = advertisedTools({ elevation: true, weather: true, traffic: true });
+    const lines = advertisedTools({ elevation: true, weather: true, traffic: true, transit: true });
     for (const t of TOOL_CATALOG) expect(lines).toContain(t.signature);
     // No stale entries left over from the old hand-written list.
     expect(lines.join(' ')).not.toMatch(/expand_node|get_place/);

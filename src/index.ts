@@ -176,6 +176,17 @@ export {
   type FlowLevel,
   type FlowSegment,
 } from './source/traffic.js';
+export {
+  GtfsSource,
+  parseCsv,
+  csvRecords,
+  parseGtfsTime,
+  formatGtfsClock,
+  unzipSync,
+  type TransitSource,
+  type TransitRequest,
+  type TransitResult,
+} from './source/gtfs.js';
 
 // --- Tiled sources -----------------------------------------------------------
 export {

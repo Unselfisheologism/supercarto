@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { SuperCarto } from '../live.js';
+import { GtfsSource } from '../source/gtfs.js';
 import { bboxAround, normalizeBbox, type BboxQuery } from '../source/types.js';
 import { fromScr } from '../pipeline.js';
 import { encodeDocument } from '../wire/encode.js';
@@ -74,9 +75,22 @@ export class MapApiServer {
       return;
     }
 
+    // Offered only when a GTFS feed is configured (or named per request via
+    // ?feed=), so the 404 is the honest refusal and no route ever answers with
+    // a stub that reads like "no service".
+    if (url.pathname === '/transit') {
+      await this.transit(url, res);
+      return;
+    }
+
     this.json(res, 404, {
       error: 'not found',
-      routes: ['/health', '/maplet?lat=&lon=&radiusM=&budget=', '/scr?bbox=w,s,e,n'],
+      routes: [
+        '/health',
+        '/maplet?lat=&lon=&radiusM=&budget=',
+        '/scr?bbox=w,s,e,n',
+        '/transit?lat=&lon=&radiusM=&budget=',
+      ],
     });
   }
 
@@ -131,6 +145,76 @@ export class MapApiServer {
     const text = await this.carto.scr(bbox, layers);
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     res.end(text);
+  }
+
+  /**
+   * `GET /transit?lat=&lon=&radiusM=&budget=&now=&feed=`
+   *
+   * The deployment's configured feed serves the request; `feed` is an optional
+   * override to a directory or .zip path, cached per path because loading a
+   * feed is the expensive part and callers probe repeatedly. Without a feed
+   * configured or named, this is a 404 stating why - the same honest refusal
+   * the MCP surface makes by simply not advertising the tool.
+   */
+  private transitFeeds = new Map<string, GtfsSource>();
+
+  private async transit(url: URL, res: ServerResponse): Promise<void> {
+    const lat = numParam(url, 'lat');
+    const lon = numParam(url, 'lon');
+    if (lat === undefined || lon === undefined) {
+      this.json(res, 400, { error: 'lat and lon are required' });
+      return;
+    }
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      this.json(res, 400, { error: 'lat must be in [-90,90] and lon in [-180,180]' });
+      return;
+    }
+
+    const radiusM = clamp(numParam(url, 'radiusM', 400), 1, MAX_RADIUS_M);
+    const budget = clamp(numParam(url, 'budget', DEFAULT_BUDGET), 64, this.maxTokens);
+    const now = url.searchParams.get('now') ?? undefined;
+    const feedPath = url.searchParams.get('feed');
+
+    let result: Awaited<ReturnType<SuperCarto['transitAt']>>;
+    try {
+      if (feedPath) {
+        let source = this.transitFeeds.get(feedPath);
+        if (!source) {
+          source = new GtfsSource(feedPath);
+          this.transitFeeds.set(feedPath, source);
+        }
+        result = source.querySlice({ lat, lon, radiusM, budget, now });
+      } else {
+        if (!this.carto.hasTransit) {
+          this.json(res, 404, {
+            error:
+              'no GTFS feed configured for this deployment: set SUPERCARTO_GTFS or pass ?feed=<dir|zip>',
+          });
+          return;
+        }
+        result = await this.carto.transitAt({ lat, lon, radiusM, budget, now });
+      }
+    } catch (err) {
+      this.json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+
+    const format = url.searchParams.get('format') ?? 'json';
+    if (format === 'yaml' || format === 'text') {
+      res.writeHead(200, { 'content-type': 'text/yaml; charset=utf-8' });
+      res.end(result.yaml);
+      return;
+    }
+
+    this.json(res, 200, {
+      yaml: result.yaml,
+      tokens: result.tokens,
+      budget: result.budget,
+      feedName: result.feedName,
+      stops: result.stops,
+      edges: result.edges,
+      omittedStops: result.prunedStops,
+    });
   }
 
   private json(res: ServerResponse, status: number, body: unknown): void {

@@ -182,6 +182,10 @@ agent map that can answer "can you be somewhere by 9?" with real schedule
 awareness. PlaceRoot explicitly declined schedules; Mapbox's MCP has none.
 **Top pick for the next feature.**
 
+> **Status 2026-10-23: shipped in 0.5.0.** `get_transit` over any static
+> GTFS feed, three honest service states, budget-honouring, TS suite green
+> (412 tests) and parity-checked against the Python port.
+
 ### D4 — Coverage gaps as data partnerships (later)
 
 From the same gap table: hazard layers (flood/wildfire for logistics

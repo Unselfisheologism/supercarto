@@ -182,6 +182,42 @@ someone through a floor. A room more than 40m from any corridor is left
 unattached, because a straight line through intervening walls is worse than no
 edge. Untagged storeys are reported as `missing` rather than invented.
 
+### Transit schedules
+
+Set `SUPERCARTO_GTFS` to any static GTFS feed (an unzipped directory or a .zip)
+and `get_transit` appears: stops, lines, and a service window for the queried
+day. It is the one agent map tool that answers "can you be somewhere by 9"
+from an actual schedule, and every agency's failure mode is covered by an
+honest state rather than a guess:
+
+```yaml
+transit:
+  center: "36.913, -116.77"
+  radius: 3.0km
+  feed: sample-feed
+  note: Stop distances are straight-line. Schedule from GTFS feed for 2007-01-11 in America/Los_Angeles.
+nodes:
+  STAGECOACH: {type: stop, name: "Stagecoach Hotel & Casino", tags: [bus], routes: ["30", "40"], first: 06:00, last: 06:58}
+  NADAV: {type: stop, name: "North Ave / D Ave N", tags: [bus], routes: ["40"], first: 06:14, last: 06:44}
+edges:
+  NADAV->DADAN: {dist: 601m, dir: south, path: bus 40}
+```
+
+- **Three service states, never two.** Running today shows routes and
+  first/last departures. A date with nothing running keeps the stops with
+  `routes: []` — no transit is not no stops — and the note says so. A feed
+  without a calendar shows the whole network and says the service window is
+  unknown instead of presenting whole-feed data as today's schedule.
+- **Times past midnight stay past midnight.** GTFS expresses a departure
+  after the service day's midnight as hours beyond 24 (`25:10`). Rendering
+  that as `01:10` fits the eye and misleads the decision, so it renders as
+  recorded, in the feed's own timezone.
+- **Edges are structure; schedules attach to nodes.** The adjacency survives
+  a no-service day because an agent walking between stops still wants it.
+- **The signal is explicit.** Departure times, the schedule date, and the
+  feed's timezone travel in the `note`, where a model reading only the map
+  sees them.
+
 ---
 
 ## The budget is a real budget
@@ -250,6 +286,7 @@ npx supercarto bench <file.geojson>
 | **Open-Meteo** | default | Weather. No key. |
 | **TomTom / HERE** | key required | Live traffic. |
 | **Terrarium tiles** | default | Elevation and slope. No key. |
+| **GTFS feeds** | `SUPERCARTO_GTFS` | Transit stops, lines, and schedules. Any static feed, no key. |
 
 ```bash
 export SUPERCARTO_PMTILES=https://your-bucket/planet.pmtiles
@@ -270,6 +307,7 @@ TOMTOM_API_KEY          enables get_traffic
 HERE_API_KEY            enables get_traffic
 SUPERCARTO_NO_TERRAIN   disable elevation
 SUPERCARTO_NO_WEATHER   disable weather
+SUPERCARTO_GTFS         path to a GTFS feed (dir or .zip); enables get_transit
 ```
 
 ---
@@ -288,9 +326,10 @@ SUPERCARTO_NO_WEATHER   disable weather
 
 Seven tools: `get_maplet`, `route`, `search_places`, `expand_feature`,
 `get_daylight`, `get_terrain`, `get_weather`, plus `get_traffic` when a key is
-present. Each maplet lists exactly the tools that deployment can answer, so an
-agent never calls one that cannot work. `get_daylight` is always available: sun
-position is arithmetic, needing no source and no credential.
+present and `get_transit` when a GTFS feed is configured. Each maplet lists
+exactly the tools that deployment can answer, so an agent never calls one that
+cannot work. `get_daylight` is always available: sun position is arithmetic,
+needing no source and no credential.
 
 ### What a maplet says about a place
 
@@ -355,6 +394,7 @@ curl 'localhost:8787/maplet?lat=35.6833&lon=139.762&radiusM=400&budget=1500&form
 supercarto fetch --lat 35.6833 --lon 139.762 --radiusM 400 --budget 1500 --metrics
 supercarto weather --lat 35.6833 --lon 139.762 --hours 12
 supercarto traffic --from 37.7749,-122.4194 --to 37.7849,-122.4194
+supercarto transit --feed city-gtfs.zip --lat 36.913 --lon -116.77 --radiusM 3000
 supercarto route --from 37.7749,-122.4194 --to 37.7849,-122.4194 --mode walk
 supercarto mcp
 supercarto serve --port 8787
@@ -392,7 +432,9 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-282 tests passing: 162 unit, 111 against live OpenStreetMap, and 9 MCP end-to-end.
+412 tests passing: 280 unit (including 26 for the GTFS layer), 120 against
+live sources, and 12 MCP end-to-end. Outputs are byte-identical to the Python
+port — the parity engine runs on every push.
 Verified against live OpenStreetMap, live Open-Meteo, and the live MCP server
 driven from Python.
 
@@ -406,7 +448,8 @@ with a built-in MVT decoder**, **routing demoted to feasibility** (straight-line
 distance and direction by default; OSRM turn-by-turn is opt-in for an engine you
 have verified — the public demo router returns impossible distances), **keyless weather with
 a degraded path that refuses to invent readings**, **traffic with an honest
-free-flow fallback**, terrain elevation and slope, MCP over stdio, HTTP API, CLI,
+free-flow fallback**, terrain elevation and slope, **GTFS transit schedules
+with three honest service states**, MCP over stdio, HTTP API, CLI,
 a Python client, and a **task-level benchmark with OSRM ground truth**.
 
 Not implemented: hosted vector tiles with style delivery, and full indoor room

@@ -35,6 +35,11 @@ import {
 import { fromGeoJson } from './ingest/geojson.js';
 import type { Capabilities } from './toolcatalog.js';
 import type { GeoJsonFeature } from './ingest/geojson.js';
+import {
+  type TransitRequest,
+  type TransitResult,
+  type TransitSource,
+} from './source/gtfs.js';
 import { encodeDocument } from './wire/encode.js';
 import { gridToLonLat } from './geo/project.js';
 import { gridScaleFor } from './geo/scale.js';
@@ -82,6 +87,15 @@ export interface SuperCartoOptions {
    * as live. Absence is reported instead.
    */
   traffic?: TrafficSourceLike[];
+  /**
+   * Transit schedule source, read from a GTFS feed. Omit by default.
+   *
+   * Not defaulted, because a schedule is only as fresh as the operator's last
+   * feed import: quietly serving a stale timetable labels it as the answer to
+   * "when is my bus", when what it holds is "when the bus ran last spring".
+   * Absence is reported instead, and `get_transit` stays unadvertised.
+   */
+  transit?: TransitSource;
   /**
    * Derive heat layers from the fetched data: place density, and elevation and
    * slope when a terrain source is configured. Default true.
@@ -153,6 +167,7 @@ export class SuperCarto {
   private readonly elevation?: ElevationSource;
   private readonly weather?: WeatherSource;
   private readonly traffic: TrafficRouter;
+  private readonly transit: TransitSource | undefined;
   private readonly deriveHeat: boolean;
   private readonly defaultBudget: number;
   /** Per-area cache of compiled documents, keyed by envelope and layer set. */
@@ -190,6 +205,10 @@ export class SuperCarto {
         new HereFlow(opts.here ?? {}),
       ],
     );
+    // Transit is never defaulted. A schedule without an operator-imported feed
+    // does not exist, and one that exists but is stale is worse than absent:
+    // the tool must not be advertised at all unless the operator has wired one.
+    this.transit = opts.transit;
     this.deriveHeat = opts.heat !== false;
     this.defaultBudget = opts.defaultBudget ?? 1024;
   }
@@ -547,12 +566,46 @@ export class SuperCarto {
     return this.traffic.hasFlow;
   }
 
+  /**
+   * Whether the transit schedule can be answered.
+   *
+   * Gates advertising `get_transit`. A schedule tool with no feed behind it
+   * would teach a model to trust a "no feed" answer that reads like "no
+   * service" - an honest refusal turned into a lie about buses that run.
+   */
+  get hasTransit(): boolean {
+    return this.transit !== undefined;
+  }
+
+  /**
+   * The transit slice for a point: stops, routes, and schedule-derived service
+   * window, from the configured GTFS feed.
+   *
+   * The underlying query is synchronous (the feed is local data), but the
+   * method stays async so every live entry point answers the same way and a
+   * future remote schedule source needs no call-site changes.
+   *
+   * Throws when no feed is configured. The tool layer never advertises
+   * `get_transit` in that state, so this is a plumbing error, not an answer.
+   */
+  async transitAt(req: TransitRequest): Promise<TransitResult> {
+    if (!this.transit) {
+      throw new Error('no GTFS feed configured for this deployment');
+    }
+    return this.transit.querySlice({
+      ...req,
+      radiusM: req.radiusM ?? 400,
+      budget: req.budget ?? this.defaultBudget,
+    });
+  }
+
   /** The full capability set, used for tool advertisement. */
   get capabilities(): Capabilities {
     return {
       elevation: this.hasElevation,
       weather: this.hasWeather,
       traffic: this.hasTraffic,
+      transit: this.hasTransit,
     };
   }
 
@@ -681,4 +734,7 @@ export type {
   WeatherResult,
   TrafficSourceLike,
   TrafficResult,
+  TransitSource,
+  TransitRequest,
+  TransitResult,
 };

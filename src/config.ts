@@ -3,6 +3,7 @@ import { OverpassSource } from './source/overpass.js';
 import { ProtomapsSource } from './source/protomaps.js';
 import { TerrariumElevation } from './source/terrain.js';
 import { HereFlow, TomTomFlow } from './source/traffic.js';
+import { GtfsSource } from './source/gtfs.js';
 import { SuperCarto, type SuperCartoOptions } from './live.js';
 import type { MapSource } from './source/types.js';
 
@@ -28,6 +29,10 @@ import type { MapSource } from './source/types.js';
  *   TERRARIUM_ENDPOINT   Elevation tile template.
  *   TOMTOM_API_KEY       Enables live traffic conditions.
  *   HERE_API_KEY         Same, for HERE as the provider.
+ *   SUPERCARTO_GTFS      Path to a GTFS (static transit) feed: a directory of
+ *                        .csv/.txt tables or a .zip archive. When set, the
+ *                        `get_transit` tool is offered and `/transit` serves
+ *                        schedule data. Off by default, see below.
  */
 
 export interface EnvOverrides {
@@ -42,6 +47,8 @@ export interface EnvOverrides {
   overpassFallback?: boolean;
   /** Set to disable weather. */
   noWeather?: boolean;
+  /** Path to a GTFS feed directory or .zip. Enables the `get_transit` tool. */
+  gtfs?: string;
 }
 
 /** Build a `SuperCarto` from explicit overrides. */
@@ -55,6 +62,7 @@ export function cartoFromEnv(overrides: EnvOverrides = {}): SuperCarto {
     noTerrain: overrides.noTerrain ?? Boolean(process.env.SUPERCARTO_NO_TERRAIN),
     noWeather: overrides.noWeather ?? Boolean(process.env.SUPERCARTO_NO_WEATHER),
     overpassFallback: overrides.overpassFallback ?? process.env.SUPERCARTO_OVERPASS_FALLBACK !== '0',
+    gtfs: overrides.gtfs ?? process.env.SUPERCARTO_GTFS,
   };
 
   const sources = sourcesFor(env);
@@ -82,6 +90,15 @@ export function cartoFromEnv(overrides: EnvOverrides = {}): SuperCarto {
     env.tomTomKey ? new TomTomFlow({ apiKey: env.tomTomKey }) : new TomTomFlow({ apiKey: '' }),
     env.hereKey ? new HereFlow({ apiKey: env.hereKey }) : new HereFlow({ apiKey: '' }),
   ];
+
+  // Transit is never enabled implicitly, and for a stronger reason than auth:
+  // a schedule is only as fresh as the operator's last feed import. A tool that
+  // answers "when is my bus" from last spring's timetable sounds exactly like a
+  // live schedule, so serving one must be an explicit operator decision, with
+  // the operator owning the freshness. A broken path is not a startup failure
+  // either: the source loads lazily, so a configured-but-broken feed surfaces
+  // as a clear error on the first query while the rest of the server works.
+  options.transit = env.gtfs ? new GtfsSource(env.gtfs) : undefined;
 
   return new SuperCarto(options);
 }

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.0 — GTFS transit, and a slope-layer correctness fix
+
+### get_transit: schedules for agents
+
+`get_transit` answers "can you be somewhere by 9" from an actual schedule. Set
+`SUPERCARTO_GTFS` to any static GTFS feed — a directory of tables or a single
+.zip — and the tool appears in `npx supercarto mcp`, the HTTP API, and the CLI
+(`supercarto transit --feed ... --lat ... --lon ...`). Every output re-uses the
+maplet's own honesty rules, and adds three of its own:
+
+- **Three service states, never two.** A running day shows today's routes and
+  first/last departures. A date with nothing running keeps the stops with
+  `routes: []` — "no transit" is not "no stops" — while adjacency edges stay,
+  because a walk between stops does not need a timetable. A feed with no
+  calendar shows the whole network and declares the service window unknown
+  rather than labelling whole-feed facts as today's.
+- **Times past midnight stay past midnight.** GTFS writes a departure after
+  the service day's midnight as `25:10`; rendering it as `01:10` fits the eye
+  and strands the person waiting for it. The feed's timezone, the evaluated
+  instant, and every caveat travel in the map's `note`.
+- **The tool is absent without a feed.** Like traffic, `get_transit` is not
+  advertised unless the operator configured one — a schedule is only as fresh
+  as the operator's last import, so serving one is an operator's decision, not
+  a default. A configured-but-broken path degrades at query time with a clear
+  error; the rest of the server keeps working.
+
+Implementation is dependency-free again: an RFC 4180 CSV parser (quoted
+fields, CRLF, UTF-8 BOM) and a minimal zip reader (STORE + DEFLATE) live in
+`src/source/gtfs.ts`. The token budget is hard, re-measured on the emitted
+YAML, with connectivity-preserving pruning first and an `omitted:` record of
+every drop. 26 offline tests cover the parser, the three service states, both
+budget passes, and the zip reader; the feature was additionally verified
+end-to-end against the GTFS sample feed in all three states.
+
+### Slope layers survive their own clamps
+
+`compileHeat` dropped any layer whose surviving hotspots carried one distinct
+value — the check meant to stop a flat-earth maplet printing `slope: {max: 0,
+mean: 0}` was also erasing uniformly steep terrain, which is a fact an agent
+acts on, not an absence. Only degenerate (all-zero) layers are dropped now, on
+both ports, and the test terrain is a smooth hill whose grades stay under the
+20% presentation clamp so the emitted cells can carry distinct values.
+
 ## Unreleased — route demoted from navigation to feasibility
 
 The benchmark's honest finding — the public demo OSRM answers `Ok` with

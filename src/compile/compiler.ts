@@ -909,12 +909,18 @@ function compileHeat(doc: ScrDocument, env: Envelope, maxHotspots: number): Heat
      */
     const scale = h.resolution > 0 ? doc.extent / h.resolution : 1;
 
-    // A layer whose cells are all the same value carries no information, and a
-    // flat terrain slope layer is always exactly that. Emitting it burns budget
+    // A layer whose cells are all zero carries no information, and a flat
+    // terrain slope layer is always exactly that. Emitting it burns budget
     // asserting nothing: a real maplet printed `slope: {max: 0, mean: 0}` followed
     // by five lines all reading `v: 0, rel: 0`.
+    //
+    // A layer whose cells are uniform but NONZERO is a different thing: a
+    // uniformly steep escarpment, or a uniformly crowded district, is a real
+    // fact an agent acts on. Dropping it reported `no slope layer` for terrain
+    // that is actively dangerous to cross.
     const distinct = new Set(cells.map((c) => c.value));
-    if (distinct.size <= 1) continue;
+    if (distinct.size === 0) continue;
+    if (distinct.size === 1 && (distinct.values().next().value ?? 0) === 0) continue;
 
     // Zero is the absence of a hotspot, not a weak one. Ranking by value already
     // sinks these to the bottom, but a small cell cap on a sparse layer can still

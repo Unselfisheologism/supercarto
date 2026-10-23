@@ -94,6 +94,9 @@ COMMANDS
   weather  Current conditions and forecast at a coordinate. No API key needed.
   traffic  Congestion and realistic arrival time. Needs TOMTOM_API_KEY or
            HERE_API_KEY; without one it reports free-flow and says so.
+  transit  Transit stops, lines, and service times from a GTFS feed. Needs
+           --feed <dir|zip> or SUPERCARTO_GTFS; without one it refuses, so a
+           missing feed never reads as "no service".
   compile <file.geojson>   Compile a local GeoJSON file into a YAML map graph.
   encode  <file.geojson>   Compile a local file to the SCR wire format.
   decode  <file.scr>       Inspect an SCR document (text or binary).
@@ -111,6 +114,8 @@ LIVE COMMANDS
   route --from <lat,lon> --to <lat,lon> [--mode walk|bike|drive]
   weather --lat <n> --lon <n> [--hours 12] [--format json]
   traffic --from <lat,lon> --to <lat,lon> [--mode drive]
+  transit --feed <dir|zip> --lat <n> --lon <n> [--radiusM 400] [--budget 1024]
+          [--now ISO-8601] [--out path]
   serve [--port 8787]
   mcp   [--max-tokens 8192]
 
@@ -120,6 +125,9 @@ DATA SOURCES
                                   Far faster and not rate limited.
   OVERPASS_ENDPOINT              Point at your own Overpass instance.
   TOMTOM_API_KEY / HERE_API_KEY   Enable live traffic conditions.
+  SUPERCARTO_GTFS                Path to a GTFS feed (directory of .txt/.csv
+                                 tables, or a .zip). Enables the transit tool;
+                                 the CLI's --feed overrides it.
   SUPERCARTO_NO_TERRAIN=1         Disable elevation lookups.
 
 COMMON OPTIONS
@@ -303,6 +311,43 @@ async function main(): Promise<void> {
       return;
     }
 
+    case 'transit': {
+      const lat = num(flags.lat, NaN);
+      const lon = num(flags.lon, NaN);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        throw new Error('transit requires --lat and --lon');
+      }
+      // --feed is an override, not a separate configuration path, so a CLI
+      // invocation and the same request through the server cannot diverge.
+      const carto = buildCarto(flags);
+      if (!carto.hasTransit) {
+        process.stderr.write(
+          'no GTFS feed configured: pass --feed <dir|zip> or set SUPERCARTO_GTFS\n',
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const res = await carto.transitAt({
+        lat,
+        lon,
+        radiusM: num(flags.radiusM, 400),
+        budget: num(flags.budget, 1024),
+        now: typeof flags.now === 'string' ? flags.now : undefined,
+      });
+      if (flags.format === 'json') {
+        writeOut(JSON.stringify(res, null, 2) + '\n', flags.out);
+        return;
+      }
+      // The YAML is the agent-facing artifact and goes out whole; the counts
+      // ride on stderr the way the other live commands report them.
+      writeOut(res.yaml, flags.out);
+      process.stderr.write(
+        `tokens ${res.tokens}/${res.budget}  feed ${res.feedName}  ` +
+          `stops ${res.stops}  edges ${res.edges}  pruned ${res.prunedStops}\n`,
+      );
+      return;
+    }
+
     case 'serve': {
       startApiServer(num(flags.port, 8787), { carto: buildCarto(flags) });
       return;
@@ -483,6 +528,7 @@ function buildCarto(flags: Flags): SuperCarto {
     ...(typeof flags.pmtiles === 'string' ? { pmtiles: flags.pmtiles } : {}),
     ...(typeof flags.overpass === 'string' ? { overpass: flags.overpass } : {}),
     ...(typeof flags.elevation === 'string' ? { elevation: flags.elevation } : {}),
+    ...(typeof flags.feed === 'string' ? { gtfs: flags.feed } : {}),
     ...(flags.overpassFallback === false ? { overpassFallback: false } : {}),
   });
 }

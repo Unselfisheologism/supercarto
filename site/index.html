@@ -26,7 +26,7 @@
     "operatingSystem": "Node.js 20+, Python 3.10+",
     "abstract": "Compiles geospatial data into token-budgeted topological graphs that an AI agent can reason over directly.",
     "description": "LLM-native spatial middleware. Give an AI agent a map of any location on earth as a token-budgeted topological graph, with indoor floors, weather, and traffic, that it can reason over directly. Ships as an npm package, a CLI, an HTTP API, and an MCP tool server.",
-    "softwareVersion": "0.4.11",
+    "softwareVersion": "0.5.0",
     "encodingFormat": ["application/yaml", "application/json"],
     "isAccessibleForFree": true,
     "license": "https://opensource.org/licenses/Apache-2.0",
@@ -146,6 +146,7 @@ tools:
       <li><b>Weather.</b> Current conditions and an hourly forecast with no key. If the source is down it says so instead of returning zeroes.</li>
       <li><b>Traffic.</b> Live with a TomTom or HERE key. Without one it reports free-flow and labels it as such.</li>
       <li><b>Indoor floors.</b> Floor-by-floor graphs with lifts collapsed into one vertical link.</li>
+      <li><b>Transit schedules.</b> Stops, lines and first/last departures from any GTFS feed, with three honest service states - running, none, unknown. The only agent map tool that answers "can you be somewhere by 9" from a real schedule.</li>
       <li><b>MCP.</b> Works as an MCP tool server for agents.</li>
     </ul>
   </section>
