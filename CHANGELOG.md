@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.1 — the budget kept its promise on dense small maps
+
+Three fixes, all found by probing the token-budget contract end to end:
+
+- **The exhaustion branch now opens the pressure valve on both ports.** A
+  small dense graph reached the shrink loop with batch already at 1 and
+  exited before cut vertices were ever admitted, silently returning 580
+  tokens on a 512 budget - the one case where the product's central promise
+  ("the budget is hard, re-measured on delivered output") lost. The valve
+  opens in that branch too (580 -> 411 on the probe fixture).
+- **Obstacles that name pruned edges no longer ship.** Shrinking or chain
+  contraction removed an edge and left the warning behind - an agent told to
+  avoid a route that no longer exists in the map it holds.
+- **Uniform-plateau heat layers collapsed to their summary line**, and a
+  cell at the ceiling of a degenerate declared range reports `rel: 1`, not
+  the misleading `rel: 0`.
+
+Also carried: hosted-worker readiness (detached-fetch safety across every
+injectable `fetchImpl`, GTFS pulled from Worker bundles as types-only) and
+`/healthz?endpoint=` probes against a closed list of Overpass instances.
+
+416 tests; parity re-run; verified against the hosted endpoint.
+
 ## 0.5.0 — GTFS transit, and a slope-layer correctness fix
 
 ### get_transit: schedules for agents
