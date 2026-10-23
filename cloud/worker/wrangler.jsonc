@@ -1,13 +1,5 @@
 {
-  // The worker bundles through the Wrangler bundler (no build script needed):
-  // `cf deploy` inside cloud/worker picks up this config.
   "name": "supercarto-compile",
   "main": "src/worker.ts",
-  // Pinned when the worker was written. Bump deliberately, with a test run.
-  "compatibility_date": "2025-12-01",
-  // No nodejs_compat: the compile path imports no Node built-ins. The worker
-  // builds its own sources deliberately (config.ts pulls fs/gtfs/process).
-  "triggers": {
-    "crons": []
-  }
+  "compatibility_date": "2025-12-01"
 }
