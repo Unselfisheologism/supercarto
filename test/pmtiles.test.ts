@@ -211,6 +211,20 @@ const SF_TILES = [
 ];
 const SF_BBOX = { west: -122.4268, south: 37.7702, east: -122.4014, north: 37.7799 };
 
+/** Every coordinate pair in a GeoJSON geometry, flattened. */
+function flatCoords(g: { coordinates: unknown }): [number, number][] {
+  const out: [number, number][] = [];
+  const walk = (c: unknown): void => {
+    if (Array.isArray(c) && typeof c[0] === 'number') {
+      out.push([c[0] as number, c[1] as number]);
+    } else if (Array.isArray(c)) {
+      for (const part of c) walk(part);
+    }
+  };
+  walk(g.coordinates);
+  return out;
+}
+
 describe('MVT decoding', () => {
   it('reads the layer name, which is field 1 in MVT 2.1', () => {
     // Written against spec v1 this reads name as a varint and loses it, so the
@@ -365,16 +379,25 @@ describe('ProtomapsSource against a real archive', () => {
 
   it('places fetched geometry inside the requested area', async () => {
     // Tile-local integers have to become real coordinates, or every feature is
-    // discarded as out of area and the maplet comes back empty.
+    // discarded as out of area and the maplet comes back empty. The numbers
+    // are parsed and compared, not matched with a substring regex: a mirrored
+    // latitude (-37.71) satisfies a digit-only check against +37.71, which is
+    // exactly how the equator-mirrored decode used to pass.
     const { path } = buildArchive({ z: 12, tiles: SF_TILES, tileCompression: 2, tileType: 1 });
     const src = new ProtomapsSource({ url: path, maxZoom: 12, maxTiles: 8 });
     const res = await src.fetch({ bbox: SF_BBOX, layers: [], maxFeatures: 500 });
+    expect(res.features.length).toBeGreaterThan(0);
+    // Fixture tiles can spill past the bbox edge by a tile-fraction; the
+    // signed hemisphere check is the regression guard.
+    const loose = { ...SF_BBOX, west: SF_BBOX.west - 0.05, east: SF_BBOX.east + 0.05, south: SF_BBOX.south - 0.05, north: SF_BBOX.north + 0.05 };
     for (const f of res.features) {
       expect(f.geometry).not.toBeNull();
-      const coords = JSON.stringify(f.geometry?.coordinates);
-      // Inside the requested box, and on the right side of the planet.
-      expect(coords).toMatch(/-122\.4\d+/);
-      expect(coords).toMatch(/37\.7\d+/);
+      for (const [lon, lat] of flatCoords({ coordinates: f.geometry!.coordinates })) {
+        expect(lon).toBeGreaterThanOrEqual(loose.west);
+        expect(lon).toBeLessThanOrEqual(loose.east);
+        expect(lat).toBeGreaterThanOrEqual(loose.south);
+        expect(lat).toBeLessThanOrEqual(loose.north);
+      }
     }
   });
 

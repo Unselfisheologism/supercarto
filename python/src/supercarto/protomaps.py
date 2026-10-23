@@ -452,10 +452,12 @@ def _properties_of(props: dict) -> dict:
 def _to_geo_json(rings: list, extent: int, x0: int, y0: int, zoom: int) -> dict | None:
     """Tile-local integer coordinates to WGS84.
 
-    Tile-local space spans ``0..extent`` across a tile, and y grows downward,
-    which is the opposite of every other coordinate system here. Getting the
-    flip wrong mirrors the map about its horizontal axis, which still looks
-    plausible at city scale and is why it is worth stating.
+    Tile-local space spans ``0..extent`` across a tile, and y grows downward
+    from the tile's top edge - the same direction the slippy row count grows,
+    since y0 is the tile's north edge and _lat_from_tile_y takes that slippy
+    row. The absolute row is therefore y0 + v; inserting a flip mirrors the
+    map about the equator, which still looks plausible at city scale, and a
+    real fetch of SF streets read back at -37.77 before this was fixed.
     """
     if not rings:
         return None
@@ -466,8 +468,7 @@ def _to_geo_json(rings: list, extent: int, x0: int, y0: int, zoom: int) -> dict 
         u = c[0] / extent
         v = c[1] / extent
         lon = ((x0 + u) / size) * 360 - 180
-        yy = size - (y0 + v)
-        lat = _lat_from_tile_y(yy, size)
+        lat = _lat_from_tile_y(y0 + v, size)
         return (_round(lon, 7), _round(lat, 7))
 
     mapped = [[to_lon_lat(c) for c in r] for r in rings]

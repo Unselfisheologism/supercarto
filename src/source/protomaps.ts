@@ -558,8 +558,11 @@ function toGeoJson(
     const u = c[0]! / extent;
     const v = c[1]! / extent;
     const lon = ((x0 + u) / size) * 360 - 180;
-    const yy = size - (y0 + v);
-    const lat = latFromTileY(yy, size);
+    // MVT y grows downward from the tile's top edge, the slippy row count does
+    // too (y0 is the tile's north edge), and latFromTileY takes that slippy
+    // row. Absolute row is therefore y0 + v, and any flip mirrors the map
+    // about the equator - a real fetch of SF streets read back at -37.77.
+    const lat = latFromTileY(y0 + v, size);
     return [round(lon, 7), round(lat, 7)];
   };
 
