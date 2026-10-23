@@ -3516,6 +3516,7 @@ function sessionEnvelopeContains(env, bbox) {
 __name(sessionEnvelopeContains, "sessionEnvelopeContains");
 
 // ../../src/source/types.ts
+var plainFetch = /* @__PURE__ */ __name((...args) => fetch(...args), "plainFetch");
 function bboxAround(lat, lon, radiusM) {
   const dLat = radiusM / 110574;
   const dLon = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
@@ -3816,7 +3817,7 @@ var OverpassSource = class {
   constructor(opts = {}) {
     this.endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.maxFeatures = opts.maxFeatures ?? 5e4;
     this.userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 4);
@@ -4128,7 +4129,7 @@ var TerrariumElevation = class {
   maxTiles;
   constructor(opts = {}) {
     this.template = opts.template ?? "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.maxTiles = opts.maxTiles ?? 16;
   }
   async fetch(bbox, res, signal) {
@@ -4364,7 +4365,7 @@ var OpenMeteoWeather = class {
   timeoutMs;
   constructor(opts = {}) {
     this.endpoint = opts.endpoint ?? OPEN_METEO_DEFAULT;
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.timeoutMs = opts.timeoutMs ?? 12e3;
   }
   async fetch(lat, lon, forecastHours = 12, signal) {
@@ -4624,7 +4625,7 @@ var TomTomFlow = class {
   constructor(opts = {}) {
     this.key = opts.apiKey ?? processEnv()?.TOMTOM_API_KEY ?? processEnv()?.TRAFFIC_API_KEY;
     this.base = opts.base ?? "https://api.tomtom.com";
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.timeoutMs = opts.timeoutMs ?? 1e4;
   }
   configured() {
@@ -4680,7 +4681,7 @@ var HereFlow = class {
   constructor(opts = {}) {
     this.key = opts.apiKey ?? processEnv()?.HERE_API_KEY;
     this.base = opts.base ?? "https://traffic.ls.hereapi.com";
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.timeoutMs = opts.timeoutMs ?? 1e4;
   }
   configured() {
@@ -5215,8 +5216,18 @@ function createHandler(opts = {}) {
   const mapletLimit = opts.mapletPerMinute ?? DEFAULT_MAPLET_PER_MINUTE;
   const overpassStatusUrl = (opts.overpassEndpoint ?? DEFAULT_OVERPASS_INTERPRETER).replace(/interpreter$/i, "status");
   let health = { at: 0, ok: false, detail: "not probed yet" };
+  const KNOWN_OVERPASS_INSTANCES = [
+    { root: "https://overpass-api.de/api" },
+    { root: "https://overpass.kumi.systems/api" },
+    { root: "https://overpass.private.coffee/api" },
+    { root: "https://gall.openstreetmap.de/api" }
+  ];
   return /* @__PURE__ */ __name(async function handle(req) {
     const url = new URL(req.url);
+    const probeParam = url.searchParams.get("endpoint");
+    const probedUrl = KNOWN_OVERPASS_INSTANCES.some(
+      (i) => probeParam !== null && probeParam.replace(/\/+$/, "").endsWith(i.root.replace("https://", ""))
+    ) ? `${probeParam}/status` : overpassStatusUrl;
     const extraHeaders = {
       "Access-Control-Allow-Origin": origin,
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -5226,10 +5237,13 @@ function createHandler(opts = {}) {
       return new Response(null, { status: 204, headers: extraHeaders });
     }
     if (url.pathname === "/healthz") {
-      await refreshHealth();
-      return json(extraHeaders, health.ok ? 200 : 503, {
-        ok: health.ok,
-        overpass: health.detail
+      const probe = probeParam !== null ? await probeStatus(probedUrl) : await (async () => {
+        await refreshHealth();
+        return health;
+      })();
+      return json(extraHeaders, probe.ok ? 200 : 503, {
+        ok: probe.ok,
+        overpass: probe.detail
       });
     }
     if (url.pathname === "/") {
@@ -5422,27 +5436,37 @@ function createHandler(opts = {}) {
   async function refreshHealth() {
     const now = Date.now();
     if (now - health.at < 6e4) return;
-    health = { at: now, ok: false, detail: "probing" };
+    const probed = await probeStatus(overpassStatusUrl);
+    health = { at: now, ok: probed.ok, detail: probed.detail };
+  }
+  __name(refreshHealth, "refreshHealth");
+  async function probeStatus(statusUrl, root = statusUrl.replace(/\/status$/, "")) {
     try {
-      const res = await fetch(overpassStatusUrl, { signal: AbortSignal.timeout(5e3) });
+      const res = await fetch(statusUrl, { signal: AbortSignal.timeout(5e3) });
       if (res.ok) {
-        health = { at: now, ok: true, detail: `reachable (HTTP ${res.status})` };
-      } else {
-        health = {
-          at: now,
+        return { ok: true, detail: `reachable (HTTP ${res.status})` };
+      }
+      if (res.status === 404) {
+        const interpreter = `${root}/interpreter?data=${encodeURIComponent("[out:json];node(id:1);out;")}`;
+        const q = await fetch(interpreter, { signal: AbortSignal.timeout(1e4) });
+        if (q.ok || q.status === 400 || q.status === 429) {
+          return { ok: true, detail: `reachable (interpreter HTTP ${q.status})` };
+        }
+        const rootRes = await fetch(root, { signal: AbortSignal.timeout(5e3) });
+        return {
           ok: false,
-          detail: `overpass responded HTTP ${res.status}`
+          detail: `interpreter ${q.status}, root ${rootRes.status}`
         };
       }
+      return { ok: false, detail: `overpass responded HTTP ${res.status}` };
     } catch (err) {
-      health = {
-        at: now,
+      return {
         ok: false,
         detail: `overpass unreachable: ${err instanceof Error ? err.message : String(err)}`
       };
     }
   }
-  __name(refreshHealth, "refreshHealth");
+  __name(probeStatus, "probeStatus");
   function indexBody() {
     return {
       name: "supercarto-compile",

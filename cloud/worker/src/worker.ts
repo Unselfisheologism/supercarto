@@ -103,8 +103,27 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
     (opts.overpassEndpoint ?? DEFAULT_OVERPASS_INTERPRETER).replace(/interpreter$/i, 'status');
   let health = { at: 0, ok: false, detail: 'not probed yet' };
 
+  /** Instances a Worker-routed deployment can be pointed at. */
+  const KNOWN_OVERPASS_INSTANCES: { root: string }[] = [
+    { root: 'https://overpass-api.de/api' },
+    { root: 'https://overpass.kumi.systems/api' },
+    { root: 'https://overpass.private.coffee/api' },
+    { root: 'https://gall.openstreetmap.de/api' },
+  ];
+
   return async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    // Probe an alternative instance, against a closed list: the primary
+    // instance refuses the shared Cloudflare egress range, so the hosted
+    // deployment needs to know, from its own network position, which mirror
+    // accepts it. `?endpoint=` picks one; without the parameter the
+    // configured instance is probed.
+    const probeParam = url.searchParams.get('endpoint');
+    const probedUrl = KNOWN_OVERPASS_INSTANCES.some(
+      (i) => probeParam !== null && probeParam.replace(/\/+$/, '').endsWith(i.root.replace('https://', '')),
+    )
+      ? `${probeParam}/status`
+      : overpassStatusUrl;
     const extraHeaders: Record<string, string> = {
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -116,10 +135,18 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
     }
 
     if (url.pathname === '/healthz') {
-      await refreshHealth();
-      return json(extraHeaders, health.ok ? 200 : 503, {
-        ok: health.ok,
-        overpass: health.detail,
+      // The manual alternative-instance probe is uncached; the configured
+      // instance keeps the 60s cache so a health-check storm does not become
+      // new load on the shared instance.
+      const probe = probeParam !== null
+        ? await probeStatus(probedUrl)
+        : (await (async () => {
+            await refreshHealth();
+            return health;
+          })());
+      return json(extraHeaders, probe.ok ? 200 : 503, {
+        ok: probe.ok,
+        overpass: probe.detail,
       });
     }
 
@@ -368,21 +395,40 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
   async function refreshHealth(): Promise<void> {
     const now = Date.now();
     if (now - health.at < 60_000) return;
-    health = { at: now, ok: false, detail: 'probing' };
+    const probed = await probeStatus(overpassStatusUrl);
+    health = { at: now, ok: probed.ok, detail: probed.detail };
+  }
+
+  /** One Overpass probe: `/status` first, then a minimal interpreter query. */
+  async function probeStatus(
+    statusUrl: string,
+    root = statusUrl.replace(/\/status$/, ''),
+  ): Promise<{ ok: boolean; detail: string }> {
     try {
-      const res = await fetch(overpassStatusUrl, { signal: AbortSignal.timeout(5_000) });
+      const res = await fetch(statusUrl, { signal: AbortSignal.timeout(5_000) });
       if (res.ok) {
-        health = { at: now, ok: true, detail: `reachable (HTTP ${res.status})` };
-      } else {
-        health = {
-          at: now,
+        return { ok: true, detail: `reachable (HTTP ${res.status})` };
+      }
+      // Several mirrors serve the interpreter but not `/status`. A 404 from
+      // the status page says the instance is up and answers this network
+      // position, so settle the check with a trivial interpreter call.
+      if (res.status === 404) {
+        const interpreter = `${root}/interpreter?data=${encodeURIComponent('[out:json];node(id:1);out;')}`;
+        const q = await fetch(interpreter, { signal: AbortSignal.timeout(10_000) });
+        if (q.ok || q.status === 400 || q.status === 429) {
+          return { ok: true, detail: `reachable (interpreter HTTP ${q.status})` };
+        }
+        // Diagnostic pass: is the host itself filtering this egress, or only
+        // the API path? A plain root GET distinguishes the two.
+        const rootRes = await fetch(root, { signal: AbortSignal.timeout(5_000) });
+        return {
           ok: false,
-          detail: `overpass responded HTTP ${res.status}`,
+          detail: `interpreter ${q.status}, root ${rootRes.status}`,
         };
       }
+      return { ok: false, detail: `overpass responded HTTP ${res.status}` };
     } catch (err) {
-      health = {
-        at: now,
+      return {
         ok: false,
         detail: `overpass unreachable: ${err instanceof Error ? err.message : String(err)}`,
       };
