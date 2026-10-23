@@ -5850,8 +5850,7 @@ function toGeoJson(rings, extent, x0, y0, zoom) {
     const u = c[0] / extent;
     const v = c[1] / extent;
     const lon = (x0 + u) / size * 360 - 180;
-    const yy = size - (y0 + v);
-    const lat = latFromTileY(yy, size);
+    const lat = latFromTileY(y0 + v, size);
     return [round3(lon, 7), round3(lat, 7)];
   }, "toLonLat");
   const mapped = rings.map((r) => r.map(toLonLat));

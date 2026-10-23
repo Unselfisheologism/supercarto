@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.2 — PMTiles reads real archives at the true latitude
+
+The tile-y conversion flipped every remote PMTiles fetch about the equator:
+a real `build.protomaps.com` fetch of San Francisco streets decoded at
+-37.77 against a query for +37.77. Local test archives had never caught it -
+they were written by the same code under test and stayed self-consistent,
+and the one geographic assertion matched digits without a sign, so
+`-37.71` satisfied a check written for `+37.71`.
+
+- Both ports fixed in lockstep: the slippy row is `y0 + v`, and the
+  docstring now states why no flip may be inserted.
+- The fixture test parses coordinates and asserts the hemisphere and loose
+  bbox membership instead of a substring regex.
+- Verified live: `lat 37.7164..37.7903, lon -122.43..-122.36` for the SF
+  bbox against the real 2026-10-22 build.
+
+Also carried: the parity gate now runs fixture budgets 128-2048 (the small
+budgets are where shrink-loop bugs live) and rebuilds `dist/` when sources
+are newer, after the 0.5.1 gate published against a stale build. In-memory
+archive builder also exercises the worker's PMTiles path; the hosted
+endpoint compiles real maplets from the fallback today.
+
+416 tests; parity byte-clean across `parity-kitchen-sink`, `sf-mission-5th`,
+`synthetic-dense`, `indoor-mall` at budgets 128/256/512/1024/2048.
+
 ## 0.5.1 — the budget kept its promise on dense small maps
 
 Three fixes, all found by probing the token-budget contract end to end:
