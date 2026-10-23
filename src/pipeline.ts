@@ -141,6 +141,18 @@ export function toMaplet(
 }
 
 /**
+ * Obstacles whose named edge is no longer in the graph. An obstacle names an
+ * edge as `from->to`; when budget shrinking or chain contraction removes
+ * either endpoint, the warning has nothing to warn about. Dropping it keeps
+ * the emitted map coherent: every carrier line refers to something present.
+ */
+function pruneStaleObstacles(graph: BudgetResult['graph']): BudgetResult['graph'] {
+  const alive = new Set(graph.edges.map((e) => `${e.from}->${e.to}`));
+  if (graph.obstacles.every((o) => alive.has(o.edge))) return graph;
+  return { ...graph, obstacles: graph.obstacles.filter((o) => alive.has(o.edge)) };
+}
+
+/**
  * Emit, then verify against the real serializer and shrink if needed.
  *
  * `fitToBudget` works from a cheap linear estimate so it can iterate fast, but
@@ -158,7 +170,11 @@ function emitAndVerify(
   const render = (g: BudgetResult['graph']): EmitResult =>
     emitGraph(g, { ...emitOpts, scale: emitOpts?.scale ?? scale });
 
-  let graph = fitted.graph;
+  // An obstacle that names an edge the budget removed is a warning about
+  // nothing, and an agent that sees it will avoid a route that no longer
+  // exists in the map it holds. Cut them wherever the graph thins, so every
+  // render sees a coherent graph.
+  let graph = pruneStaleObstacles(fitted.graph);
   let result = render(graph);
   let dropped = fitted.droppedNodes;
 
@@ -195,7 +211,6 @@ function emitAndVerify(
     // remains at hard pressure. The safety net still owns edgeless orphans.
     if (graph.nodes.length <= 2) break;
     if (graph.edges.length === 2) break; // one pair left: the floor
-
     const holding = junctionsHoldingLandmarks(graph);
     const cap =
       graph.edges.length < 2
@@ -225,6 +240,16 @@ function emitAndVerify(
         }
         continue;
       }
+      if (!allowCuts) {
+        // Batch is already 1, so "halve and retry" has nothing to halve, yet
+        // cut vertices were never admitted. Open the valve here and give the
+        // escape route its attempt; previously the valve was unreachable
+        // exactly in the small-graph case, and the loop broke out silently
+        // over budget.
+        allowCuts = true;
+        stalls = 0;
+        continue;
+      }
       break;
     }
 
@@ -243,6 +268,7 @@ function emitAndVerify(
       dropped += count;
       graph = { ...graph, omitted: bumpOmission(graph.omitted, 'waypoint', count), partial: true };
     }, junctionsHoldingLandmarks(graph));
+    graph = pruneStaleObstacles(graph);
     result = render(graph);
 
     // Adapt the batch: grow while a full batch is removable, shrink when the

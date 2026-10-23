@@ -245,6 +245,15 @@ def _emit_and_verify(
                     allow_cuts = True
                     stalls = 0
                 continue
+            if not allow_cuts:
+                # Batch is already 1, so "halve and retry" has nothing to
+                # halve, yet cut vertices were never admitted. Open the valve
+                # here too; otherwise the valve is unreachable exactly in the
+                # small-graph case, and the loop breaks out silently over
+                # budget.
+                allow_cuts = True
+                stalls = 0
+                continue
             break
 
         remove = set(victims)

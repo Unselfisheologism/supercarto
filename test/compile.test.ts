@@ -203,6 +203,57 @@ describe('compilation', () => {
     expect(graph.heat[0]!.hotspots[0]!.rel).toBe(0.9);
   });
 
+  it('collapses a uniform-plateau layer to its summary line', () => {
+    const doc = fromGeoJson({ type: 'FeatureCollection', features: [] }, { envelope: ENV });
+    doc.heat.push({
+      id: 1,
+      name: 'poi_density',
+      resolution: 64,
+      minValue: 0,
+      maxValue: 8,
+      encoding: 'sparse',
+      cells: [
+        { x: 100, y: 100, value: 3 },
+        { x: 200, y: 200, value: 3 },
+        { x: 300, y: 300, value: 3 },
+        { x: 400, y: 400, value: 3 },
+        { x: 500, y: 500, value: 3 },
+      ],
+    });
+    const graph = compile(doc, {});
+    expect(graph.heat).toHaveLength(1);
+    // max == mean states flatness; the per-cell `at:` coordinates were
+    // arbitrary among equals, so they say nothing and cost lines.
+    expect(graph.heat[0]!.max).toBe(3);
+    expect(graph.heat[0]!.mean).toBe(3);
+    expect(graph.heat[0]!.hotspots).toHaveLength(0);
+  });
+
+  it('reports rel 1 for a cell at the ceiling of a degenerate declared range', () => {
+    const doc = fromGeoJson({ type: 'FeatureCollection', features: [] }, { envelope: ENV });
+    doc.heat.push({
+      id: 1,
+      name: 'crowd',
+      resolution: 64,
+      minValue: 1,
+      maxValue: 1,
+      encoding: 'sparse',
+      cells: [
+        { x: 100, y: 100, value: 1 },
+        { x: 200, y: 200, value: 0.5 },
+      ],
+    });
+    const graph = compile(doc, {});
+    expect(graph.heat).toHaveLength(1);
+    // The declared range cannot express relative intensity (max == min), but
+    // the cell AT that value is at the ceiling, not unremarkable.
+    const spots = graph.heat[0]!.hotspots;
+    expect(spots).toHaveLength(2);
+    expect(spots[0]!.value).toBe(1);
+    expect(spots[0]!.rel).toBe(1);
+    expect(spots[1]!.rel).toBe(0);
+  });
+
   it('translates omission records into agent-readable entries', () => {
     const doc = fromGeoJson({ type: 'FeatureCollection', features: [] }, { envelope: ENV });
     doc.layers.set(1, { id: 1, name: 'building' });

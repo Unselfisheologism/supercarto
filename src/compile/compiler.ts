@@ -895,7 +895,12 @@ function compileHeat(doc: ScrDocument, env: Envelope, maxHotspots: number): Heat
     // `rel: 1.0` on every maplet, which tells the agent nothing about how
     // intense it is relative to what the layer is capable of.
     const lo = h.minValue || 0;
-    const span = h.maxValue !== lo ? h.maxValue - lo : 1;
+    // A degenerate declared range (max equals min) cannot express intensity
+    // relative to a capability: reporting `rel: 0` for a cell that IS the
+    // declared maximum tells the agent the hottest possible reading is
+    // unremarkable. When the range is a single value, any cell at that value
+    // is at the ceiling.
+    const span = h.maxValue !== lo ? h.maxValue - lo : 0;
 
     /**
      * Heat cells live in the layer's own `resolution` grid, not the document's
@@ -928,9 +933,18 @@ function compileHeat(doc: ScrDocument, env: Envelope, maxHotspots: number): Heat
     const useful = cells.filter((c) => c.value > 0);
     if (useful.length === 0) continue;
 
+    // A uniform plateau is the one shape where cell lines are pure repetition:
+    // every kept cell carries the same value, so the hotspots are arbitrary
+    // among equals and the `at:` coordinates say nothing no line agrees on.
+    // The summary's `max == mean` already states flatness, so collapse to the
+    // summary alone. A real peak keeps its coordinates; a flat field keeps
+    // only the fact, and the budget keeps the difference.
+    const plateau = distinct.size === 1;
+    const maxHotspotCount = plateau ? 0 : maxHotspots;
+
     const hotspots = [...useful]
       .sort((a, b) => b.value - a.value)
-      .slice(0, maxHotspots)
+      .slice(0, maxHotspotCount)
       .map((c) => {
         const ll = gridToLonLat(
           { x: Math.round(c.x * scale), y: Math.round(c.y * scale) },
@@ -942,7 +956,7 @@ function compileHeat(doc: ScrDocument, env: Envelope, maxHotspots: number): Heat
           lat: round(ll.lat, 5),
           lon: round(ll.lon, 5),
           value: c.value,
-          rel: round((c.value - lo) / span, 2),
+          rel: span > 0 ? round((c.value - lo) / span, 2) : c.value >= h.maxValue ? 1 : 0,
         };
       });
 

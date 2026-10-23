@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { fitToBudget } from '../src/budget/budget.js';
 import { toMaplet } from '../src/index.js';
+import { readFileSync } from 'node:fs';
+import type { GeoJsonFeature } from '../src/ingest/geojson.js';
 import type { SpatialGraph, GraphNode } from '../src/compile/graph.js';
 
 /**
@@ -119,6 +121,37 @@ describe('emitAndVerify on edgeless graphs', () => {
     const named = doc.graph.nodes.filter((n) => n.name !== undefined);
     expect(named.length).toBeGreaterThan(0);
     expect(doc.metrics.tokens).toBeLessThanOrEqual(1024);
+  });
+});
+
+/**
+ * The small-graph valve case. A dense fixture pruned to a handful of nodes
+ * reaches the exhaustion branch with batch already at 1, which used to exit
+ * the loop before the pressure valve (cut vertices) ever opened: the maplet
+ * went out silently at 580 tokens on a 512 budget. The valve opens now in
+ * that branch too, so the emitted output honours the caller's number.
+ */
+describe('emitAndVerify on small dense graphs', () => {
+  it('fits the budget on a dense fixture pruned to a small graph', () => {
+    const feats = JSON.parse(
+      readFileSync('scripts/parity/fixtures/parity-kitchen-sink.geojson', 'utf8'),
+    ).features as GeoJsonFeature[];
+    for (const budget of [512, 384, 256]) {
+      const doc = toMaplet(feats, { budget });
+      // Budget is hard, re-measured on the delivered output.
+      expect(doc.metrics.yamlTokens).toBeLessThanOrEqual(budget);
+    }
+  });
+
+  it('never carries an obstacle whose edge the budget removed', () => {
+    const feats = JSON.parse(
+      readFileSync('scripts/parity/fixtures/parity-kitchen-sink.geojson', 'utf8'),
+    ).features as GeoJsonFeature[];
+    const doc = toMaplet(feats, { budget: 256 });
+    const alive = new Set(doc.graph.edges.map((e) => `${e.from}->${e.to}`));
+    for (const o of doc.graph.obstacles ?? []) {
+      expect(alive.has(o.edge)).toBe(true);
+    }
   });
 });
 

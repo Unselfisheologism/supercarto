@@ -609,7 +609,12 @@ def _compile_heat(doc: ScrDocument, env, max_hotspots: int) -> list[HeatSummary]
         # ``rel: 1.0`` on every maplet, which tells the agent nothing about
         # how intense it is relative to what the layer is capable of.
         lo = _num_or_zero(h.minValue)
-        span = h.maxValue - lo if h.maxValue != lo else 1
+        # A degenerate declared range (max equals min) cannot express intensity
+        # relative to a capability: reporting ``rel: 0`` for a cell that IS the
+        # declared maximum tells the agent the hottest possible reading is
+        # unremarkable. When the range is a single value, any cell at that
+        # value is at the ceiling.
+        span = h.maxValue - lo if h.maxValue != lo else 0
 
         # Heat cells live in the layer's own `resolution` grid, not the
         # document's quantised extent.
@@ -632,18 +637,30 @@ def _compile_heat(doc: ScrDocument, env, max_hotspots: int) -> list[HeatSummary]
         if not useful:
             continue
 
-        ranked = sorted(useful, key=lambda c: -c.value)[:max_hotspots]
+        # A uniform plateau is the one shape where cell lines are pure
+        # repetition: every kept cell carries the same value, so the hotspots
+        # are arbitrary among equals and the ``at:`` coordinates say nothing
+        # no line agrees on. The summary's ``max == mean`` already states
+        # flatness, so collapse to the summary alone. A real peak keeps its
+        # coordinates; a flat field keeps only the fact.
+        plateau = len(distinct) == 1
+        ranked = sorted(useful, key=lambda c: -c.value)[: 0 if plateau else max_hotspots]
         hotspots: list[Hotspot] = []
         for c in ranked:
             ll_lat, ll_lon = grid_to_lonlat(
                 js_round(c.x * scale), js_round(c.y * scale), env, doc.extent, doc.projection
+            )
+            rel = (
+                _round((c.value - lo) / span, 2)
+                if span > 0
+                else (1 if c.value >= h.maxValue else 0)
             )
             hotspots.append(
                 Hotspot(
                     lat=_round(ll_lat, 5),
                     lon=_round(ll_lon, 5),
                     value=c.value,
-                    rel=_round((c.value - lo) / span, 2),
+                    rel=rel,
                 )
             )
 

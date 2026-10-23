@@ -67,3 +67,43 @@ harness run`) that:
 3. Where does "what's around me" come from today, and what does it fail at?
 4. What would have to be true for a compressed honest map to be allowed
    near the planner?
+
+## Outreach targets (research, 2026-10-23)
+
+Candidate design partners, chosen because their stacks plausibly consume
+text graph context at reasoning time. **No messages sent yet** — outreach
+goes through a human channel with a name attached; the repository account
+sends nothing.
+
+1. **HuggingFace LeRobot** — the most-used open robot-brain stack; its
+   policies accept text-with-image prompts, which is exactly the seam this
+   harness enters. Community is large enough to have people whose whole job
+   is "what goes into the prompt".
+2. **OpenVLA / open VLA forks** — vision-language-action agents with an
+   instruction prompt; same seam, strong academic audience, responsive to
+   honest-eval framing (token cost per tick is a real paper metric).
+3. **Hand-rolled delivery-robot / AGV shops** — where the context problem
+   is daily-pain, not research. Find via: robotics job boards mentioning
+   "last mile autonomous delivery" + local OSM/PMTiles usage signals
+   (planet extracts in public repos, OSM attribution lines).
+4. **Agricultural / warehouse autonomy software teams** — unpaved and
+   indoor-ish environments where OpenStreetMap is thin; even a degraded
+   honest answer ("map data ends here, tilt to GPS dead reckoning") beats
+   silent absence.
+
+First-contact message (draft — approved by nobody yet, so treat as
+skeleton): one paragraph: what your stack does that made me write; one
+question from the list above, numbered; the honest limitation up front
+("map data near your robot is as stale as the PMTiles you put on the
+device; nothing here is a SLAM replacement"); offer the 2-week prototype,
+not a license. Attach no deck.
+
+## Prototype against the parity fixture (runnable now)
+
+`supercarto harness` does not exist yet; the 2-week prototype is filled in
+as `examples/robot-harness-demo.mjs` — same core, demonstration frame: a
+GPS tick loop over a local PMTiles extract, emitting one budgeted head per
+tick and timing it. It measures the three numbers a robotics team asks
+first: tokens per tick, latency per tick, and how the answer degrades when
+the vehicle leaves the mapped area. Nothing in it is productized; it is a
+conversation prop.
