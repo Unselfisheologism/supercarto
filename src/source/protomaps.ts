@@ -6,6 +6,8 @@ import { decodeMvt, type MvtLayer } from './mvt.js';
 // so every compressed archive came back as zero features with no explanation.
 import { brotliDecompressSync, gunzipSync, zstdDecompressSync } from 'node:zlib';
 
+import { plainFetch } from './types.js';
+
 /**
  * PMTiles and Protomaps.
  *
@@ -94,7 +96,7 @@ export class PmtilesArchive {
 
   constructor(
     private readonly url: string,
-    private readonly fetchImpl: typeof fetch = globalThis.fetch,
+    private readonly fetchImpl: typeof fetch = plainFetch,
   ) {}
 
   private get remote(): boolean {

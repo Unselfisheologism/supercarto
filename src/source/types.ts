@@ -9,6 +9,18 @@
 
 import type { GeoJsonFeature } from '../ingest/geojson.js';
 
+/**
+ * A `fetch` that is safe to call detached from any receiver.
+ *
+ * Calling `globalThis.fetch` through a saved property throws
+ * `Illegal invocation` on some runtimes - notably Workers, where fetch is a
+ * bound global rather than a method that survives reassignment. Sources store
+ * their fetch as an injectable default, so they route it through this wrapper:
+ * a midnight Workers deploy then behaves like a Node one, and tests keep
+ * injecting their replays through the same field.
+ */
+export const plainFetch: typeof fetch = (...args) => fetch(...args);
+
 export interface BboxQuery {
   west: number;
   south: number;

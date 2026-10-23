@@ -35,10 +35,13 @@ import {
 import { fromGeoJson } from './ingest/geojson.js';
 import type { Capabilities } from './toolcatalog.js';
 import type { GeoJsonFeature } from './ingest/geojson.js';
-import {
-  type TransitRequest,
-  type TransitResult,
-  type TransitSource,
+// Type-only on purpose: a value import would pull the whole GTFS reader
+// (node:fs, node:zlib) into bundles that never serve a feed - a Worker build
+// cannot even evaluate that module.
+import type {
+  TransitRequest,
+  TransitResult,
+  TransitSource,
 } from './source/gtfs.js';
 import { encodeDocument } from './wire/encode.js';
 import { gridToLonLat } from './geo/project.js';

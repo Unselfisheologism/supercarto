@@ -1,6 +1,8 @@
 import type { HeatLayer } from '../wire/types.js';
 import type { BboxQuery, MapSource, SourceRequest, SourceResult } from './types.js';
 
+import { plainFetch } from './types.js';
+
 /**
  * Terrain elevation.
  *
@@ -52,7 +54,7 @@ export class TerrariumElevation implements ElevationSource {
 
   constructor(opts: { template?: string; fetchImpl?: typeof fetch; maxTiles?: number } = {}) {
     this.template = opts.template ?? 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.maxTiles = opts.maxTiles ?? 16;
   }
 

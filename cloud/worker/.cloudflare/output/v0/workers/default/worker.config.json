@@ -1,0 +1,1 @@
+{"name":"supercarto-compile","compatibilityDate":"2025-12-01","manifest":{"type":"complete","mainModule":"worker.js","modules":{"worker.js":{"type":"esm"},"worker.js.map":{"type":"sourcemap"}}}}

@@ -12,6 +12,8 @@
  * would put a signup wall in front of every evaluation of this library.
  */
 
+import { plainFetch } from './types.js';
+
 export type PrecipitationKind = 'none' | 'rain' | 'snow' | 'sleet' | 'hail' | 'drizzle';
 
 export interface WeatherNow {
@@ -160,7 +162,7 @@ export class OpenMeteoWeather implements WeatherSource {
 
   constructor(opts: OpenMeteoOptions = {}) {
     this.endpoint = opts.endpoint ?? OPEN_METEO_DEFAULT;
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.timeoutMs = opts.timeoutMs ?? 12_000;
   }
 

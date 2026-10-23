@@ -1,6 +1,8 @@
 import type { GeoJsonFeature } from '../ingest/geojson.js';
 import type { BboxQuery, MapSource, SourceRequest, SourceResult } from './types.js';
 
+import { plainFetch } from './types.js';
+
 /**
  * OpenStreetMap via Overpass.
  *
@@ -528,7 +530,7 @@ export class OverpassSource implements MapSource {
   constructor(opts: OverpassOptions = {}) {
     this.endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.maxFeatures = opts.maxFeatures ?? 50_000;
     this.userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 4);

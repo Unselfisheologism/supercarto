@@ -14,6 +14,21 @@
 
 import { OsrmRouter, OSRM_PROFILES, type RoutingSource, type TravelMode } from './routing.js';
 
+import { plainFetch } from './types.js';
+
+/**
+ * Node's `process.env` when running under Node, `undefined` elsewhere.
+ *
+ * The flow classes default their keys from environment variables so the local
+ * server picks a credential up without wiring. Workers have no `process`
+ * global, and default construction happens inside `SuperCarto` itself, so the
+ * read must tolerate the runtime it runs on: absent environment means
+ * unconfigured, which the traffic layer already reports honestly.
+ */
+function processEnv(): Record<string, string | undefined> | undefined {
+  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+}
+
 /** How congested a road segment is, as a judgement rather than a speed. */
 export type FlowLevel = 'free' | 'light' | 'moderate' | 'heavy' | 'severe' | 'unknown';
 
@@ -113,9 +128,12 @@ export class TomTomFlow implements TrafficSource {
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
   } = {}) {
-    this.key = opts.apiKey ?? process.env.TOMTOM_API_KEY ?? process.env.TRAFFIC_API_KEY;
+    this.key =
+      opts.apiKey ??
+      processEnv()?.TOMTOM_API_KEY ??
+      processEnv()?.TRAFFIC_API_KEY;
     this.base = opts.base ?? 'https://api.tomtom.com';
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
 
@@ -202,9 +220,9 @@ export class HereFlow implements TrafficSource {
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
   } = {}) {
-    this.key = opts.apiKey ?? process.env.HERE_API_KEY;
+    this.key = opts.apiKey ?? processEnv()?.HERE_API_KEY;
     this.base = opts.base ?? 'https://traffic.ls.hereapi.com';
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl ?? plainFetch;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
 

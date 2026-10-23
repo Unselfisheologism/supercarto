@@ -1,4 +1,5 @@
 import type { Route, RouteStep } from '../wire/types.js';
+import { plainFetch } from './types.js';
 import { gridToLonLat } from '../geo/project.js';
 import type { Envelope } from '../wire/types.js';
 
