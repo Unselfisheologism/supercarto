@@ -16,13 +16,29 @@
  *
  * ## What is deliberately not here
  *
- * `src/index.ts`, `src/config.ts`, `src/server/*`, `src/source/gtfs.ts`,
- * `src/source/protomaps.ts`, and `src/binary/compress.ts` are not imported.
- * They are the modules that pull in `node:process`, `node:module`,
- * `node:http`, `node:fs`, or `node:zlib`, and the compile path itself uses none
- * of them: live sources are plain `fetch` (Overpass, Open-Meteo, Terrarium),
- * the compiler and emitters are pure computation. Zero runtime npm dependencies
- * holds here too - this module imports nothing outside `../../../src`.
+ * `src/index.ts`, `src/config.ts`, `src/server/*`, `src/source/gtfs.ts`, and
+ * `src/binary/compress.ts` are not imported. They are the modules that pull in
+ * `node:process`, `node:module`, `node:http`, or `node:fs` statically, and the
+ * compile path itself uses none of them: live sources are plain `fetch`
+ * (Overpass, Open-Meteo, Terrarium), the compiler and emitters are pure
+ * computation. The exception is the PMTiles fallback source: `protomaps.ts`
+ * loads its Node decoders lazily through `src/source/zlibsafe.ts`, which
+ * detects the runtime and uses the web `DecompressionStream` (gzip - what the
+ * public OSM basemap archives use for directories, tiles, and metadata)
+ * wherever `node:zlib` is absent. Zero runtime npm dependencies holds here
+ * too - this module imports nothing outside `../../../src`.
+ *
+ * ## The data fallback
+ *
+ * Every known public Overpass instance refuses the shared Cloudflare egress
+ * range (HTTP 521), so an Overpass-only hosted deployment answers nothing.
+ * The map route therefore carries a second source in its
+ * chain: a hosted PMTiles planet build of the OpenStreetMap basemap
+ * (directories, tiles, and JSON metadata are gzip in these builds, so the
+ * fallback serves real vector detail through the same `DecompressionStream`).
+ * When Overpass refuses a request, the same compile path answers from the
+ * archive, and the document's `source:` line says `protomaps` rather than
+ * `osm-overpass` - what served it is never hidden.
  *
  * ## Runtime contract
  *
@@ -33,6 +49,8 @@
  */
 
 import { SuperCarto } from '../../../src/live.js';
+import { OverpassSource } from '../../../src/source/overpass.js';
+import { ProtomapsSource } from '../../../src/source/protomaps.js';
 import { TerrariumElevation, type ElevationGrid } from '../../../src/source/terrain.js';
 import { sunPosition, needsLight } from '../../../src/source/sun.js';
 import { bboxAround, normalizeBbox } from '../../../src/source/types.js';
@@ -63,12 +81,55 @@ export interface WorkerOptions {
   overpassEndpoint?: string;
   /** Terrarium tile template, for elevation. Keyless by default. */
   terrariumEndpoint?: string;
+  /**
+   * PMTiles archive URL for the /maplet and /scr fallback source. Default is
+   * the OSM basemap planet build named by the Protomaps daily-build index;
+   * an explicit URL replaces the resolution entirely.
+   */
+  pmtilesUrl?: string;
   /** Maplet requests per IP per minute. Default 30. */
   mapletPerMinute?: number;
   /** Hard cap on a single maplet response. Default 16384, as in http.ts. */
   maxTokens?: number;
   /** CORS origin, or `*`. Default `*`, as in http.ts. */
   corsOrigin?: string;
+}
+
+/** Full-planet OSM basemap PMTiles, one daily build. Retains ~a week of builds. */
+const PLANET_BUILD_ROOT = 'https://build.protomaps.com';
+/** Names the currently latest daily build; served over HTTP, one small file. */
+const PLANET_BUILD_INDEX = 'https://build-metadata.protomaps.dev/builds.json';
+/**
+ * The latest build at commit time of a patch version the bucket retains per
+ * the retention rule ("all builds for the past week, plus the latest build of
+ * each patch version"). Used when the index itself is unreachable, so the
+ * fallback still has a URL to range-request; it names a real archive today
+ * and is honest about being a pin.
+ */
+const PINNED_PLANET_BUILD = 'https://build.protomaps.com/20261022.pmtiles';
+
+/**
+ * Resolve the fallback archive URL: an explicit option wins, otherwise the
+ * latest daily build from the index, otherwise the pinned build.
+ */
+async function resolvePmtilesUrl(explicit?: string): Promise<string> {
+  if (explicit) return explicit;
+  try {
+    const res = await fetch(PLANET_BUILD_INDEX, { signal: AbortSignal.timeout(5_000) });
+    if (res.ok) {
+      const builds = (await res.json()) as Array<{ key?: string }>;
+      const keys = builds
+        .map((b) => b.key)
+        .filter((k): k is string => typeof k === 'string' && /^\d{8}\.pmtiles$/.test(k))
+        .sort();
+      const latest = keys[keys.length - 1];
+      if (latest) return `${PLANET_BUILD_ROOT}/${latest}`;
+    }
+  } catch {
+    // The index is a convenience, not a credential; the pinned build below
+    // keeps the fallback chain intact instead.
+  }
+  return PINNED_PLANET_BUILD;
 }
 
 /**
@@ -78,20 +139,9 @@ export interface WorkerOptions {
  * it directly: there is one set of request semantics, exercised twice.
  */
 export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promise<Response> {
-  const carto =
-    opts.carto ??
-    new SuperCarto({
-      // Elevation is keyless (Terrarium tiles) and its absence in the hosted
-      // surface would silently drop the slope heat layer that answers "can this
-      // be wheeled up", for no reason.
-      elevation: new TerrariumElevation(
-        opts.terrariumEndpoint ? { template: opts.terrariumEndpoint } : {},
-      ),
-      // Weather stays on (Open-Meteo, keyless, the library default).
-      // Traffic and transit stay off: traffic always needs a paid credential
-      // and transit always needs an operator feed - the library refuses to
-      // default either, and this deployment has nothing to add.
-    });
+  const carto: Promise<SuperCarto> = opts.carto
+    ? Promise.resolve(opts.carto)
+    : buildDefaultCarto(opts);
 
   const maxTokens = opts.maxTokens ?? MAX_TOKENS;
   const origin = opts.corsOrigin ?? '*';
@@ -112,6 +162,19 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
   ];
 
   return async function handle(req: Request): Promise<Response> {
+    try {
+      return await route(req);
+    } catch (err) {
+      // The /scr route used to escape an exception here and hand Cloudflare
+      // an opaque 1101. Any unhandled compile-side failure now lands as an
+      // honest 502 that names the error, like every other refusal here.
+      return json({ 'Access-Control-Allow-Origin': origin }, 502, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  async function route(req: Request): Promise<Response> {
     const url = new URL(req.url);
     // Probe an alternative instance, against a closed list: the primary
     // instance refuses the shared Cloudflare egress range, so the hosted
@@ -171,7 +234,6 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
     if (url.pathname === '/scr') {
       return scrRoute(url, extraHeaders);
     }
-
     if (url.pathname === '/daylight') {
       return daylightRoute(url, extraHeaders);
     }
@@ -226,7 +288,7 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
 
     let result;
     try {
-      result = await carto.maplet({ lat, lon, radiusM, layers, budget });
+      result = await (await carto).maplet({ lat, lon, radiusM, layers, budget });
     } catch (err) {
       // Including the "no walkable network survived" refusal from live.ts:
       // an honest, actionable message beats a 500 stack trace.
@@ -278,7 +340,17 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
       return json(headers, 400, { error: 'bbox must be "west,south,east,north"' });
     }
     const layers = url.searchParams.get('layers')?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
-    const text = await carto.scr(bbox, layers);
+    // Same defence as /maplet: a source-chain failure is an honest 502 that
+    // says what refused the request. Before this catch, the escape produced a
+    // Cloudflare error 1101 at real Overpass egress refusals.
+    let text: string;
+    try {
+      text = await (await carto).scr(bbox, layers);
+    } catch (err) {
+      return json(headers, 502, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     attributionHeaderOn(headers);
     return new Response(text, {
       status: 200,
@@ -328,7 +400,7 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
     }
     const hours = clamp(numParam({}, url, 'hours', 12), 1, 48);
 
-    const w = await carto.weatherAt(lat, lon, hours);
+    const w = await (await carto).weatherAt(lat, lon, hours);
     if (!w) {
       return json(headers, 404, { error: 'weather is not configured for this deployment' });
     }
@@ -356,7 +428,7 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
     const radiusM = clamp(numParam({}, url, 'radiusM', 1000), 1, MAX_RADIUS_M);
     const samples = clamp(numParam({}, url, 'samples', 16), 4, 128);
 
-    const grid = await carto.elevationFor(normalizeBbox(bboxAround(lat, lon, radiusM)), samples);
+    const grid = await (await carto).elevationFor(normalizeBbox(bboxAround(lat, lon, radiusM)), samples);
     if (!grid) {
       return json(headers, 404, { error: 'no elevation source is configured for this deployment' });
     }
@@ -445,8 +517,58 @@ export function createHandler(opts: WorkerOptions = {}): (req: Request) => Promi
       attribution: ATTRIBUTION,
       routes: servedRoutes(),
       unavailable: unavailableBody(),
+      fallback: {
+        data:
+          'when Overpass refuses this deployment egress (HTTP 521 from every ' +
+          'known instance), /maplet and /scr compile from a hosted PMTiles ' +
+          'extract of the planet built from OpenStreetMap. The extract detail ' +
+          'level is coarse beyond z10-ish, so a city block here is zoom-level ' +
+          'honest about what zoom it shipped: the map document carries ' +
+          '`source: protomaps` when the fallback served it, and its own ' +
+          'truncation warnings when it stopped early.',
+        health:
+          '/healthz probes Overpass only; a 503 here does not mean /maplet ' +
+          'is down - the PMTiles fallback answers from the archive instead.',
+      },
     };
   }
+}
+
+/**
+ * The source chain the hosted surface serves from, in priority order: live
+ * Overpass first (it keeps tag detail where it accepts a connection, and it
+ * fast-fails HTTP 521 in about a second here), then a hosted PMTiles planet
+ * build of the OSM basemap as the fallback that answers what Overpass refuses.
+ *
+ * Serverless compile budget: one z12 tile of a planet archive is denser than
+ * an Overpass query on the same ground, and the compile cost grows steeply
+ * with the feature count (measured: 693 features ~26s; 400 features ~0.1s).
+ * At 400 the graph is better here, not just cheaper: the budgeter keeps named
+ * places it would trade for anonymous street mass at the larger feature set.
+ * Truncation stays visible: the result is flagged and the maplet carries the
+ * warning, as with any other cap.
+ */
+async function buildDefaultCarto(opts: WorkerOptions): Promise<SuperCarto> {
+  const pmtilesUrl = await resolvePmtilesUrl(opts.pmtilesUrl);
+  const fallback = new ProtomapsSource({
+    url: pmtilesUrl,
+    name: 'protomaps',
+    // See buildDefaultCarto comment: keeps one compile inside a Worker budget.
+    maxFeatures: 400,
+  });
+  return new SuperCarto({
+    sources: [new OverpassSource(), fallback],
+    // Elevation is keyless (Terrarium tiles) and its absence in the hosted
+    // surface would silently drop the slope heat layer that answers "can this
+    // be wheeled up", for no reason.
+    elevation: new TerrariumElevation(
+      opts.terrariumEndpoint ? { template: opts.terrariumEndpoint } : {},
+    ),
+    // Weather stays on (Open-Meteo, keyless, the library default).
+    // Traffic and transit stay off: traffic always needs a paid credential
+    // and transit always needs an operator feed - the library refuses to
+    // default either, and this deployment has nothing to add.
+  });
 }
 
 // --- out-of-closure state -----------------------------------------------------
@@ -543,10 +665,10 @@ function unavailableBody(): Array<{ route: string; because: string }> {
         'live conditions are the failure this library refuses to make',
     },
     {
-      route: 'indoor / pmtiles map sources',
+      route: 'indoor floor plans',
       because:
-        'indoor floor plans and PMTiles archives are local files: no ' +
-        'filesystem here, so the maplet layers come only from live Overpass',
+        'indoor floor plans are local files: no filesystem here, so indoor ' +
+        'layers are absent rather than fabricated',
     },
   ];
 }
@@ -606,25 +728,34 @@ export type { WeatherSource, ElevationSource };
 /**
  * The Cloudflare Workers entrypoint.
  *
- * `env.OVERPASS_ENDPOINT` / `env.TERRARIUM_ENDPOINT` are honoured if an
- * operator sets them as variables; without them the handler is built from the
- * keyless defaults and reused, so the DOM cache inside `SuperCarto` warm
- * across requests in a single isolate.
+ * `env.OVERPASS_ENDPOINT` / `env.TERRARIUM_ENDPOINT` / `env.PMTILES_URL` are
+ * honoured if an operator sets them as variables; without them the handler is
+ * built from the keyless defaults and reused, so the archive handle inside
+ * `SuperCarto` stays warm across requests in a single isolate.
  */
 export default {
   fetch(
     request: Request,
-    env?: { OVERPASS_ENDPOINT?: string; TERRARIUM_ENDPOINT?: string },
+    env?: {
+      OVERPASS_ENDPOINT?: string;
+      TERRARIUM_ENDPOINT?: string;
+      PMTILES_URL?: string;
+    },
   ): Promise<Response> {
     // Rebuild only when the operator's variables change, so the document cache
-    // inside `SuperCarto` stays warm across requests in an isolate.
+    // inside `SuperCarto` stays warm across requests in an isolate. The
+    // fallback archive URL participates in that key: a resolved daily build
+    // could change between isolates, and those must not share a cache built
+    // from a different archive.
     const overpassEndpoint = env?.OVERPASS_ENDPOINT;
     const terrariumEndpoint = env?.TERRARIUM_ENDPOINT;
-    const key = JSON.stringify([overpassEndpoint, terrariumEndpoint]);
+    const pmtilesUrl = env?.PMTILES_URL;
+    const key = JSON.stringify([overpassEndpoint, terrariumEndpoint, pmtilesUrl]);
     if (handlerKey !== key) {
       handler = createHandler({
         ...(overpassEndpoint ? { overpassEndpoint } : {}),
         ...(terrariumEndpoint ? { terrariumEndpoint } : {}),
+        ...(pmtilesUrl ? { pmtilesUrl } : {}),
       });
       handlerKey = key;
     }

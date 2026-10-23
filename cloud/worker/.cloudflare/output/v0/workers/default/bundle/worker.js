@@ -5190,6 +5190,753 @@ function cacheKey(bbox, layers) {
 }
 __name(cacheKey, "cacheKey");
 
+// ../../src/source/mvt.ts
+var WIRE_VARINT = 0;
+var WIRE_64BIT = 1;
+var WIRE_LEN = 2;
+var WIRE_32BIT = 5;
+var Reader = class {
+  constructor(buf) {
+    this.buf = buf;
+  }
+  buf;
+  static {
+    __name(this, "Reader");
+  }
+  pos = 0;
+  get done() {
+    return this.pos >= this.buf.length;
+  }
+  varint() {
+    let result = 0;
+    let shift = 0;
+    while (this.pos < this.buf.length) {
+      const byte = this.buf[this.pos++];
+      result += (byte & 127) * 2 ** shift;
+      if ((byte & 128) === 0) return result;
+      shift += 7;
+      if (shift > 63) break;
+    }
+    return result;
+  }
+  svarint() {
+    const v = this.varint();
+    return v % 2 === 1 ? -(v + 1) / 2 : v / 2;
+  }
+  bytes() {
+    const len = this.varint();
+    const out = this.buf.subarray(this.pos, this.pos + len);
+    this.pos += len;
+    return out;
+  }
+  skip(wire) {
+    switch (wire) {
+      case WIRE_VARINT:
+        this.varint();
+        return;
+      case WIRE_64BIT:
+        this.pos += 8;
+        return;
+      case WIRE_LEN:
+        this.pos += this.varint();
+        return;
+      case WIRE_32BIT:
+        this.pos += 4;
+        return;
+      default:
+        this.pos = this.buf.length;
+    }
+  }
+  double() {
+    const v = new DataView(
+      this.buf.buffer,
+      this.buf.byteOffset + this.pos,
+      8
+    ).getFloat64(0, true);
+    this.pos += 8;
+    return v;
+  }
+  float() {
+    const v = new DataView(
+      this.buf.buffer,
+      this.buf.byteOffset + this.pos,
+      4
+    ).getFloat32(0, true);
+    this.pos += 4;
+    return v;
+  }
+};
+function decodeMvt(buf) {
+  const r = new Reader(buf);
+  const layers = [];
+  while (!r.done) {
+    const key = r.varint();
+    const field = key >> 3;
+    const wire = key & 7;
+    if (field === 3 && wire === WIRE_LEN) {
+      layers.push(decodeLayer(r.bytes()));
+    } else {
+      r.skip(wire);
+    }
+  }
+  return { layers };
+}
+__name(decodeMvt, "decodeMvt");
+function decodeLayer(buf) {
+  const r = new Reader(buf);
+  const layer = { name: "", extent: 4096, features: [] };
+  const keys = [];
+  const values = [];
+  const rawFeatures = [];
+  while (!r.done) {
+    const key = r.varint();
+    const field = key >> 3;
+    const wire = key & 7;
+    switch (field) {
+      // Field numbers are MVT 2.1. In 2.1 the TileLayer message was renumbered:
+      // name is 1, features 2, keys 3, values 4, extent 5, and version 15. The
+      // older layout - version 1, keys 15, values 16 - is what a decoder written
+      // against spec v1 uses, and against a real tile every field is read as the
+      // wrong type: name is consumed as a varint, and keys and values are never
+      // found, so the layer comes back nameless with no features and no
+      // properties. Every tile that exists in the wild is 2.1.
+      case 1:
+        layer.name = utf8(r.bytes());
+        break;
+      case 2:
+        if (wire === WIRE_LEN) rawFeatures.push(decodeFeature2(r.bytes()));
+        else r.skip(wire);
+        break;
+      case 3:
+        keys.push(utf8(r.bytes()));
+        break;
+      case 4:
+        values.push(decodeValue(r.bytes()));
+        break;
+      case 5:
+        layer.extent = r.varint();
+        break;
+      case 15:
+        r.varint();
+        break;
+      default:
+        r.skip(wire);
+    }
+  }
+  for (const f of rawFeatures) {
+    const resolved = {};
+    for (const [k, v] of Object.entries(f.properties)) {
+      const idx = typeof v === "number" ? v : -1;
+      if (idx >= 0 && idx < keys.length && k.startsWith("@")) {
+        const value = values[idx];
+        if (value !== void 0) resolved[keys[Number(k.slice(1))] ?? k] = value;
+      }
+    }
+    layer.features.push({
+      id: f.id,
+      properties: resolved,
+      geometry: f.geometry
+    });
+  }
+  return layer;
+}
+__name(decodeLayer, "decodeLayer");
+function decodeValue(buf) {
+  const r = new Reader(buf);
+  let out = {};
+  while (!r.done) {
+    const key = r.varint();
+    const field = key >> 3;
+    const wire = key & 7;
+    switch (field) {
+      case 1:
+        out = { string: utf8(r.bytes()) };
+        break;
+      case 2:
+        out = { double: r.float() };
+        break;
+      case 3:
+        out = { double: r.double() };
+        break;
+      case 4:
+        out = { int: Number(r.varint()) };
+        break;
+      case 5:
+        out = { uint: r.varint() };
+        break;
+      case 6:
+        out = { sint: r.svarint() };
+        break;
+      case 7:
+        out = { bool: r.varint() !== 0 };
+        break;
+      default:
+        r.skip(wire);
+    }
+  }
+  return out;
+}
+__name(decodeValue, "decodeValue");
+function decodeFeature2(buf) {
+  const r = new Reader(buf);
+  const out = {
+    id: 0,
+    properties: {},
+    geometry: { type: 1, rings: [] }
+  };
+  const tags = [];
+  while (!r.done) {
+    const key = r.varint();
+    const field = key >> 3;
+    const wire = key & 7;
+    switch (field) {
+      case 1:
+        out.id = r.varint();
+        break;
+      case 2: {
+        const packed = r.bytes();
+        const pr = new Reader(packed);
+        while (!pr.done) tags.push(pr.varint());
+        break;
+      }
+      case 3:
+        out.geometry.type = r.varint();
+        break;
+      case 4: {
+        const packed = r.bytes();
+        const gr = new Reader(packed);
+        out.geometry.rings = readCommands(gr);
+        break;
+      }
+      default:
+        r.skip(wire);
+    }
+  }
+  for (let i = 0; i + 1 < tags.length; i += 2) {
+    out.properties[`@${tags[i]}`] = tags[i + 1];
+  }
+  return out;
+}
+__name(decodeFeature2, "decodeFeature");
+function readCommands(r) {
+  const rings = [];
+  let ring = [];
+  let x = 0;
+  let y = 0;
+  while (!r.done) {
+    const header = r.varint();
+    const id = header & 7;
+    const count = header >> 3;
+    if (id === 1) {
+      if (ring.length > 0) {
+        rings.push(ring);
+        ring = [];
+      }
+      for (let i = 0; i < count; i++) {
+        x += Math.round(r.svarint());
+        y += Math.round(r.svarint());
+        ring.push([x, y]);
+      }
+    } else if (id === 2) {
+      for (let i = 0; i < count; i++) {
+        x += Math.round(r.svarint());
+        y += Math.round(r.svarint());
+        ring.push([x, y]);
+      }
+    } else if (id === 7) {
+      const first = ring[0];
+      if (first) {
+        ring.push([first[0], first[1]]);
+        rings.push(ring);
+        ring = [];
+      }
+    }
+  }
+  if (ring.length > 0) rings.push(ring);
+  return rings;
+}
+__name(readCommands, "readCommands");
+function utf8(buf) {
+  return new TextDecoder().decode(buf);
+}
+__name(utf8, "utf8");
+
+// ../../src/source/zlibsafe.ts
+function nodeRuntime() {
+  return globalThis.process !== void 0;
+}
+__name(nodeRuntime, "nodeRuntime");
+var nodeZlibPromise;
+async function nodeZlib() {
+  if (!nodeRuntime()) return void 0;
+  nodeZlibPromise ??= import(zlibSpecs[0]);
+  return await nodeZlibPromise;
+}
+__name(nodeZlib, "nodeZlib");
+var zlibSpecs = ["node:zlib"];
+async function webDecompress(buf, format) {
+  const source = new Response(new Uint8Array(buf)).body;
+  if (!source) throw new Error("could not open a decompression stream");
+  const deflate = source.pipeThrough(new DecompressionStream(format));
+  return new Uint8Array(await new Response(deflate).arrayBuffer());
+}
+__name(webDecompress, "webDecompress");
+async function decompress(buf, compression, what) {
+  if (compression === 0 || compression === 1) return buf;
+  const zlib = await nodeZlib();
+  switch (compression) {
+    case 2: {
+      if (zlib) return zlib.gunzipSync(buf);
+      return await webDecompress(buf, "gzip");
+    }
+    case 3: {
+      if (zlib?.brotliDecompressSync) return zlib.brotliDecompressSync(buf);
+      throw new Error(
+        `PMTiles ${what} uses brotli, which needs Node's zlib (this runtime has no brotli decoder)`
+      );
+    }
+    case 4: {
+      if (zlib?.zstdDecompressSync) return zlib.zstdDecompressSync(buf);
+      throw new Error(`PMTiles ${what} uses zstd, which needs Node 22.15 or later`);
+    }
+    default:
+      throw new Error(`unknown PMTiles compression ${compression}`);
+  }
+}
+__name(decompress, "decompress");
+
+// ../../src/source/protomaps.ts
+var PMTILES_MAGIC = "PMTiles";
+var HEADER_BYTES = 127;
+var PROTOMAPS_DEMO = "https://demo-bucket.protomaps.com/v4.pmtiles";
+var PmtilesArchive = class {
+  constructor(url, fetchImpl = plainFetch) {
+    this.url = url;
+    this.fetchImpl = fetchImpl;
+  }
+  url;
+  fetchImpl;
+  static {
+    __name(this, "PmtilesArchive");
+  }
+  header;
+  entries;
+  headerPromise;
+  /** Decoded directories, keyed by their byte offset in the archive. */
+  directories = /* @__PURE__ */ new Map();
+  get remote() {
+    return this.url.startsWith("http://") || this.url.startsWith("https://");
+  }
+  async info() {
+    if (this.header) return this.header;
+    if (!this.headerPromise) this.headerPromise = this.readHeader();
+    this.header = await this.headerPromise;
+    return this.header;
+  }
+  async readHeader() {
+    const bytes = await this.read(0, HEADER_BYTES);
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const magic = new TextDecoder().decode(bytes.subarray(0, 7));
+    if (magic !== PMTILES_MAGIC) {
+      throw new Error(`not a PMTiles archive (magic "${magic}")`);
+    }
+    const u64 = /* @__PURE__ */ __name((off) => {
+      const v = dv.getBigUint64(off, true);
+      return Number(v);
+    }, "u64");
+    return {
+      version: bytes[7],
+      rootOffset: u64(8),
+      rootLength: u64(16),
+      metadataOffset: u64(24),
+      metadataLength: u64(32),
+      leafOffset: u64(40),
+      leafLength: u64(48),
+      dataOffset: u64(56),
+      dataLength: u64(64),
+      addressedTiles: u64(72),
+      tileEntries: u64(80),
+      tileContents: u64(88),
+      clustered: bytes[96] === 1,
+      directoryCompression: bytes[97],
+      tileCompression: bytes[98],
+      tileType: bytes[99],
+      minZoom: bytes[100],
+      maxZoom: bytes[101],
+      centerZoom: dv.getFloat32(105, true)
+    };
+  }
+  /**
+   * The root directory's entries.
+   *
+   * For a large archive these are pointers at leaf directories rather than
+   * entries that address tiles; `tile()` follows them per lookup.
+   */
+  async directory() {
+    const h = await this.info();
+    return this.directoryAt(h.rootOffset, h.rootLength);
+  }
+  /** A directory blob by offset, decoded once and shared across lookups. */
+  async directoryAt(offset, length) {
+    if (offset === (await this.info()).rootOffset) {
+      if (!this.entries) {
+        this.entries = await this.decodeDirectoryBlob(offset, length);
+      }
+      return this.entries;
+    }
+    let cached = this.directories.get(offset);
+    if (!cached) {
+      cached = this.decodeDirectoryBlob(offset, length);
+      if (this.directories.size >= 16) {
+        const oldest = this.directories.keys().next().value;
+        if (oldest !== void 0) this.directories.delete(oldest);
+      }
+      this.directories.set(offset, cached);
+    }
+    return cached;
+  }
+  async decodeDirectoryBlob(offset, length) {
+    const h = await this.info();
+    const raw = await this.read(offset, length);
+    const buf = await decompress(raw, h.directoryCompression, "directory");
+    const root = decodeDirectory(buf);
+    if (root.length === 0 && h.leafLength > 0) {
+      throw new Error("PMTiles archive has an empty root directory");
+    }
+    return root;
+  }
+  /** Byte range read, from a remote archive or a local file. */
+  async read(offset, length) {
+    if (this.remote) {
+      const res = await this.fetchImpl(this.url, {
+        headers: { Range: `bytes=${offset}-${offset + length - 1}` }
+      });
+      if (!res.ok && res.status !== 206) {
+        throw new Error(`PMTiles archive responded ${res.status}`);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    }
+    const specs = ["node:fs/promises"];
+    const { readFile } = await import(specs[0]);
+    const fh = await readFile(this.url);
+    return new Uint8Array(fh.buffer, fh.byteOffset + offset, length);
+  }
+  /**
+   * Tile bytes, or undefined when the archive has no tile at that id.
+   *
+   * Large archives do not address tiles from the root: an entry there with
+   * `runLength === 0` points at a leaf directory, and lookup descends root →
+   * leaf (at most three levels per the v3 layout) until an entry with data
+   * resolves. A small archive resolves on the first pass, unchanged.
+   */
+  async tile(tileId) {
+    const h = await this.info();
+    let dirOffset = h.rootOffset;
+    let dirLength = h.rootLength;
+    for (let depth = 0; depth < 4; depth++) {
+      const entries = await this.directoryAt(dirOffset, dirLength);
+      const entry = findEntry(entries, tileId);
+      if (!entry) return void 0;
+      if (entry.runLength === 0) {
+        dirOffset = h.leafOffset + entry.offset;
+        dirLength = entry.length;
+        continue;
+      }
+      const raw = await this.read(h.dataOffset + entry.offset, entry.length);
+      return await decompress(raw, h.tileCompression, "tile");
+    }
+    throw new Error("PMTiles archive exceeds maximum directory depth");
+  }
+  /** Vector tile as MVT, or undefined when the archive is not vector. */
+  async vectorTile(tileId) {
+    const h = await this.info();
+    if (h.tileType !== 1) return void 0;
+    const bytes = await this.tile(tileId);
+    if (!bytes) return void 0;
+    try {
+      return decodeMvt(bytes);
+    } catch {
+      return void 0;
+    }
+  }
+};
+function findEntry(entries, tileId) {
+  let lo = 0;
+  let hi = entries.length - 1;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    const e = entries[mid];
+    if (tileId < e.tileId) hi = mid - 1;
+    else if (tileId >= e.tileId + e.runLength) lo = mid + 1;
+    else return e;
+  }
+  if (hi >= 0 && entries[hi].runLength === 0) return entries[hi];
+  return void 0;
+}
+__name(findEntry, "findEntry");
+function decodeDirectory(buf) {
+  const out = [];
+  let pos = 0;
+  const varint = /* @__PURE__ */ __name(() => {
+    let result = 0;
+    let shift = 0;
+    while (pos < buf.length) {
+      const b = buf[pos++];
+      result += (b & 127) * 2 ** shift;
+      if ((b & 128) === 0) return result;
+      shift += 7;
+    }
+    return result;
+  }, "varint");
+  const count = varint();
+  if (count <= 0 || count > 2e5) return out;
+  const ids = [];
+  let lastId = 0;
+  for (let i = 0; i < count; i++) {
+    lastId += varint();
+    ids.push(lastId);
+  }
+  const runLengths = [];
+  for (let i = 0; i < count; i++) runLengths.push(varint());
+  const lengths = [];
+  for (let i = 0; i < count; i++) lengths.push(varint());
+  for (let i = 0; i < count; i++) {
+    const value = varint();
+    let offset;
+    if (value === 0 && i > 0) {
+      const prev = out[i - 1];
+      offset = prev.offset + prev.length;
+    } else {
+      offset = value - 1;
+    }
+    out.push({ tileId: ids[i], offset, length: lengths[i], runLength: runLengths[i] });
+  }
+  return out;
+}
+__name(decodeDirectory, "decodeDirectory");
+var ProtomapsSource = class {
+  static {
+    __name(this, "ProtomapsSource");
+  }
+  name;
+  description = "PMTiles vector archive over HTTP range requests";
+  archive;
+  maxZoom;
+  maxTiles;
+  maxFeatures;
+  keep;
+  constructor(opts) {
+    this.archive = new PmtilesArchive(opts.url, opts.fetchImpl);
+    this.name = opts.name ?? (opts.url === PROTOMAPS_DEMO ? "protomaps" : "pmtiles");
+    this.maxZoom = opts.maxZoom ?? 14;
+    this.maxTiles = opts.maxTiles ?? 16;
+    this.maxFeatures = opts.maxFeatures ?? 0;
+    this.keep = new Set(opts.layers ?? []);
+  }
+  async available() {
+    try {
+      await this.archive.info();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async fetch(req) {
+    const started = Date.now();
+    const warnings = [];
+    const h = await this.archive.info();
+    if (h.tileType !== 1) {
+      throw new Error(
+        `archive holds raster tiles (type ${h.tileType}); supercarto needs vector tiles`
+      );
+    }
+    const zoom = zoomFor(req.bbox, h.maxZoom, this.maxZoom);
+    const allTiles = tilesFor2(req.bbox, zoom);
+    const capped = allTiles.slice(0, this.maxTiles);
+    if (capped.length < allTiles.length) {
+      warnings.push(
+        `requested ${allTiles.length} tiles at z${zoom}, fetched ${capped.length}; the rest of this area is not shown`
+      );
+    }
+    const features = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const { id, x, y } of capped) {
+      const tile = await this.archive.vectorTile(id);
+      if (!tile) continue;
+      for (const layer of tile.layers) {
+        if (this.keep.size > 0 && !this.keep.has(layer.name)) continue;
+        for (const f of layer.features) {
+          const fid = f.id || 0;
+          const key = fid * 31 + layerNameHash(layer);
+          if (fid !== 0 && seen.has(key)) continue;
+          if (fid !== 0) seen.add(key);
+          const g = toGeoJson(f.geometry.rings, layer.extent, x, y, zoom);
+          if (!g) continue;
+          features.push({
+            type: "Feature",
+            ...fid !== 0 ? { id: fid } : {},
+            properties: {
+              ...propertiesOf(f.properties),
+              class: layer.name,
+              _tile: `${zoom}/${id}`
+            },
+            geometry: g
+          });
+          if (features.length >= this.featureCap(req)) {
+            return {
+              features,
+              source: this.name,
+              truncated: true,
+              elapsedMs: Date.now() - started,
+              warnings: [
+                ...warnings,
+                `stopped at the ${this.featureCap(req)} feature cap for this request`
+              ]
+            };
+          }
+        }
+      }
+    }
+    return {
+      features,
+      source: this.name,
+      truncated: capped.length < allTiles.length,
+      elapsedMs: Date.now() - started,
+      warnings
+    };
+  }
+  /**
+   * The feature limit in force: the source's own cap when set lower than the
+   * caller's, otherwise the caller's.
+   */
+  featureCap(req) {
+    if (this.maxFeatures > 0 && this.maxFeatures < req.maxFeatures) {
+      return this.maxFeatures;
+    }
+    return req.maxFeatures;
+  }
+};
+function layerNameHash(layer) {
+  let h = 0;
+  for (let i = 0; i < layer.name.length; i++) h = h * 31 + layer.name.charCodeAt(i) | 0;
+  return h;
+}
+__name(layerNameHash, "layerNameHash");
+function propertiesOf(props) {
+  const out = {};
+  for (const [k, v] of Object.entries(props)) {
+    if (v === null || v === void 0) continue;
+    if (typeof v === "string") out[k] = v;
+    else if (typeof v === "number") out[k] = v;
+    else if (typeof v === "boolean") out[k] = v;
+    else if (typeof v === "object") {
+      const o = v;
+      if (typeof o.string === "string") out[k] = o.string;
+      else if (typeof o.double === "number") out[k] = o.double;
+      else if (typeof o.int === "number") out[k] = o.int;
+      else if (typeof o.uint === "number") out[k] = o.uint;
+      else if (typeof o.sint === "number") out[k] = o.sint;
+      else if (typeof o.bool === "boolean") out[k] = o.bool;
+    }
+  }
+  return out;
+}
+__name(propertiesOf, "propertiesOf");
+function toGeoJson(rings, extent, x0, y0, zoom) {
+  if (rings.length === 0) return void 0;
+  const size = 2 ** zoom;
+  const toLonLat = /* @__PURE__ */ __name((c) => {
+    const u = c[0] / extent;
+    const v = c[1] / extent;
+    const lon = (x0 + u) / size * 360 - 180;
+    const yy = size - (y0 + v);
+    const lat = latFromTileY(yy, size);
+    return [round3(lon, 7), round3(lat, 7)];
+  }, "toLonLat");
+  const mapped = rings.map((r) => r.map(toLonLat));
+  if (mapped.length === 1 && mapped[0].length === 1) {
+    return { type: "Point", coordinates: mapped[0][0] };
+  }
+  const first = mapped[0];
+  const closed = first.length > 3 && first[0][0] === first[first.length - 1][0] && first[0][1] === first[first.length - 1][1];
+  if (closed) {
+    const out2 = [];
+    for (const ring of mapped) {
+      if (ring.length >= 4) out2.push(ring);
+    }
+    if (out2.length === 0) return void 0;
+    return { type: "Polygon", coordinates: out2 };
+  }
+  const out = mapped.filter((r) => r.length >= 2);
+  if (out.length === 0) return void 0;
+  if (out.length === 1) return { type: "LineString", coordinates: out[0] };
+  return { type: "MultiLineString", coordinates: out };
+}
+__name(toGeoJson, "toGeoJson");
+function latFromTileY(y, size) {
+  const t = Math.PI * (1 - 2 * y / size);
+  return 180 / Math.PI * Math.atan(Math.sinh(t));
+}
+__name(latFromTileY, "latFromTileY");
+function tilesFor2(b, z) {
+  const n = 2 ** z;
+  const w = Math.max(0, Math.min(n - 1, lonToX(b.west, n)));
+  const e = Math.max(0, Math.min(n - 1, lonToX(b.east, n)));
+  const s = Math.max(0, Math.min(n - 1, latToY(b.north, n)));
+  const t = Math.max(0, Math.min(n - 1, latToY(b.south, n)));
+  const out = [];
+  for (let y = s; y <= t; y++) {
+    for (let x = w; x <= e; x++) out.push({ id: hilbertTileId(z, x, y), x, y });
+  }
+  return out;
+}
+__name(tilesFor2, "tilesFor");
+function hilbertTileId(z, x, y) {
+  let rx, ry, d = 0;
+  for (let s = 1 << z - 1; s > 0; s >>= 1) {
+    rx = (x & s) > 0 ? 1 : 0;
+    ry = (y & s) > 0 ? 1 : 0;
+    d += s * s * (3 * rx ^ ry);
+    if (ry === 0) {
+      if (rx === 1) {
+        x = s - 1 - x;
+        y = s - 1 - y;
+      }
+      const t = x;
+      x = y;
+      y = t;
+    }
+  }
+  return d + tileIdBase(z);
+}
+__name(hilbertTileId, "hilbertTileId");
+function tileIdBase(z) {
+  return (4 ** z - 1) / 3 | 0;
+}
+__name(tileIdBase, "tileIdBase");
+function lonToX(lon, n) {
+  return Math.floor((lon + 180) / 360 * n);
+}
+__name(lonToX, "lonToX");
+function latToY(lat, n) {
+  const clamped = Math.max(-85.05112878, Math.min(85.05112878, lat));
+  const rad = clamped * Math.PI / 180;
+  return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n);
+}
+__name(latToY, "latToY");
+function zoomFor(b, archiveMax, cap) {
+  const midLat = (b.north + b.south) / 2;
+  const widthM = Math.abs(b.east - b.west) * 111320 * Math.cos(midLat * Math.PI / 180);
+  const want = Math.max(0, Math.ceil(Math.log2(156543 / Math.max(1, widthM))));
+  return Math.max(12, Math.min(cap, archiveMax, want));
+}
+__name(zoomFor, "zoomFor");
+function round3(n, places) {
+  const f = 10 ** places;
+  return Math.round(n * f) / f;
+}
+__name(round3, "round");
+
 // src/worker.ts
 var MAX_RADIUS_M = 25e3;
 var DEFAULT_BUDGET = 1024;
@@ -5198,19 +5945,26 @@ var ATTRIBUTION = "\xA9 OpenStreetMap contributors (ODbL)";
 var DEFAULT_OVERPASS_INTERPRETER = "https://overpass-api.de/api/interpreter";
 var RATE_WINDOW_MS = 6e4;
 var DEFAULT_MAPLET_PER_MINUTE = 30;
+var PLANET_BUILD_ROOT = "https://build.protomaps.com";
+var PLANET_BUILD_INDEX = "https://build-metadata.protomaps.dev/builds.json";
+var PINNED_PLANET_BUILD = "https://build.protomaps.com/20261022.pmtiles";
+async function resolvePmtilesUrl(explicit) {
+  if (explicit) return explicit;
+  try {
+    const res = await fetch(PLANET_BUILD_INDEX, { signal: AbortSignal.timeout(5e3) });
+    if (res.ok) {
+      const builds = await res.json();
+      const keys = builds.map((b) => b.key).filter((k) => typeof k === "string" && /^\d{8}\.pmtiles$/.test(k)).sort();
+      const latest = keys[keys.length - 1];
+      if (latest) return `${PLANET_BUILD_ROOT}/${latest}`;
+    }
+  } catch {
+  }
+  return PINNED_PLANET_BUILD;
+}
+__name(resolvePmtilesUrl, "resolvePmtilesUrl");
 function createHandler(opts = {}) {
-  const carto = opts.carto ?? new SuperCarto({
-    // Elevation is keyless (Terrarium tiles) and its absence in the hosted
-    // surface would silently drop the slope heat layer that answers "can this
-    // be wheeled up", for no reason.
-    elevation: new TerrariumElevation(
-      opts.terrariumEndpoint ? { template: opts.terrariumEndpoint } : {}
-    )
-    // Weather stays on (Open-Meteo, keyless, the library default).
-    // Traffic and transit stay off: traffic always needs a paid credential
-    // and transit always needs an operator feed - the library refuses to
-    // default either, and this deployment has nothing to add.
-  });
+  const carto = opts.carto ? Promise.resolve(opts.carto) : buildDefaultCarto(opts);
   const maxTokens = opts.maxTokens ?? MAX_TOKENS;
   const origin = opts.corsOrigin ?? "*";
   const mapletLimit = opts.mapletPerMinute ?? DEFAULT_MAPLET_PER_MINUTE;
@@ -5223,6 +5977,15 @@ function createHandler(opts = {}) {
     { root: "https://gall.openstreetmap.de/api" }
   ];
   return /* @__PURE__ */ __name(async function handle(req) {
+    try {
+      return await route(req);
+    } catch (err) {
+      return json({ "Access-Control-Allow-Origin": origin }, 502, {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }, "handle");
+  async function route(req) {
     const url = new URL(req.url);
     const probeParam = url.searchParams.get("endpoint");
     const probedUrl = KNOWN_OVERPASS_INSTANCES.some(
@@ -5273,7 +6036,9 @@ function createHandler(opts = {}) {
       return await terrainRoute(url, extraHeaders);
     }
     return json(extraHeaders, 404, { error: "not found", routes: servedRoutes(), unavailable: unavailableBody() });
-  }, "handle");
+  }
+  __name(route, "route");
+  ;
   async function mapletRoute(url, req, headers, cap) {
     let body = {};
     if (req.method === "POST") {
@@ -5299,7 +6064,7 @@ function createHandler(opts = {}) {
     const layers = url.searchParams.get("layers")?.split(",").map((s) => s.trim()).filter(Boolean);
     let result;
     try {
-      result = await carto.maplet({ lat, lon, radiusM, layers, budget });
+      result = await (await carto).maplet({ lat, lon, radiusM, layers, budget });
     } catch (err) {
       return json(headers, 502, {
         error: err instanceof Error ? err.message : String(err)
@@ -5342,7 +6107,14 @@ function createHandler(opts = {}) {
       return json(headers, 400, { error: 'bbox must be "west,south,east,north"' });
     }
     const layers = url.searchParams.get("layers")?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
-    const text = await carto.scr(bbox, layers);
+    let text;
+    try {
+      text = await (await carto).scr(bbox, layers);
+    } catch (err) {
+      return json(headers, 502, {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
     attributionHeaderOn(headers);
     return new Response(text, {
       status: 200,
@@ -5383,7 +6155,7 @@ function createHandler(opts = {}) {
       return json(headers, 400, { error: "lat must be in [-90,90] and lon in [-180,180]" });
     }
     const hours = clamp(numParam({}, url, "hours", 12), 1, 48);
-    const w = await carto.weatherAt(lat, lon, hours);
+    const w = await (await carto).weatherAt(lat, lon, hours);
     if (!w) {
       return json(headers, 404, { error: "weather is not configured for this deployment" });
     }
@@ -5406,7 +6178,7 @@ function createHandler(opts = {}) {
     }
     const radiusM = clamp(numParam({}, url, "radiusM", 1e3), 1, MAX_RADIUS_M);
     const samples = clamp(numParam({}, url, "samples", 16), 4, 128);
-    const grid = await carto.elevationFor(normalizeBbox(bboxAround(lat, lon, radiusM)), samples);
+    const grid = await (await carto).elevationFor(normalizeBbox(bboxAround(lat, lon, radiusM)), samples);
     if (!grid) {
       return json(headers, 404, { error: "no elevation source is configured for this deployment" });
     }
@@ -5473,12 +6245,39 @@ function createHandler(opts = {}) {
       description: "hosted compile of the supercarto maplet pipeline: real map data in, a token-budgeted topological graph out. Same conventions as the local HTTP API in src/server/http.ts.",
       attribution: ATTRIBUTION,
       routes: servedRoutes(),
-      unavailable: unavailableBody()
+      unavailable: unavailableBody(),
+      fallback: {
+        data: "when Overpass refuses this deployment egress (HTTP 521 from every known instance), /maplet and /scr compile from a hosted PMTiles extract of the planet built from OpenStreetMap. The extract detail level is coarse beyond z10-ish, so a city block here is zoom-level honest about what zoom it shipped: the map document carries `source: protomaps` when the fallback served it, and its own truncation warnings when it stopped early.",
+        health: "/healthz probes Overpass only; a 503 here does not mean /maplet is down - the PMTiles fallback answers from the archive instead."
+      }
     };
   }
   __name(indexBody, "indexBody");
 }
 __name(createHandler, "createHandler");
+async function buildDefaultCarto(opts) {
+  const pmtilesUrl = await resolvePmtilesUrl(opts.pmtilesUrl);
+  const fallback = new ProtomapsSource({
+    url: pmtilesUrl,
+    name: "protomaps",
+    // See buildDefaultCarto comment: keeps one compile inside a Worker budget.
+    maxFeatures: 400
+  });
+  return new SuperCarto({
+    sources: [new OverpassSource(), fallback],
+    // Elevation is keyless (Terrarium tiles) and its absence in the hosted
+    // surface would silently drop the slope heat layer that answers "can this
+    // be wheeled up", for no reason.
+    elevation: new TerrariumElevation(
+      opts.terrariumEndpoint ? { template: opts.terrariumEndpoint } : {}
+    )
+    // Weather stays on (Open-Meteo, keyless, the library default).
+    // Traffic and transit stay off: traffic always needs a paid credential
+    // and transit always needs an operator feed - the library refuses to
+    // default either, and this deployment has nothing to add.
+  });
+}
+__name(buildDefaultCarto, "buildDefaultCarto");
 var ipCounters = /* @__PURE__ */ new Map();
 function rateLimited(req, limitPerMinute) {
   const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
@@ -5534,8 +6333,8 @@ function unavailableBody() {
       because: "live traffic needs a licensed flow provider credential (TomTom or HERE); hosted mode ships none, and free-flow numbers presented as live conditions are the failure this library refuses to make"
     },
     {
-      route: "indoor / pmtiles map sources",
-      because: "indoor floor plans and PMTiles archives are local files: no filesystem here, so the maplet layers come only from live Overpass"
+      route: "indoor floor plans",
+      because: "indoor floor plans are local files: no filesystem here, so indoor layers are absent rather than fabricated"
     }
   ];
 }
@@ -5584,11 +6383,13 @@ var worker_default = {
   fetch(request, env) {
     const overpassEndpoint = env?.OVERPASS_ENDPOINT;
     const terrariumEndpoint = env?.TERRARIUM_ENDPOINT;
-    const key = JSON.stringify([overpassEndpoint, terrariumEndpoint]);
+    const pmtilesUrl = env?.PMTILES_URL;
+    const key = JSON.stringify([overpassEndpoint, terrariumEndpoint, pmtilesUrl]);
     if (handlerKey !== key) {
       handler = createHandler({
         ...overpassEndpoint ? { overpassEndpoint } : {},
-        ...terrariumEndpoint ? { terrariumEndpoint } : {}
+        ...terrariumEndpoint ? { terrariumEndpoint } : {},
+        ...pmtilesUrl ? { pmtilesUrl } : {}
       });
       handlerKey = key;
     }

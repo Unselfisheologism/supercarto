@@ -1,10 +1,9 @@
 import type { GeoJsonFeature } from '../ingest/geojson.js';
 import type { BboxQuery, MapSource, SourceRequest, SourceResult } from './types.js';
 import { decodeMvt, type MvtLayer } from './mvt.js';
-// Imported rather than `require`d: this module is ESM, and a `require` here
-// throws ERR_AMBIGUOUS_MODULE_SYNTAX that the per-tile error handler swallowed,
-// so every compressed archive came back as zero features with no explanation.
-import { brotliDecompressSync, gunzipSync, zstdDecompressSync } from 'node:zlib';
+// Compression lands in `zlibsafe`: it loads node:zlib lazily and falls back to
+// the web DecompressionStream, so this module can evaluate outside Node.
+import { decompress } from './zlibsafe.js';
 
 import { plainFetch } from './types.js';
 
@@ -66,6 +65,14 @@ export interface ProtomapsOptions {
    * requests; anything else is read from disk.
    */
   readonly url: string;
+  /**
+   * Override for the `source` name that travels with fetched results.
+   *
+   * Default is `protomaps` for the public demo archive and `pmtiles` for
+   * everything else. A hosted deployment compiling against its own archive
+   * passes an explicit name so the document says what served it.
+   */
+  readonly name?: string;
   /** Tile type to request. Defaults to MVT, which is all supercarto needs. */
   readonly tileType?: 'mvt' | 'png' | 'jpeg' | 'webp';
   /** Highest zoom to request. Defaults to 14, which is agent-relevant detail. */
@@ -78,6 +85,15 @@ export interface ProtomapsOptions {
    * unbounded bbox should not become an unbounded bill.
    */
   readonly maxTiles?: number;
+  /**
+   * Extra cap on features kept per request, below the caller's own.
+   *
+   * A single z12 vector tile is denser than any Overpass query over the same
+   * ground, and the compile cost of the full cap is quadratic in the feature
+   * count. A source behind a tight CPU limit set this so the request stays
+   * servable; truncation is reported as anywhere else, never hidden.
+   */
+  readonly maxFeatures?: number;
 }
 
 /** The free public Protomaps build, for evaluation. Not for production traffic. */
@@ -93,6 +109,8 @@ export class PmtilesArchive {
   private header?: PmtilesHeader;
   private entries?: TileEntry[];
   private headerPromise?: Promise<PmtilesHeader>;
+  /** Decoded directories, keyed by their byte offset in the archive. */
+  private readonly directories = new Map<number, Promise<TileEntry[]>>();
 
   constructor(
     private readonly url: string,
@@ -144,21 +162,54 @@ export class PmtilesArchive {
     };
   }
 
-  /** Directory entries, following leaves when the root is too large. */
+  /**
+   * The root directory's entries.
+   *
+   * For a large archive these are pointers at leaf directories rather than
+   * entries that address tiles; `tile()` follows them per lookup.
+   */
   async directory(): Promise<TileEntry[]> {
-    if (this.entries) return this.entries;
     const h = await this.info();
-    const rootRaw = await this.read(h.rootOffset, h.rootLength);
-    const root = decompressDirectory(rootRaw, h.directoryCompression);
-    const entries = decodeDirectory(root);
+    return this.directoryAt(h.rootOffset, h.rootLength);
+  }
+
+  /** A directory blob by offset, decoded once and shared across lookups. */
+  private async directoryAt(offset: number, length: number): Promise<TileEntry[]> {
+    // The root directory lands in the per-archive cache; leaf directories join
+    // it, so a bbox spanning several tiles of one leaf is read from the store
+    // once, not once per tile.
+    if (offset === (await this.info()).rootOffset) {
+      if (!this.entries) {
+        this.entries = await this.decodeDirectoryBlob(offset, length);
+      }
+      return this.entries;
+    }
+    let cached = this.directories.get(offset);
+    if (!cached) {
+      cached = this.decodeDirectoryBlob(offset, length);
+      if (this.directories.size >= 16) {
+        // The oldest insertion still serves the most tiles in an ongoing
+        // request; Map iteration order preserves insertion.
+        const oldest = this.directories.keys().next().value;
+        if (oldest !== undefined) this.directories.delete(oldest);
+      }
+      this.directories.set(offset, cached);
+    }
+    return cached;
+  }
+
+  private async decodeDirectoryBlob(offset: number, length: number): Promise<TileEntry[]> {
+    const h = await this.info();
+    const raw = await this.read(offset, length);
+    const buf = await decompress(raw, h.directoryCompression, 'directory');
+    const root = decodeDirectory(buf);
 
     // A large archive keeps the root directory small and points at leaves. The
     // threshold is the format's own recommendation rather than a tuned constant.
-    if (entries.length === 0 && h.leafLength > 0) {
+    if (root.length === 0 && h.leafLength > 0) {
       throw new Error('PMTiles archive has an empty root directory');
     }
-    this.entries = entries;
-    return entries;
+    return root;
   }
 
   /** Byte range read, from a remote archive or a local file. */
@@ -172,19 +223,43 @@ export class PmtilesArchive {
       }
       return new Uint8Array(await res.arrayBuffer());
     }
-    const { readFile } = await import('node:fs/promises');
+    // The specifier is read out of an array on purpose: esbuild folds plain
+    // `'node:' + 'fs/promises'` concatenations and would pull the module into
+    // every Worker bundle. A computed element access stays unresolved there,
+    // while Node resolves it at runtime exactly as before.
+    const specs: string[] = ['node:fs/promises'];
+    const { readFile } = await import(specs[0]!);
     const fh = await readFile(this.url);
     return new Uint8Array(fh.buffer, fh.byteOffset + offset, length);
   }
 
-  /** Tile bytes, or undefined when the archive has no tile at that id. */
+  /**
+   * Tile bytes, or undefined when the archive has no tile at that id.
+   *
+   * Large archives do not address tiles from the root: an entry there with
+   * `runLength === 0` points at a leaf directory, and lookup descends root →
+   * leaf (at most three levels per the v3 layout) until an entry with data
+   * resolves. A small archive resolves on the first pass, unchanged.
+   */
   async tile(tileId: number): Promise<Uint8Array | undefined> {
     const h = await this.info();
-    const entries = await this.directory();
-    const entry = findEntry(entries, tileId);
-    if (!entry) return undefined;
-    const raw = await this.read(h.dataOffset + entry.offset, entry.length);
-    return decompressTile(raw, h.tileCompression);
+    let dirOffset = h.rootOffset;
+    let dirLength = h.rootLength;
+    for (let depth = 0; depth < 4; depth++) {
+      const entries = await this.directoryAt(dirOffset, dirLength);
+      const entry = findEntry(entries, tileId);
+      if (!entry) return undefined;
+      if (entry.runLength === 0) {
+        // A pool-sized leaf directory is the next level down; its offset is
+        // relative to the leaf section, an entry's tile data to the data one.
+        dirOffset = h.leafOffset + entry.offset;
+        dirLength = entry.length;
+        continue;
+      }
+      const raw = await this.read(h.dataOffset + entry.offset, entry.length);
+      return await decompress(raw, h.tileCompression, 'tile');
+    }
+    throw new Error('PMTiles archive exceeds maximum directory depth');
   }
 
   /** Vector tile as MVT, or undefined when the archive is not vector. */
@@ -216,6 +291,11 @@ function findEntry(entries: TileEntry[], tileId: number): TileEntry | undefined 
     else if (tileId >= e.tileId + e.runLength) lo = mid + 1;
     else return e;
   }
+  // A miss can still land inside the range of a leaf pointer: root entries
+  // with `runLength === 0` cover every tile id their leaf holds, so the entry
+  // just below the probe is the one that carries the leaf location. Returning
+  // undefined there silently reports "tile absent" for a planet archive.
+  if (hi >= 0 && entries[hi]!.runLength === 0) return entries[hi];
   return undefined;
 }
 
@@ -289,41 +369,14 @@ function decodeDirectory(buf: Uint8Array): TileEntry[] {
   return out;
 }
 
-function decompressDirectory(buf: Uint8Array, compression: number): Uint8Array {
-  return decompress(buf, compression, 'directory');
-}
-
-function decompressTile(buf: Uint8Array, compression: number): Uint8Array {
-  return decompress(buf, compression, 'tile');
-}
-
 /**
  * Inflate an archive component.
  *
- * zstd is reached through Node's zlib rather than a dependency, so an archive
- * compressed with it still works. It is only present on Node 22.15 and later,
- * and the error says so rather than silently returning the compressed bytes.
+ * Compression lives in `zlibsafe` now: Node keeps its synchronous zlib calls,
+ * a non-Node runtime uses the web `DecompressionStream` for the gzip that the
+ * public OSM basemap archives use, and zstd/brotli refuse with honest errors
+ * rather than misreading compressed bytes.
  */
-function decompress(buf: Uint8Array, compression: number, what: string): Uint8Array {
-  if (compression === 1 || compression === 0) return buf;
-  switch (compression) {
-    case 2:
-      return gunzipSync(buf);
-    case 3:
-      return brotliDecompressSync(buf);
-    case 4:
-      // zstd arrived in Node 22.15. Absent, the caller gets an error naming the
-      // version rather than silently reading compressed bytes as vector data.
-      if (typeof zstdDecompressSync === 'function') {
-        return zstdDecompressSync(buf);
-      }
-      throw new Error(
-        `PMTiles ${what} uses zstd, which needs Node 22.15 or later`,
-      );
-    default:
-      throw new Error(`unknown PMTiles compression ${compression}`);
-  }
-}
 
 /**
  * A Protomaps or any PMTiles archive as a map source.
@@ -340,13 +393,18 @@ export class ProtomapsSource implements MapSource {
   private readonly archive: PmtilesArchive;
   private readonly maxZoom: number;
   private readonly maxTiles: number;
+  private readonly maxFeatures: number;
   private readonly keep: Set<string>;
 
   constructor(opts: ProtomapsOptions) {
     this.archive = new PmtilesArchive(opts.url, opts.fetchImpl);
-    this.name = opts.url === PROTOMAPS_DEMO ? 'protomaps' : 'pmtiles';
+    this.name =
+      opts.name ?? (opts.url === PROTOMAPS_DEMO ? 'protomaps' : 'pmtiles');
     this.maxZoom = opts.maxZoom ?? 14;
     this.maxTiles = opts.maxTiles ?? 16;
+    // `0` means no extra cap: the caller's own `maxFeatures` stays the limit,
+    // which is the behaviour every existing caller has compiled against.
+    this.maxFeatures = opts.maxFeatures ?? 0;
     this.keep = new Set(opts.layers ?? []);
   }
 
@@ -414,7 +472,7 @@ export class ProtomapsSource implements MapSource {
             },
             geometry: g,
           });
-          if (features.length >= req.maxFeatures) {
+          if (features.length >= this.featureCap(req)) {
             return {
               features,
               source: this.name,
@@ -422,7 +480,7 @@ export class ProtomapsSource implements MapSource {
               elapsedMs: Date.now() - started,
               warnings: [
                 ...warnings,
-                `stopped at the ${req.maxFeatures} feature cap for this request`,
+                `stopped at the ${this.featureCap(req)} feature cap for this request`,
               ],
             };
           }
@@ -437,6 +495,17 @@ export class ProtomapsSource implements MapSource {
       elapsedMs: Date.now() - started,
       warnings,
     };
+  }
+
+  /**
+   * The feature limit in force: the source's own cap when set lower than the
+   * caller's, otherwise the caller's.
+   */
+  private featureCap(req: SourceRequest): number {
+    if (this.maxFeatures > 0 && this.maxFeatures < req.maxFeatures) {
+      return this.maxFeatures;
+    }
+    return req.maxFeatures;
   }
 }
 

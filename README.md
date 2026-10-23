@@ -386,7 +386,7 @@ get a second copy.
 curl 'localhost:8787/maplet?lat=35.6833&lon=139.762&radiusM=400&budget=1500&format=yaml'
 ```
 
-### Hosted mode (experimental, not yet deployed)
+### Hosted mode (deployed)
 
 The compile path is Workers-compatible (fetch-based sources, no Node built-ins),
 and `cloud/worker/` packages it as a Cloudflare Worker: the same `/maplet`,
@@ -394,8 +394,22 @@ and `cloud/worker/` packages it as a Cloudflare Worker: the same `/maplet`,
 per-IP rate limiting and ODbL attribution on every map response. It is
 deliberately a subset — transit and traffic are not served, because a Worker has
 no filesystem for a GTFS feed and hosted mode ships no flow-provider keys, and
-`GET /` states that openly. See `cloud/worker/README.md`. Nothing is deployed
-under this option yet.
+`GET /` states that openly. See `cloud/worker/README.md`.
+
+Deployed at https://supercarto-compile.jeffrinjames99.workers.dev. Data source
+chain for `/maplet` and `/scr`: live Overpass first, then a hosted PMTiles
+planet build of the OpenStreetMap basemap — every known public Overpass
+instance refuses the shared Cloudflare egress range (HTTP 521), so the
+fallback is what actually serves a hosted maplet. The archive's detail level
+is coarse beyond z10-ish, and the deployment caps a request's tile and
+feature fetches so a planet tile stays inside a Worker CPU budget;
+truncation travels in the document as warnings, and the `source:` line says
+`protomaps` when the fallback served it. Weather, daylight and rate limiting
+are live; terrain answers an honest 503 (Terrarium tiles are PNG-encoded and
+the bundled zero-dependency decoder reads raw Terrarium buffers only); transit
+and traffic are absent for the reasons `GET /` lists. `GET /healthz` probes
+Overpass only, so a 503 there means the Overpass leg is unreachable — not that
+the PMTiles fallback is down.
 
 ---
 
@@ -443,7 +457,7 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-412 tests passing: 280 unit (including 26 for the GTFS layer), 120 against
+416 tests passing: 284 unit (including 26 for the GTFS layer), 120 against
 live sources, and 12 MCP end-to-end. Outputs are byte-identical to the Python
 port — the parity engine runs on every push.
 Verified against live OpenStreetMap, live Open-Meteo, and the live MCP server
