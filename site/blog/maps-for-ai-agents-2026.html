@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en" data-webtui-theme="catppuccin-mocha">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maps for AI agents: the 2026 landscape - supercarto</title>
+  <meta name="description" content="A survey of map and location tools built for AI agents in 2026: what Google, Mapbox, TomTom, and a new wave of MCP-native tools ship today, the failure modes that still break agents, and a checklist for choosing one.">
+  <link rel="canonical" href="https://supercarto.pages.dev/blog/maps-for-ai-agents-2026.html">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:title" content="Maps for AI agents: the 2026 landscape">
+  <meta property="og:description" content="Every mapping platform shipped an MCP server. Most agents still hallucinate coordinates. A field survey of the maps-for-agents stack, and a checklist for choosing one.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supercarto.pages.dev/blog/maps-for-ai-agents-2026.html">
+  <meta property="og:image" content="https://supercarto.pages.dev/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Maps for AI agents: the 2026 landscape",
+    "datePublished": "2026-10-23",
+    "dateModified": "2026-10-23",
+    "author": { "@type": "Organization", "name": "supercarto" },
+    "publisher": { "@type": "Organization", "name": "supercarto" },
+    "url": "https://supercarto.pages.dev/blog/maps-for-ai-agents-2026.html",
+    "about": ["maps for AI agents", "MCP map server", "geospatial AI", "token budget"]
+  }
+  </script>
+  <link rel="stylesheet" href="../webtui.css">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+
+  <header>
+    <nav>
+      <a is-="badge" variant-="foreground0" cap-="round" href="https://supercarto.pages.dev/">supercarto</a>
+      <a is-="badge" variant-="background2" cap-="round">field survey - Oct 2026</a>
+    </nav>
+    <h1>Maps for AI agents: the 2026 landscape</h1>
+    <p>Every mapping platform now ships a tool server for agents. Most agents
+    still answer "where should I meet them" with invented coordinates. This is
+    a survey of what the major map and location tools ship today, why that is
+    not enough, and a checklist to apply to any tool you wire into an agent.</p>
+    <div class="row">
+      <a is-="button" box-="square" href="#failure-modes">The failure modes</a>
+      <a is-="button" box-="square" href="#players">Who ships what</a>
+      <a is-="button" box-="square" href="#checklist">The checklist</a>
+    </div>
+  </header>
+
+  <div is-="separator"></div>
+
+  <section>
+    <h2>What changed this year</h2>
+    <p>The Model Context Protocol (MCP) turned "call a map API from an agent"
+    into a solved plumbing problem: point an agent at a server, let it discover
+    tools at runtime. Tracking catalogs now list <b>over 100 geospatial MCP
+    servers</b>: 47 commercial, 41 published by the data vendors themselves.
+    Google, Mapbox, TomTom, Esri, CARTO, Felt, Cesium, and Baidu all ship
+    official servers. The plumbing is done. What has not caught up is what
+    comes back down the pipe.</p>
+    <p>At the same time a newer, smaller group of tools started marketing on a
+    different axis: not more data, but <b>less of it</b> - compact answers
+    sized for a context window instead of raw GeoJSON dumps. That second wave
+    is where the interesting engineering is, and it is where this survey
+    focuses.</p>
+  </section>
+
+  <section id="failure-modes">
+    <h2>Four failure modes that still break agents</h2>
+    <p>An agent with a map fails in particular, repeatable ways. Any "maps for
+    agents" tool should be judged against all four.</p>
+    <ol>
+      <li><b>Hallucinated coordinates.</b> A model asked to reason over raw
+      lat/lon lists will, with nonzero probability, invent them. This is not a
+      prompt-engineering problem; it is what happens when the format is
+      something a model was barely trained to reason in.</li>
+      <li><b>Silent truncation.</b> A fetch of "everything near here" returns
+      hundreds of kilobytes, the agent framework cuts it to fit, and the map
+      the model reads is a random prefix that looks complete. The model cannot
+      tell <i>not there</i> from <i>not shown</i>. It confidently reports the
+      pharmacy that got truncated away does not exist.</li>
+      <li><b>Fictional routing.</b> Routing APIs sometimes return confident
+      nonsense - impossible distances, routes through water. In our own
+      benchmark work, the public demo router answered <code>Ok</code> with a
+      walk that covered a straight-line half-kilometre in 40 seconds. Nothing
+      in the response said "check me", so nothing downstream did.</li>
+      <li><b>Invented hours.</b> A place with no recorded hours is not a closed
+      place, but outputs that render "unknown" as "closed" (or as open) push an
+      agent to send a person on a wasted trip - the exact failure an honest
+      refusal is supposed to prevent.</li>
+    </ol>
+  </section>
+
+  <section id="players">
+    <h2>Who ships what</h2>
+    <p>The platforms came for integration; the new wave came for context
+    budgets. Fair summary as of October 2026:</p>
+    <div class="scroll">
+    <table box-="square">
+      <thead><tr><th>Tool</th><th>Shape of an answer</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><b>Mapbox MCP</b></td><td>raw JSON / GeoJSON payloads</td><td>Official, hosted endpoint, full API coverage. Metered API billing. Answer size is your problem.</td></tr>
+        <tr><td><b>Google Maps Grounding Lite</b></td><td>AI place summaries + payloads</td><td>Official, hosted. Place summaries are model-generated en route - convenient, and a new thing to trust.</td></tr>
+        <tr><td><b>TomTom Agent Toolkit</b></td><td>53 tools + shared state layer</td><td>Smart design: full geometry lives in state, the model reads one-line summaries. Front-end oriented.</td></tr>
+        <tr><td><b>PlaceRoot</b></td><td>ranked compact answers from Overture</td><td>Keyless, 48 tools, real graph routing. The strongest "answers, not dumps" implementation outside the platforms.</td></tr>
+        <tr><td><b>Footstep</b></td><td>token-lean JSON</td><td>Hosted MCP, 15 tools, geometry opt-in. Freemium.</td></tr>
+        <tr><td><b>GeoContext</b></td><td>one-call context bundle</td><td>POI + neighbourhood profile + timezone per request. Claims an 80% tool-call overhead cut.</td></tr>
+        <tr><td><b>xMap / RSMaps / Foursquare</b></td><td>commercial datasets via tools</td><td>Large licensed POI/mobility corpora, agent-facing schemas.</td></tr>
+        <tr><td><b>supercarto</b></td><td>token-budgeted topological graph</td><td>Open source. The map is a walkable graph, cut to a budget re-measured on the emitted output, with every removal recorded. Public re-derivable benchmark.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Two structural camps emerge. <b>Vendors host their data and keep the
+    API key</b> - convenient, metered, and the answer shape is decided by the
+    vendor's API, not by what a model reasons over well. <b>Open-data
+    tooling runs locally</b> - Overpass, Overture, self-hosted PMTiles - where
+    the shape is a choice the tool author makes. Most of the open tools still
+    return flat ranked lists. Flat lists answer "what is here". They do not
+    answer "how do the things here connect", which is what an agent needs when
+    the next step is moving a person.</p>
+  </section>
+
+  <section id="checklist">
+    <h2>The checklist</h2>
+    <p>Before wiring any map tool into an agent, ask for these five things.
+    If a tool cannot answer one of them, that is the data point.</p>
+    <ol>
+      <li><b>Is the token budget a budget?</b> Not "compact by design" - a
+      number that is re-measured on the actual emitted output, guaranteed,
+      with a fallback when it cannot be met.</li>
+      <li><b>Does the map survive its own cuts?</b> After truncation, is the
+      remaining area still traversable - can the agent route between what
+      remains? A trimmed map that strands its landmarks is worse than a smaller
+      complete one.</li>
+      <li><b>Can the agent tell <i>not there</i> from <i>not shown</i>?</b>
+      Truncation, missing data, and a closed/open-at-noon-checked-against-real-time
+      distinction must be recorded in the output, not on the website.</li>
+      <li><b>Is there a public score?</b> Not marketing claims - tasks, models,
+      pass rules, and raw answer archives that a third party can re-derive
+      without model calls. If the numbers cannot be checked, they are a mood.</li>
+      <li><b>What happens when the source is down?</b> Zeroes and empty strings
+      read as "no rain" and "nothing here". A degraded answer must announce
+      itself as degraded.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The gap that is next: transit</h2>
+    <p>Whole capabilities are still missing. The clearest one is transit
+    schedules: a routine agent task - "can you be somewhere by 9?" - is
+    unanswerable by every keyless map tool for agents today, and GTFS, the
+    open schedule format behind every journey planner, has no agent-facing
+    server in any tracking catalog right now. That is a gap, not a verdict.
+    Watch it close.</p>
+  </section>
+
+  <section>
+    <h2>Where supercarto stands</h2>
+    <p>supercarto takes the position that an agent should read something built
+    for reasoning, not rendered for humans: a topological graph with
+    distances in metres and compass directions, cut to a token budget that is
+    re-measured on the delivered output, with every drop recorded. In the
+    public benchmark - same questions, same models, only the context changes -
+    the compiled graph scores 38/47 against 15/44 for raw GeoJSON and 0/47 for
+    no map. Every number is re-derivable from committed answer archives
+    without a model call. Indoor multi-storey graphs, keyless weather, and
+    honest degraded paths ship in the core; transit is the next layer.</p>
+    <div class="row">
+      <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto-bench/blob/master/bench-results/certificate.md">Read the certificate</a>
+      <a is-="button" box-="square" href="https://supercarto.pages.dev/#install">Install supercarto</a>
+    </div>
+  </section>
+
+  <div is-="separator"></div>
+
+  <footer>
+    <p>Written Oct 2026. Companion survey and catalog links inside
+    <a href="https://github.com/sparkgeo/geo-mcp-servers">sparkgeo's geo-mcp
+    catalog</a>; market numbers from cited analyst reports. supercarto is
+    open source under Apache-2.0.</p>
+    <nav>
+      <a href="https://supercarto.pages.dev/">Home</a>
+      <a href="https://github.com/Unselfisheologism/supercarto">GitHub</a>
+      <a href="https://www.npmjs.com/package/supercarto">npm</a>
+    </nav>
+  </footer>
+
+</main>
+</body>
+</html>
