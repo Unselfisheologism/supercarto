@@ -51,7 +51,14 @@ run_case() { # file budget opts
 if [ $# -ge 1 ]; then
   files="$1"; budgets="${2:-1024}"
 else
-  files=$(ls examples/*.geojson); budgets="1024 2048"
+  files=$(ls examples/*.geojson scripts/parity/fixtures/*.geojson); budgets="128 256 512 1024 2048"
+fi
+
+# Run the TS side against a build no older than the sources. A stale dist
+# reported parity that the checked-in code no longer had.
+if [ dist/index.js -ot src/pipeline.ts ]; then
+  echo "(rebuilding stale dist first)"
+  npm run build >/dev/null 2>&1 || { echo "FAIL dist build"; exit 1; }
 fi
 
 for f in $files; do

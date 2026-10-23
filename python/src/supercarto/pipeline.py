@@ -193,7 +193,7 @@ def _emit_and_verify(
         merged["scale"] = (emit_opts or {}).get("scale") or scale
         return emit_graph(g, merged)
 
-    graph = fitted["graph"]
+    graph = _prune_stale_obstacles(fitted["graph"])
     result = render(graph)
     dropped = fitted["droppedNodes"]
 
@@ -285,6 +285,7 @@ def _emit_and_verify(
             on_contract,
             _junctions_holding_landmarks(graph),
         )
+        graph = _prune_stale_obstacles(graph)
         result = render(graph)
 
         # Adapt the batch: grow while a full batch is removable, shrink when
@@ -465,6 +466,33 @@ def _junctions_holding_landmarks(graph: SpatialGraph) -> set:
         if e.from_ in named and degree.get(e.from_, 0) <= 2:
             holding.add(e.to)
     return holding
+
+
+def _prune_stale_obstacles(graph: SpatialGraph) -> SpatialGraph:
+    """Drop obstacles whose named edge is no longer in the graph.
+
+    An obstacle names an edge as ``from->to``; when budget shrinking or chain
+    contraction removes either endpoint, the warning has nothing to warn
+    about. Dropping it keeps the emitted map coherent: every carrier line
+    refers to something present. (Mirror of ``pruneStaleObstacles`` in
+    ``pipeline.ts`` — keep the two in lockstep.)
+    """
+
+    alive = {f"{e.from_}->{e.to}" for e in graph.edges}
+    if all(o.edge in alive for o in graph.obstacles):
+        return graph
+    return SpatialGraph(
+        meta=graph.meta,
+        nodes=graph.nodes,
+        edges=graph.edges,
+        obstacles=[o for o in graph.obstacles if o.edge in alive],
+        heat=graph.heat,
+        indoor=graph.indoor,
+        omitted=graph.omitted,
+        tools=graph.tools,
+        pinned=graph.pinned,
+        partial=graph.partial,
+    )
 
 
 def filter_layers(doc: ScrDocument, keep: set) -> ScrDocument:
