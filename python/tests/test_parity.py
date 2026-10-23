@@ -52,6 +52,31 @@ node_available = shutil.which("node") is not None
 pytestmark = pytest.mark.skipif(not node_available, reason="node not installed")
 
 
+def _ensure_typescript_build() -> None:
+    """The reference compiler ships compiled to ``dist/``.
+
+    A fresh checkout (a CI runner, a new clone) has no ``dist``, and building
+    it is not the Python package's job to remember — so the parity tests build
+    it themselves rather than failing with ``Cannot find module dist/index.js``
+    three parameters in. Idempotent: an existing ``dist`` is left alone, so
+    local reruns stay fast.
+    """
+    if not node_available or (ROOT / "dist" / "index.js").exists():
+        return
+    if not (ROOT / "node_modules").exists():
+        proc = subprocess.run(
+            ["npm", "ci"], cwd=ROOT, capture_output=True, text=True, timeout=600
+        )
+        assert proc.returncode == 0, f"npm ci failed:\n{proc.stderr[-2000:]}"
+    proc = subprocess.run(
+        ["npm", "run", "build"], cwd=ROOT, capture_output=True, text=True, timeout=600
+    )
+    assert proc.returncode == 0, f"npm run build failed:\n{proc.stderr[-2000:]}"
+
+
+_ensure_typescript_build()
+
+
 def _run(cmd: list[str], opts: dict) -> dict:
     proc = subprocess.run(
         cmd,
