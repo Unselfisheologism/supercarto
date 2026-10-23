@@ -172,6 +172,25 @@ tier serves teams who will not run infra. Needs: analytics, rate limiting,
 a ToS page, and PMTiles-scale hosted infrastructure. Ship order: after the
 infra exists.
 
+> **Status 2026-10-23: the compile surface is live, unauthenticated and
+> free.** Supercarto 0.5.2 deploys the compiler core (zero Node built-ins
+> in the compile path) as a Cloudflare Worker:
+> supercarto-compile.jeffrinjames99.workers.dev — real maplets over
+> `/maplet?lat=&lon=&budget=`, plus `/scr`, `/daylight`, `/weather`,
+> `/terrain`, honest `/` index and per-IP rate limit. Two findings shape
+> the paid tier:
+>
+> 1. **Overpass refuses Cloudflare-Worker egress entirely** (HTTP 521 on
+>    every instance, probed from the worker itself). The worker answers
+>    maplets from a hosted PMTiles planet build instead — which turns out
+>    to be the *production* data path, not a hack: faster (130 ms vs
+>    26 s for an unbounded fetch), capped honestly, and the same code path
+>    licence-bearing deployments would use.
+> 2. Unauthenticated freemium alone gives adoption, not revenue; the
+>    paid tier's remaining prerequisites are analytics, identity, a ToS
+>    page, and a stock iTX/metering story — not more compiler work.
+
+
 ### D3 — GTFS (transit) — the next provable feature, and fills a live gap
 
 The sparkgeo gap table listed **public transit (GTFS) as zero-coverage** in
