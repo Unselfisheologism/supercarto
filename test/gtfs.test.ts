@@ -304,9 +304,11 @@ describe('GtfsSource on a directory feed', () => {
     expect(res.yaml).toContain(
       'S1: {type: stop, name: Civic Center, tags: [bus], routes: ["16"], first: 07:00, last: 08:10}',
     );
-    // Market 8th is served by both lines; "9" sorts before "16".
+    // Market 8th is served by both lines; "9" sorts before "16". At 10:30
+    // local the morning rows have run; the night tram at 25:10 is the next
+    // departure for the stop.
     expect(res.yaml).toContain(
-      'S2: {type: stop, name: Market 8th, tags: [bus, tram], routes: ["9", "16"], first: 07:05, last: 25:10}',
+      'S2: {type: stop, name: Market 8th, tags: [bus, tram], routes: ["9", "16"], first: 07:05, last: 25:10, next: "tram 9 25:10"}',
     );
   });
 
@@ -692,5 +694,89 @@ describe('GtfsSource real-time overlay', () => {
     const yaml = rtQuery(feedPath, overlay).yaml;
     expect(yaml).toMatch(/no trip updates 0s before query time/);
     expect(yaml).not.toMatch(/live: /);
+  });
+});
+
+describe('GtfsSource next-departure board', () => {
+  // 07:00 local = 14:00Z in October DST (PDT, UTC-7). The morning rows of the
+  // main fixture are then upcoming.
+  const MORNING = '2026-10-21T14:00:00Z';
+
+  function morningQuery(feedPath: string, rt: Parameters<GtfsSource['querySlice']>[1]): TransitResult {
+    return new GtfsSource(feedPath).querySlice({
+      lat: CENTER.lat,
+      lon: CENTER.lon,
+      radiusM: 400,
+      budget: 4096,
+      now: MORNING,
+    }, rt);
+  }
+
+  it('shows upcoming departures in feed order with their realtime state inline', async () => {
+    const body = rtFeed(RT_HEADER_TS, [
+      {
+        id: 'rt-T1',
+        trip: rtrip({ tripId: 'T1', routeId: 'R16', delay: -60, stops: [] }),
+      },
+    ]);
+    const { fetch } = rtFetcher(body);
+    const source = new GtfsSource(path.join(root, 'feed'), {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: fetch,
+    });
+    const overlay = await source.realtime(MORNING);
+    const s1 = /^  S1: \{([^}]*)\}/m.exec(morningQuery(path.join(root, 'feed'), overlay).yaml)?.[1] ?? '';
+    // The trip-level -60 belongs to T1 alone: its 07:00 row is decorated,
+    // while T3's 08:10 row carries no prediction and stays scheduled - the
+    // feed saying nothing is not the feed confirming punctuality.
+    expect(s1).toContain('next: "bus 16 07:00 -60s, bus 16 08:10"');
+    // The live list would repeat the same two predictions; the board spoke
+    // them, so nothing is printed twice.
+    expect(s1).not.toContain('live: ');
+  });
+
+  it('shows a cancelled trip in the board and keeps it off the live list', async () => {
+    const body = rtFeed(RT_HEADER_TS, [
+      {
+        id: 'rt-T3',
+        trip: rtrip({ tripId: 'T3', routeId: 'R16', stops: [{ stopId: 'S1', rel: 1 }] }),
+      },
+    ]);
+    const { fetch } = rtFetcher(body);
+    const source = new GtfsSource(path.join(root, 'feed'), {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: fetch,
+    });
+    const overlay = await source.realtime(MORNING);
+    const yaml = morningQuery(path.join(root, 'feed'), overlay).yaml;
+    const s1 = /^  S1: \{([^}]*)\}/m.exec(yaml)?.[1] ?? '';
+    expect(s1).toContain('bus 16 08:10 cancelled');
+    // The same prediction spoke by the board is not repeated in live:.
+    expect(s1).not.toContain('live: bus 16 cancelled');
+  });
+
+  it('caps the board at three entries and counts the hidden rest', () => {
+    // S3 in the morning window sees T1 07:10, T3 08:00, T4 07:30, and the
+    // night tram 25:20 - four rows, three shown, one counted.
+    const yaml = morningQuery(path.join(root, 'feed'), undefined).yaml;
+    const s3 = /^  S3: \{([^}]*)\}/m.exec(yaml)?.[1] ?? '';
+    expect(s3).toContain('next: "');
+    expect(s3).toContain('+1 more');
+    expect(s3).not.toContain('+2 more');
+  });
+
+  it('says the day is over when every scheduled departure has run', () => {
+    // A two-stop feed whose last departure is 06:00, queried at 07:30.
+    const dir = path.join(root, 'spent');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'agency.txt'), 'agency_name,agency_url,agency_timezone\nSpent Transit,https://x.test,America/Los_Angeles\n');
+    writeFileSync(path.join(dir, 'stops.txt'), 'stop_id,stop_name,stop_lat,stop_lon\nP1,Alpha,37.7750,-122.4194\nP2,Beta,37.7755,-122.4194\n');
+    writeFileSync(path.join(dir, 'routes.txt'), 'route_id,route_type,route_short_name,route_long_name\nRP,3,77,Spent Line\n');
+    writeFileSync(path.join(dir, 'trips.txt'), 'route_id,service_id,trip_id,trip_headsign\nRP,SVC,TP,One Morning Run\n');
+    writeFileSync(path.join(dir, 'stop_times.txt'), 'trip_id,stop_id,stop_sequence,departure_time\nTP,P1,1,05:55:00\nTP,P2,2,06:00:00\n');
+    writeFileSync(path.join(dir, 'calendar.txt'), 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nSVC,1,1,1,1,1,1,1,20200101,20301231\n');
+    const res = query(dir, { now: MORNING });
+    expect(res.yaml).toMatch(/Every scheduled departure for these stops has already run/);
+    expect(res.yaml).not.toMatch(/next: /);
   });
 });

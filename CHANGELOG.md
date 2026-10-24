@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.5 — The next-departure board
+
+A departure window (`first`/`last`) tells an agent the day's shape; a rider
+asks "what comes next from this stop". 0.5.5 answers that:
+
+- Node lines gain `next:` — upcoming departures in feed time order and in
+  the feed's own clock (`tram 9 25:10` stays past midnight), capped at
+  three with the hidden rest counted (`+2 more`). The cap is a token
+  decision; the count is the omission record.
+- Rows after the local query time only, computed through the feed timezone;
+  when the day's last departure has run, the note says the day is over
+  instead of letting an empty board read as a broken feed.
+- With a realtime feed configured, the board speaks the prediction inline:
+  `bus 16 07:05 +300s` or `cancelled`, joined by trip and stop with the
+  same spec precedence as the live list. Predictions the board has spoken
+  are removed from `live:` so one fact renders once.
+- Scheduling honesty: a trip-level prediction decorates only its own trip's
+  rows; another trip's departure stays unsuffixed — silence is not
+  punctuality, and the note still carries the rule in words.
+
+`live:` keeps its 0.5.4 meaning for stops whose prediction is not an
+upcoming row (mid-trip vehicles, hours-old predictions). 314 unit tests
+(was 310); parity gate green; byte-parity against the Python compile core
+unchanged (transit stays TS-first, wire decoders mirrored).
+
 ## 0.5.4 — GTFS-Realtime: live delays join onto the schedule
 
 Static schedules answer "when does the route run"; riders ask "is my bus

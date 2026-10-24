@@ -224,6 +224,15 @@ edges:
   not on time**, and the note says so in words. A feed that will not read
   (404, timeout, malformed data) degrades to the pure schedule answer with
   a one-sentence explanation, never a silent drop.
+- **Next departures, not just the day's window.** A `next:` attribute on
+  each node lists the upcoming departures at that stop, in feed time order
+  and in the feed's clock (`tram 9 25:10` stays past midnight), capped at
+  three with the hidden rest counted (`+2 more`). With a realtime feed
+  configured the board speaks the prediction inline — `bus 16 07:05 +300s`
+  or `cancelled` — and the `live:` list omits anything the board already
+  said, so nothing prints twice. When the day's last departure has run, the
+  note says the day is over instead of letting an empty board read as a
+  broken feed.
 - **The signal is explicit.** Departure times, the schedule date, and the
   feed's timezone travel in the `note`, where a model reading only the map
   sees them.
@@ -468,9 +477,10 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-443 tests passing: 310 unit (including 31 for the GTFS transit layer, 14 for the
+447 tests passing: 314 unit (including 35 for the GTFS transit layer, 14 for the
 protobuf wire and TripUpdates schema, 5 for the real-time overlay join, and 7
-for the PNG elevation decoder), 121 against live sources, and 12 MCP end-to-end.
+for the PNG elevation decoder), 121 against live sources, and 12 MCP
+end-to-end.
 Outputs are byte-identical to the Python port — the parity engine runs on
 every push.
 Verified against live OpenStreetMap, live Open-Meteo, and the live MCP server

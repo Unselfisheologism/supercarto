@@ -361,6 +361,13 @@ export interface RealtimeOverlay {
   reason?: string;
   /** stopId -> entries, e.g. `bus 16 +330s` or `bus 16 cancelled`. */
   stops: Map<string, string[]>;
+  /**
+   * Trip- and stop-keyed prediction suffixes, e.g. `T1|S2` -> `+330s` or
+   * `cancelled`. The renderer joins these onto the next-departure board,
+   * so one prediction can decorate both a stop's live list and the
+   * departing row without the two attributes disagreeing.
+   */
+  predict?: Map<string, string>;
 }
 
 /** Real-time fetches get a short leash: a schedule answer must not hang. */
@@ -463,23 +470,30 @@ function signed(seconds: number): string {
  * nothing to convert against - saying "+90s" with no schedule to be early or
  * late over would invent a baseline - so the row stays off the live list.
  */
-function stopEntry(
-  label: string,
+/**
+ * One prediction's suffix: the part after the route label.
+ *
+ * `+300s` for a delay, `cancelled` for a SKIPPED relation, undefined when the
+ * feed said nothing renderable. Keeping the suffix separate from the render
+ * line lets the same prediction decorate both a stop's live list and the
+ * next-departure board without the two attributes saying different things.
+ */
+function stopSuffix(
   s: RtStopUpdate,
   dep: number | undefined,
   tz: string | undefined,
   day: { ymd: number; weekday: number } | undefined,
 ): string | undefined {
-  if (s.scheduleRelationship === 1) return `${label} cancelled`;
+  if (s.scheduleRelationship === 1) return 'cancelled';
   const ev = s.departure ?? s.arrival;
   if (ev === undefined) return undefined;
-  if (ev.delay !== undefined) return `${label} ${signed(ev.delay)}`;
+  if (ev.delay !== undefined) return signed(ev.delay);
   if (ev.time !== undefined && tz && day && dep !== undefined) {
     const y = Math.floor(day.ymd / 10000);
     const m = Math.floor((day.ymd % 10000) / 100);
     const d = day.ymd % 100;
     const epoch = zonedEpochSeconds(tz, y, m, d, dep);
-    if (epoch !== undefined) return `${label} ${signed(ev.time - epoch)}`;
+    if (epoch !== undefined) return signed(ev.time - epoch);
   }
   return undefined;
 }
@@ -722,6 +736,26 @@ const WEEKDAY_NUM: Record<string, number> = {
  * "service unknown" rather than silently read the feed's clock in UTC and
  * clear a Saturday of its Sunday service.
  */
+/** Minutes through the local day at `at`, for "has this bus left yet" checks. */
+function localMinutes(tz: string, at: Date): number | undefined {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = new Map<string, string>();
+    for (const p of fmt.formatToParts(at)) parts.set(p.type, p.value);
+    const h = Number(parts.get('hour') ?? 'NaN');
+    const m = Number(parts.get('minute') ?? 'NaN');
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return undefined;
+    return (h % 24) * 60 + m;
+  } catch {
+    return undefined;
+  }
+}
+
 function localDay(tz: string, at: Date): { ymd: number; weekday: number } | undefined {
   try {
     const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -1014,6 +1048,7 @@ export class GtfsSource implements TransitSource {
     const day = feed.timezone ? localDay(feed.timezone, at) : undefined;
 
     const stops = new Map<string, string[]>();
+    const predict = new Map<string, string>();
     for (const update of decoded.trips.values()) {
       // An update that cannot say which route serves it has no rider-meaning
       // label: rendering a bare trip id would manufacture a fact out of a
@@ -1030,8 +1065,15 @@ export class GtfsSource implements TransitSource {
         if (row === undefined) continue;
         touched.add(row.index);
 
-        const entry = stopEntry(label, s, row.dep, feed.timezone, day);
-        if (entry) pushLive(stops, row.stopId, entry);
+        const suffix = stopSuffix(s, row.dep, feed.timezone, day);
+        if (suffix) {
+          pushLive(stops, row.stopId, `${label} ${suffix}`);
+          // Trip-keyed so the departure board can decorate its own rows; a
+          // stop_id match inside a loop line lands on the row it names.
+          if (update.tripId) {
+            predict.set(`${update.tripId}|${row.stopId}`, suffix);
+          }
+        }
       }
 
       // The trip-level delay applies where the feed gave no explicit update.
@@ -1041,6 +1083,9 @@ export class GtfsSource implements TransitSource {
           const row = rows[i]!;
           if (row.dep === undefined) continue;
           pushLive(stops, row.stopId, `${label} ${signed(update.delay)}`);
+          if (update.tripId) {
+            predict.set(`${update.tripId}|${row.stopId}`, signed(update.delay));
+          }
         }
       }
     }
@@ -1051,6 +1096,7 @@ export class GtfsSource implements TransitSource {
       headerTime: decoded.timestamp,
       updates: decoded.trips.size,
       stops,
+      predict,
     };
   }
 
@@ -1075,6 +1121,11 @@ export class GtfsSource implements TransitSource {
     const services = day ? servicesOn(feed, day.weekday, day.ymd) : undefined;
     /** true = at least one service runs today; false = none; undefined = unknown. */
     const serviceToday = services ? services.size > 0 : undefined;
+    // Local clock of the query, as minutes through the service day. Departure
+    // rows run past 24:00 into tomorrow morning, so a 25:10 row is still
+    // "upcoming" at 23:59.
+    const nowMinutes = tz && day ? localMinutes(tz, at) : undefined;
+    const trackNext = serviceToday === true && nowMinutes !== undefined;
 
     // Schedule facts to show, by service state:
     //  - running today: only trips on today's services feed routes and times;
@@ -1095,6 +1146,11 @@ export class GtfsSource implements TransitSource {
     // first/last, which is the honest absence.
     const trackDepartures = serviceToday === true;
     const departures = new Map<string, { first: number; last: number }>();
+    // Upcoming rows for the departure board, per stop, only when both the
+    // service day and the local clock are known. Every row of the day is
+    // kept here; the per-stop cap happens at render, so the count of
+    // hidden rows survives pruning.
+    const upcoming = new Map<string, { dep: number; tripId: string; label: string }[]>();
     const edgePaths = new Map<string, Edge>();
 
     for (const trip of feed.trips) {
@@ -1132,6 +1188,14 @@ export class GtfsSource implements TransitSource {
             d.first = Math.min(d.first, st.dep);
             d.last = Math.max(d.last, st.dep);
           }
+          if (trackNext && st.dep >= nowMinutes!) {
+            let list = upcoming.get(st.stopId);
+            if (!list) {
+              list = [];
+              upcoming.set(st.stopId, list);
+            }
+            list.push({ dep: st.dep, tripId: trip.id, label: route.label });
+          }
         }
       }
     }
@@ -1160,7 +1224,19 @@ export class GtfsSource implements TransitSource {
     const byDist = [...inRadius].sort((a, b) => a.dist - b.dist);
 
     const kept = new Set<string>(inRadius.map((s) => s.stop.id));
-    const note = composeNote(tz, day, services, serviceToday, rt, at);
+    // The service-day end is provable per catchment only if every candidate
+    // stop has run through: any keep-set shrinking from here inherits that
+    // fact, so the sentence is stable across prune passes.
+    let allPassed = false;
+    if (serviceToday === true && nowMinutes !== undefined) {
+      let maxLast: number | undefined;
+      for (const s of inRadius) {
+        const d = departures.get(s.stop.id);
+        if (d && d.last !== undefined) maxLast = maxLast === undefined ? d.last : Math.max(maxLast, d.last);
+      }
+      allPassed = maxLast !== undefined && maxLast < nowMinutes;
+    }
+    const note = composeNote(tz, day, services, serviceToday, rt, at, allPassed);
     const prunedCount = (): number => inRadius.length - kept.size;
 
     const render = (): { yaml: string; tokens: number; edgeCount: number } => {
@@ -1182,7 +1258,9 @@ export class GtfsSource implements TransitSource {
       } else {
         for (const s of byDist) {
           if (!kept.has(s.stop.id)) continue;
-          lines.push(`  ${yamlString(s.stop.id)}: ${nodeBody(feed, s, routesAt, departures, serviceToday, rt?.stops.get(s.stop.id))}`);
+          lines.push(
+            `  ${yamlString(s.stop.id)}: ${nodeBody(feed, s, routesAt, departures, serviceToday, rt?.stops.get(s.stop.id), upcoming.get(s.stop.id), rt?.predict)}`,
+          );
         }
         lines.push('edges:');
         if (liveEdges.length === 0) {
@@ -1285,6 +1363,8 @@ function nodeBody(
   departures: Map<string, { first: number; last: number }>,
   serviceToday: boolean | undefined,
   live: string[] | undefined,
+  upcoming: { dep: number; tripId: string; label: string }[] | undefined,
+  predict: Map<string, string> | undefined,
 ): string {
   const parts: string[] = ['type: stop'];
   parts.push(`name: ${yamlString(s.stop.name)}`);
@@ -1315,9 +1395,27 @@ function nodeBody(
   // Live lines are the operator's own predictions for this stop, already
   // joined to schedule rows. Three in feed order is the per-stop cap so one
   // busy stop cannot spend the budget on repeating itself; the commented
-  // stop's own static facts above stay complete either way.
-  if (live && live.length > 0) {
-    parts.push(`live: ${yamlString(live.join(', '))}`);
+  // stop's own static facts above stay complete either way. A prediction
+  // already spoken by the departure board below is not printed twice.
+  const spoken = new Set<string>();
+  if (upcoming && upcoming.length > 0) {
+    const rows = [...upcoming].sort((a, b) => a.dep - b.dep);
+    const decorated = rows.map((r) => {
+      const suffix = predict?.get(`${r.tripId}|${s.stop.id}`);
+      return {
+        text: `${r.label} ${formatGtfsClock(r.dep)}${suffix ? ` ${suffix}` : ''}`,
+        pair: `${r.label} ${suffix ?? ''}`,
+      };
+    }).filter((e, i, all) => all.findIndex((o) => o.text === e.text) === i);
+    for (const e of decorated) spoken.add(e.pair);
+    const shown = decorated.slice(0, 3).map((e) => e.text);
+    const hidden = decorated.length - shown.length;
+    if (hidden > 0) shown.push(`+${hidden} more`);
+    parts.push(`next: ${yamlString(shown.join(', '))}`);
+  }
+  const liveShown = live?.filter((entry) => !spoken.has(entry));
+  if (liveShown && liveShown.length > 0) {
+    parts.push(`live: ${yamlString(liveShown.join(', '))}`);
   }
   return `{${parts.join(', ')}}`;
 }
@@ -1343,6 +1441,7 @@ function composeNote(
   serviceToday: boolean | undefined,
   rt: RealtimeOverlay | undefined,
   at: Date,
+  allPassed: boolean,
 ): string {
   const parts: string[] = ['Stop distances are straight-line.'];
   if (services !== undefined && day) {
@@ -1359,6 +1458,9 @@ function composeNote(
   }
   if (tz === undefined) {
     parts.push('The feed states no agency_timezone, so the service day could not be read.');
+  }
+  if (allPassed) {
+    parts.push("Every scheduled departure for these stops has already run; the next services are another day's.");
   }
   parts.push(...realtimeNote(rt, at));
   return parts.join(' ');
