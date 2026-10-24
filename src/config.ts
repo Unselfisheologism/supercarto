@@ -33,6 +33,11 @@ import type { MapSource } from './source/types.js';
  *                        .csv/.txt tables or a .zip archive. When set, the
  *                        `get_transit` tool is offered and `/transit` serves
  *                        schedule data. Off by default, see below.
+ *   SUPERCARTO_GTFS_RT   URL of the feed's GTFS-Realtime TripUpdates endpoint.
+ *                        Requires SUPERCARTO_GTFS. When set, transit answers
+ *                        carry live delay lines beside the schedule; when the
+ *                        feed cannot be read, the map says so and keeps every
+ *                        scheduled fact.
  */
 
 export interface EnvOverrides {
@@ -49,6 +54,8 @@ export interface EnvOverrides {
   noWeather?: boolean;
   /** Path to a GTFS feed directory or .zip. Enables the `get_transit` tool. */
   gtfs?: string;
+  /** A GTFS-Realtime TripUpdates URL joined onto the schedule feed. */
+  gtfsRt?: string;
 }
 
 /** Build a `SuperCarto` from explicit overrides. */
@@ -63,6 +70,7 @@ export function cartoFromEnv(overrides: EnvOverrides = {}): SuperCarto {
     noWeather: overrides.noWeather ?? Boolean(process.env.SUPERCARTO_NO_WEATHER),
     overpassFallback: overrides.overpassFallback ?? process.env.SUPERCARTO_OVERPASS_FALLBACK !== '0',
     gtfs: overrides.gtfs ?? process.env.SUPERCARTO_GTFS,
+    gtfsRt: overrides.gtfsRt ?? process.env.SUPERCARTO_GTFS_RT,
   };
 
   const sources = sourcesFor(env);
@@ -98,7 +106,9 @@ export function cartoFromEnv(overrides: EnvOverrides = {}): SuperCarto {
   // the operator owning the freshness. A broken path is not a startup failure
   // either: the source loads lazily, so a configured-but-broken feed surfaces
   // as a clear error on the first query while the rest of the server works.
-  options.transit = env.gtfs ? new GtfsSource(env.gtfs) : undefined;
+  options.transit = env.gtfs
+    ? new GtfsSource(env.gtfs, env.gtfsRt ? { url: env.gtfsRt } : undefined)
+    : undefined;
 
   return new SuperCarto(options);
 }

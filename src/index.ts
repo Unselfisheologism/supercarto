@@ -186,7 +186,11 @@ export {
   type TransitSource,
   type TransitRequest,
   type TransitResult,
+  type RealtimeOverlay,
+  type GtfsRealtimeOptions,
 } from './source/gtfs.js';
+export { decodeTripUpdatesFeed } from './source/gtfs-rt.js';
+export type { RtFeed, RtTrip, RtStopUpdate, RtStopEvent } from './source/gtfs-rt.js';
 
 // --- Tiled sources -----------------------------------------------------------
 export {

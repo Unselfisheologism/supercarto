@@ -3,6 +3,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { haversine } from '../geo/project.js';
 import { estimateTokens, yamlString } from '../emit/yaml.js';
+import { plainFetch } from './types.js';
+import { decodeTripUpdatesFeed, type RtFeed, type RtStopUpdate } from './gtfs-rt.js';
 
 /**
  * GTFS (static transit feed) source.
@@ -314,6 +316,182 @@ export interface TransitSource {
   readonly name: string;
   readonly feedName: string;
   querySlice(req: TransitRequest): TransitResult;
+  /**
+   * Fetch the real-time overlay, when this source carries one.
+   *
+   * Absence means the deployment pointed no realtime feed at the schedule,
+   * which the emitted YAML then says plainly.
+   */
+  realtime?(now?: string | Date): Promise<RealtimeOverlay>;
+}
+
+// ---------------------------------------------------------------------------
+// Real-time (GTFS-RT TripUpdates)
+// ---------------------------------------------------------------------------
+
+/** Configuration for the realtime side of a GTFS feed. */
+export interface GtfsRealtimeOptions {
+  /** The agency's TripUpdates endpoint. TripUpdates only. */
+  url: string;
+  /** Injectable fetch, for tests and for runtimes without a global fetch. */
+  fetchImpl?: typeof fetch;
+  /** Abort the fetch after this many ms. Default 8000. */
+  timeoutMs?: number;
+}
+
+export type RealtimeState = 'live' | 'unavailable';
+
+/**
+ * What the schedule path needs to annotate departures.
+ *
+ * The work of joining predictions onto stops happens once per fetch, so the
+ * synchronous render stays a renderer. Every state name is one an agent can
+ * act on: "unknown" and "on time" are different words here, and the map note
+ * carries that distinction even when this map is empty.
+ */
+export interface RealtimeOverlay {
+  state: RealtimeState;
+  /** When the fetch happened, epoch ms. */
+  fetchedAt: number;
+  /** The feed's own dataset stamp, epoch seconds, when the feed sent one. */
+  headerTime?: number;
+  /** Trip updates decoded, when the feed answered. */
+  updates?: number;
+  /** Why the feed is unavailable, short and renderer-suitable. */
+  reason?: string;
+  /** stopId -> entries, e.g. `bus 16 +330s` or `bus 16 cancelled`. */
+  stops: Map<string, string[]>;
+}
+
+/** Real-time fetches get a short leash: a schedule answer must not hang. */
+export const RT_TIMEOUT_MS = 8000;
+
+/**
+ * Epoch seconds for "the feed's service day at local clock H:MM(:SS)".
+ *
+ * GTFS times are wall-clock minutes in the feed's own timezone, and agency
+ * predictions are absolute seconds. Joining them is a timezone offset
+ * computed at the service date, not a fixed UTC shift, and the offset is
+ * readable from Intl: format the instant as local parts and compare seconds.
+ * Two iterations because a first guess can straddle a DST boundary.
+ */
+function zonedEpochSeconds(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  minutesFromMidnight: number,
+): number | undefined {
+  const hires = minutesFromMidnight * 60;
+  const hh = Math.floor(hires / 3600);
+  const mm = Math.floor((hires % 3600) / 60);
+  const ss = Math.round(hires % 60);
+  // Overflowing hours (>24, GTFS times run past midnight) roll into the next
+  // calendar day via Date.UTC's own arithmetic.
+  let guess = Date.UTC(y, m - 1, d, hh, mm, ss);
+  for (let i = 0; i < 2; i++) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(guess));
+    const get = (type: string): number => Number(item(parts, type));
+    const local = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'));
+    guess = Date.UTC(y, m - 1, d, hh, mm, ss) - (local - guess);
+  }
+  return Math.round(guess / 1000);
+}
+
+function item(parts: Intl.DateTimeFormatPart[], type: string): string {
+  const hit = parts.find((p) => p.type === type);
+  return hit ? hit.value : '0';
+}
+
+/** Where an update's stop lives in the static feed. */
+interface MatchedStop {
+  stopId: string;
+  /** Scheduled departure, minutes from service midnight, when the row timed. */
+  dep?: number;
+  /** The stop_times row that matched, for excluding from trip-level fallback. */
+  index: number;
+}
+
+/**
+ * Resolve an update to its stop row.
+ *
+ * `stop_id` is the direct join when the feed sends it; `stop_sequence` maps
+ * through the trip's ordered stop_times rows, which is how most feeds address
+ * mid-trip stops. An update giving neither is the spec saying it attached to
+ * nothing we can name, so we leave it unjoined rather than guessing.
+ */
+function rowIndexFor(
+  s: RtStopUpdate,
+  rows: GtfsStopTime[] | undefined,
+): MatchedStop | undefined {
+  if (s.stopId !== undefined) {
+    const index = rows ? rows.findIndex((r) => r.stopId === s.stopId) : -1;
+    return {
+      stopId: s.stopId,
+      dep: index >= 0 ? rows![index]!.dep : undefined,
+      index: Math.max(index, 0),
+    };
+  }
+  const seq = s.stopSequence;
+  if (seq !== undefined && rows && seq >= 1 && seq <= rows.length) {
+    const row = rows[seq - 1]!;
+    return { stopId: row.stopId, dep: row.dep, index: seq - 1 };
+  }
+  return undefined;
+}
+
+/** Signed whole seconds, e.g. -45 -> '-45s'. */
+function signed(seconds: number): string {
+  return `${seconds < 0 ? '-' : '+'}${Math.abs(Math.round(seconds))}s`;
+}
+
+/**
+ * One rider-facing live line: the route label against its delay, or the
+ * cancelled state the operator asserted.
+ *
+ * A prediction given as absolute time converts against the scheduled epoch
+ * through the feed timezone. When the schedule row is untimed there is
+ * nothing to convert against - saying "+90s" with no schedule to be early or
+ * late over would invent a baseline - so the row stays off the live list.
+ */
+function stopEntry(
+  label: string,
+  s: RtStopUpdate,
+  dep: number | undefined,
+  tz: string | undefined,
+  day: { ymd: number; weekday: number } | undefined,
+): string | undefined {
+  if (s.scheduleRelationship === 1) return `${label} cancelled`;
+  const ev = s.departure ?? s.arrival;
+  if (ev === undefined) return undefined;
+  if (ev.delay !== undefined) return `${label} ${signed(ev.delay)}`;
+  if (ev.time !== undefined && tz && day && dep !== undefined) {
+    const y = Math.floor(day.ymd / 10000);
+    const m = Math.floor((day.ymd % 10000) / 100);
+    const d = day.ymd % 100;
+    const epoch = zonedEpochSeconds(tz, y, m, d, dep);
+    if (epoch !== undefined) return `${label} ${signed(ev.time - epoch)}`;
+  }
+  return undefined;
+}
+
+/** Keep at most three live lines per stop; the rest is an honest count. */
+function pushLive(store: Map<string, string[]>, stopId: string, entry: string): void {
+  const got = store.get(stopId);
+  if (got) {
+    if (!got.includes(entry) && got.length < 3) got.push(entry);
+    return;
+  }
+  store.set(stopId, [entry]);
 }
 
 // ---------------------------------------------------------------------------
@@ -758,17 +936,125 @@ export class GtfsSource implements TransitSource {
   private readonly feedPath: string;
   private feed: Feed | undefined;
   private displayName: string;
+  private readonly rtConfig: GtfsRealtimeOptions | undefined;
 
-  constructor(feedPath: string) {
+  constructor(feedPath: string, realtime?: GtfsRealtimeOptions) {
     this.feedPath = feedPath;
     this.displayName = path.basename(feedPath);
+    this.rtConfig = realtime;
   }
 
   get feedName(): string {
     return this.displayName;
   }
 
-  querySlice(req: TransitRequest): TransitResult {
+  /**
+   * Fetch the real-time TripUpdates overlay and join it onto the schedule.
+   *
+   * This never throws. A schedule answer must keep working when the
+   * prediction feed is down, so every failure lands as an `unavailable`
+   * overlay with a reason the map note can quote - the honest state, not an
+   * absent `get_transit`.
+   */
+  async realtime(now?: string | Date): Promise<RealtimeOverlay> {
+    if (!this.rtConfig) {
+      return {
+        state: 'unavailable',
+        fetchedAt: Date.now(),
+        reason: 'no real-time feed configured',
+        stops: new Map(),
+      };
+    }
+
+    const fetchedAt = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.rtConfig?.timeoutMs ?? RT_TIMEOUT_MS);
+    try {
+      const res = await (this.rtConfig.fetchImpl ?? plainFetch)(this.rtConfig.url, {
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        return {
+          state: 'unavailable',
+          fetchedAt,
+          reason: String(res.status),
+          stops: new Map(),
+        };
+      }
+      const decoded = await decodeTripUpdatesFeed(new Uint8Array(await res.arrayBuffer()));
+      return this.joinRealtime(decoded, now, fetchedAt);
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.name === 'AbortError'
+          ? 'timed out'
+          : String(err instanceof Error ? err.message : err).slice(0, 60);
+      return { state: 'unavailable', fetchedAt, reason, stops: new Map() };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Join decoded trip updates onto static stop rows.
+   *
+   * Precedence follows the GTFS-RT spec: an explicit StopTimeUpdate wins over
+   * the trip-level delay, an absolute `time` converts against the scheduled
+   * epoch through the feed's timezone, and a SKIPPED stop says cancelled. A
+   * stop the feed never updates stays off the live list entirely - an
+   * absent prediction reads as unknown in the note, never as on time.
+   */
+  private joinRealtime(
+    decoded: RtFeed,
+    now: string | Date | undefined,
+    fetchedAt: number,
+  ): RealtimeOverlay {
+    const feed = this.load();
+    const at =
+      now === undefined ? new Date() : now instanceof Date ? now : new Date(now);
+    const day = feed.timezone ? localDay(feed.timezone, at) : undefined;
+
+    const stops = new Map<string, string[]>();
+    for (const update of decoded.trips.values()) {
+      // An update that cannot say which route serves it has no rider-meaning
+      // label: rendering a bare trip id would manufacture a fact out of a
+      // feed-internal key, so it stays unjoined.
+      const route = update.routeId ? feed.routes.get(update.routeId) : undefined;
+      if (!route) continue;
+      const label = route.label;
+      const rows = update.tripId ? feed.stopTimes.get(update.tripId) : undefined;
+
+      const touched = new Set<number>();
+      for (const s of update.stops) {
+        if (s.scheduleRelationship === 2) continue; // NO_DATA: the operator abstains here
+        const row = rowIndexFor(s, rows);
+        if (row === undefined) continue;
+        touched.add(row.index);
+
+        const entry = stopEntry(label, s, row.dep, feed.timezone, day);
+        if (entry) pushLive(stops, row.stopId, entry);
+      }
+
+      // The trip-level delay applies where the feed gave no explicit update.
+      if (update.delay !== undefined && rows) {
+        for (let i = 0; i < rows.length; i++) {
+          if (touched.has(i)) continue;
+          const row = rows[i]!;
+          if (row.dep === undefined) continue;
+          pushLive(stops, row.stopId, `${label} ${signed(update.delay)}`);
+        }
+      }
+    }
+
+    return {
+      state: 'live',
+      fetchedAt,
+      headerTime: decoded.timestamp,
+      updates: decoded.trips.size,
+      stops,
+    };
+  }
+
+  querySlice(req: TransitRequest, rt?: RealtimeOverlay): TransitResult {
     const feed = this.load();
     const radiusM = req.radiusM ?? 400;
     if (!(radiusM > 0)) throw new Error('radiusM must be positive');
@@ -874,7 +1160,7 @@ export class GtfsSource implements TransitSource {
     const byDist = [...inRadius].sort((a, b) => a.dist - b.dist);
 
     const kept = new Set<string>(inRadius.map((s) => s.stop.id));
-    const note = composeNote(tz, day, services, serviceToday);
+    const note = composeNote(tz, day, services, serviceToday, rt, at);
     const prunedCount = (): number => inRadius.length - kept.size;
 
     const render = (): { yaml: string; tokens: number; edgeCount: number } => {
@@ -896,7 +1182,7 @@ export class GtfsSource implements TransitSource {
       } else {
         for (const s of byDist) {
           if (!kept.has(s.stop.id)) continue;
-          lines.push(`  ${yamlString(s.stop.id)}: ${nodeBody(feed, s, routesAt, departures, serviceToday)}`);
+          lines.push(`  ${yamlString(s.stop.id)}: ${nodeBody(feed, s, routesAt, departures, serviceToday, rt?.stops.get(s.stop.id))}`);
         }
         lines.push('edges:');
         if (liveEdges.length === 0) {
@@ -998,6 +1284,7 @@ function nodeBody(
   routesAt: Map<string, Set<string>>,
   departures: Map<string, { first: number; last: number }>,
   serviceToday: boolean | undefined,
+  live: string[] | undefined,
 ): string {
   const parts: string[] = ['type: stop'];
   parts.push(`name: ${yamlString(s.stop.name)}`);
@@ -1025,6 +1312,13 @@ function nodeBody(
     parts.push(`first: ${formatGtfsClock(d.first)}`);
     parts.push(`last: ${formatGtfsClock(d.last)}`);
   }
+  // Live lines are the operator's own predictions for this stop, already
+  // joined to schedule rows. Three in feed order is the per-stop cap so one
+  // busy stop cannot spend the budget on repeating itself; the commented
+  // stop's own static facts above stay complete either way.
+  if (live && live.length > 0) {
+    parts.push(`live: ${yamlString(live.join(', '))}`);
+  }
   return `{${parts.join(', ')}}`;
 }
 
@@ -1047,6 +1341,8 @@ function composeNote(
   day: { ymd: number; weekday: number } | undefined,
   services: Set<string> | undefined,
   serviceToday: boolean | undefined,
+  rt: RealtimeOverlay | undefined,
+  at: Date,
 ): string {
   const parts: string[] = ['Stop distances are straight-line.'];
   if (services !== undefined && day) {
@@ -1064,5 +1360,39 @@ function composeNote(
   if (tz === undefined) {
     parts.push('The feed states no agency_timezone, so the service day could not be read.');
   }
+  parts.push(...realtimeNote(rt, at));
   return parts.join(' ');
+}
+
+/**
+ * The real-time sentences.
+ *
+ * Each state gets exactly the words its situation needs. The load-bearing one
+ * is for live feeds: the spec is explicit that a trip with no update carries
+ * no promise of punctuality, so "unknown, not on time" is said once, in
+ * words, instead of being left for the reader to assume.
+ */
+function realtimeNote(
+  rt: RealtimeOverlay | undefined,
+  at: Date,
+): string[] {
+  if (rt === undefined) {
+    return ['All times are scheduled; no real-time feed is configured.'];
+  }
+  if (rt.state === 'unavailable') {
+    const reason = rt.reason ? ` (${rt.reason})` : '';
+    return [`Real-time feed unavailable${reason}; all times shown are scheduled.`];
+  }
+  const age = Math.max(0, Math.round((at.getTime() - rt.fetchedAt) / 1000));
+  const lines: string[] = [];
+  if ((rt.updates ?? 0) === 0) {
+    lines.push(`The real-time feed answered but carried no trip updates ${age}s before query time.`);
+  } else {
+    const n = rt.updates ?? 0;
+    lines.push(
+      `Real-time: ${n} ${n === 1 ? 'trip prediction' : 'trip predictions'}, feed ${age}s old at query time.`,
+    );
+  }
+  lines.push('A stop without a live entry has no prediction: unknown, not on time.');
+  return lines;
 }

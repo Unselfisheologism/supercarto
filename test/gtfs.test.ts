@@ -489,3 +489,208 @@ describe('get_transit advertisement', () => {
     ).rejects.toThrow(/no GTFS feed configured/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Real-time (GTFS-RT TripUpdates) overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Wire bytes for the RT fixtures, built locally like the schema tests. Field
+ * numbers are the current spec generation: stop_time_update=2, delay=5,
+ * header timestamp=3.
+ */
+function rv(value: number): number[] {
+  let x = BigInt(value);
+  if (value < 0) x += 1n << 64n;
+  const out: number[] = [];
+  for (;;) {
+    let byte = Number(x & 0x7fn);
+    x >>= 7n;
+    if (x !== 0n) byte |= 0x80;
+    out.push(byte);
+    if (x === 0n) return out;
+  }
+}
+function rkey(field: number, wire: number): number[] { return rv((field << 3) | wire); }
+function rlen(field: number, payload: number[]): number[] {
+  return [...rkey(field, 2), ...rv(payload.length), ...payload];
+}
+function rnum(field: number, value: number): number[] { return [...rkey(field, 0), ...rv(value)]; }
+function rstr(field: number, text: string): number[] {
+  return [...rkey(field, 2), ...rv(text.length), ...[...text].map((c) => c.charCodeAt(0))];
+}
+function revent(e: { delay?: number; time?: number }): number[] {
+  const p: number[] = [];
+  if (e.delay !== undefined) p.push(...rnum(1, e.delay));
+  if (e.time !== undefined) p.push(...rnum(2, e.time));
+  return p;
+}
+function rtrip(options: {
+  tripId: string;
+  routeId: string;
+  delay?: number;
+  stops: Array<{ stopId: string; arrival?: { delay?: number; time?: number }; rel?: number }>;
+}): number[] {
+  const p: number[] = [
+    ...rlen(1, [...rstr(1, options.tripId), ...rstr(5, options.routeId)]),
+  ];
+  for (const s of options.stops) {
+    const sp: number[] = [...rstr(4, s.stopId)];
+    if (s.arrival) sp.push(...rlen(2, revent(s.arrival)));
+    if (s.rel !== undefined) sp.push(...rnum(5, s.rel));
+    p.push(...rlen(2, sp));
+  }
+  if (options.delay !== undefined) p.push(...rnum(5, options.delay));
+  return p;
+}
+/** Encode one FeedMessage: header first, then the given entities. */
+function rtFeed(nowSeconds: number, entities: Array<{ id: string; trip: number[] }>): Uint8Array {
+  const header = [...rstr(1, '2.0'), ...rnum(3, nowSeconds)];
+  const msg = [...rlen(1, header)];
+  for (const e of entities) {
+    msg.push(...rlen(2, [...rstr(1, e.id), ...rlen(3, e.trip)]));
+  }
+  return new Uint8Array(msg);
+}
+
+/** A fetch stub that answers the given body bytes with ok status by default. */
+function rtFetcher(
+  body: Uint8Array,
+  status = 200,
+): { fetch: typeof fetch; callCount(): number } {
+  let calls = 0;
+  const impl = async () => {
+    calls++;
+    return {
+      ok: status === 200,
+      status,
+      arrayBuffer: async () =>
+        body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+    };
+  };
+  return { fetch: impl as unknown as typeof fetch, callCount: () => calls };
+}
+
+const RT_NOW = '2026-10-21T17:30:00Z'; // Wednesday
+const RT_AT = new Date(RT_NOW);
+const RT_HEADER_TS = Math.floor(RT_AT.getTime() / 1000);
+
+function rtQuery(feedPath: string, rt: Parameters<GtfsSource['querySlice']>[1]): TransitResult {
+  return new GtfsSource(feedPath).querySlice({
+    lat: CENTER.lat,
+    lon: CENTER.lon,
+    radiusM: 400,
+    budget: 4096,
+    now: RT_NOW,
+  }, rt);
+}
+
+describe('GtfsSource real-time overlay', () => {
+  it('joins an explicit stop delay, a trip-level delay and a cancellation onto the right stops', async () => {
+    const body = rtFeed(RT_HEADER_TS, [
+      {
+        id: 'rt-T1',
+        trip: rtrip({
+          tripId: 'T1',
+          routeId: 'R16',
+          delay: -60,
+          stops: [{ stopId: 'S2', arrival: { delay: 300 } }],
+        }),
+      },
+      {
+        id: 'rt-T3',
+        trip: rtrip({
+          tripId: 'T3',
+          routeId: 'R16',
+          stops: [{ stopId: 'S1', rel: 1 }],
+        }),
+      },
+    ]);
+    const stub = rtFetcher(body);
+    const source = new GtfsSource(path.join(root, 'feed'), {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: stub.fetch,
+    });
+    const overlay = await source.realtime(RT_NOW);
+    expect(overlay.state).toBe('live');
+    expect(overlay.updates).toBe(2);
+    expect(overlay.stops.get('S2')).toEqual(['bus 16 +300s']);
+    expect(overlay.stops.get('S1')).toEqual(['bus 16 -60s', 'bus 16 cancelled']);
+    expect(overlay.stops.get('S3')).toEqual(['bus 16 -60s']);
+    expect(stub.callCount()).toBe(1);
+
+    const yaml = rtQuery(path.join(root, 'feed'), overlay).yaml;
+    expect(yaml).toMatch(/Real-time: 2 trip predictions, feed 0s old at query time\./);
+    expect(yaml).toMatch(/A stop without a live entry has no prediction: unknown, not on time\./);
+    const s2 = /^  S2: \{([^}]*)\}/m.exec(yaml)?.[1] ?? '';
+    expect(s2).toContain('live: bus 16 +300s');
+    const s1 = /^  S1: \{([^}]*)\}/m.exec(yaml)?.[1] ?? '';
+    expect(s1).toContain('bus 16 -60s');
+    expect(s1).toContain('bus 16 cancelled');
+  });
+
+  it('converts an absolute-time prediction against the scheduled epoch in the feed timezone', async () => {
+    // T4 reaches S3 at 07:30 as a PDT wall clock: 07:30 + 7h = 14:30Z on the
+    // service day. The prediction lands 42 seconds late against that row.
+    const scheduledEpoch = Date.UTC(2026, 9, 21, 14, 30, 0) / 1000;
+    const body = rtFeed(RT_HEADER_TS, [
+      {
+        id: 'rt-T4',
+        trip: rtrip({
+          tripId: 'T4',
+          routeId: 'R16',
+          stops: [{ stopId: 'S3', arrival: { time: scheduledEpoch + 42 } }],
+        }),
+      },
+    ]);
+    const { fetch } = rtFetcher(body);
+    const source = new GtfsSource(path.join(root, 'feed'), {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: fetch,
+    });
+    const overlay = await source.realtime(RT_NOW);
+    const s3 = overlay.stops.get('S3');
+    if (!s3) throw new Error('no live entry for S3');
+    expect(s3[0]).toContain('bus 16 +42s');
+  });
+
+  it('keeps the full schedule and says so after every failure shape', async () => {
+    const feedPath = path.join(root, 'feed');
+    const { fetch: failing } = rtFetcher(new Uint8Array(), 503);
+    const source = new GtfsSource(feedPath, {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: failing,
+    });
+    const overlay = await source.realtime(RT_NOW);
+    expect(overlay.state).toBe('unavailable');
+    expect(overlay.reason).toBe('503');
+    const yaml = rtQuery(feedPath, overlay).yaml;
+    expect(yaml).toMatch(/Real-time feed unavailable \(503\); all times shown are scheduled\./);
+    expect(yaml).not.toMatch(/live: /);
+    expect(yaml).toMatch(/first: 07:00/); // schedule survives untouched
+
+    const aborter = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    const timingOut = (async () => { throw aborter; }) as unknown as typeof fetch;
+    const source2 = new GtfsSource(feedPath, { url: 'https://rt.example.test/', fetchImpl: timingOut });
+    const overlay2 = await source2.realtime(RT_NOW);
+    expect(overlay2.state).toBe('unavailable');
+    expect(overlay2.reason).toBe('timed out');
+  });
+
+  it('says every time is scheduled when no realtime feed is configured', () => {
+    const yaml = rtQuery(path.join(root, 'feed'), undefined).yaml;
+    expect(yaml).toMatch(/All times are scheduled; no real-time feed is configured\./);
+    expect(yaml).not.toMatch(/live: /);
+  });
+
+  it('retracts deleted entities and reports the empty feed honestly', async () => {
+    const feedPath = path.join(root, 'feed');
+    const source = new GtfsSource(feedPath, { url: 'https://rt.example.test/', fetchImpl: rtFetcher(rtFeed(RT_HEADER_TS, []), 200).fetch });
+    const overlay = await source.realtime(RT_NOW);
+    expect(overlay.state).toBe('live');
+    expect(overlay.updates).toBe(0);
+    const yaml = rtQuery(feedPath, overlay).yaml;
+    expect(yaml).toMatch(/no trip updates 0s before query time/);
+    expect(yaml).not.toMatch(/live: /);
+  });
+});

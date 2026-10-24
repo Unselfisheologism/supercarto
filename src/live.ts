@@ -595,6 +595,12 @@ export class SuperCarto {
     if (!this.transit) {
       throw new Error('no GTFS feed configured for this deployment');
     }
+    // The overlay fetch happens here, not inside the synchronous render: one
+    // prediction read per query, joined once, so a schedule answer never
+    // stalls on network I/O it did not start. A deployment without a realtime
+    // URL configured gets no overlay and the map note says everything shown
+    // is scheduled.
+    const overlay = this.transit.realtime ? await this.transit.realtime(req.now) : undefined;
     return this.transit.querySlice({
       ...req,
       radiusM: req.radiusM ?? 400,
