@@ -93,9 +93,16 @@ class Reader {
       case WIRE_64BIT:
         this.pos += 8;
         return;
-      case WIRE_LEN:
-        this.pos += this.varint();
+      case WIRE_LEN: {
+        // Read the length into a local first: `this.pos += this.varint()`
+        // loads the left value before the right-hand side runs in
+        // JavaScript, so the read-advance is lost and the reader lands one
+        // byte short. Python's `+=` evaluates the right side first, which is
+        // why the port never showed this.
+        const length = this.varint();
+        this.pos += length;
         return;
+      }
       case WIRE_32BIT:
         this.pos += 4;
         return;

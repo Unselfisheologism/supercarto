@@ -74,7 +74,13 @@ class _Reader:
         elif wire == WIRE_64BIT:
             self.pos += 8
         elif wire == WIRE_LEN:
-            self.pos += self.varint()
+            # Read the length into a local first: ``self.pos += self.varint()``
+            # loads the left value before the right side runs, so the
+            # read-advance is lost and the reader lands one byte short. The
+            # same latent order bug lived here until the realtime decoder's
+            # live-feed trace caught the mirrored copy.
+            length = self.varint()
+            self.pos += length
         elif wire == WIRE_32BIT:
             self.pos += 4
         else:

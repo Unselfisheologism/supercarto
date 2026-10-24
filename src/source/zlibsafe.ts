@@ -64,6 +64,20 @@ export async function inflate(buf: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
+ * Inflate a gzip stream (RFC 1952).
+ *
+ * Same runtime split as `inflate`: Node uses the synchronous `gunzipSync`,
+ * everywhere else Web `DecompressionStream('gzip')`. Agency GTFS-Realtime
+ * feeds frequently arrive as `trip-updates.pb.gz`, so the realtime decoder
+ * needs this wrapper rather than the zlib-wrapped form `inflate` handles.
+ */
+export async function gunzip(buf: Uint8Array): Promise<Uint8Array> {
+  const zlib = await nodeZlib();
+  if (zlib) return zlib.gunzipSync(buf);
+  return await webDecompress(buf, 'gzip');
+}
+
+/**
  * Inflate with the web-standard `DecompressionStream`, which Workerd exposes
  * for `gzip`, `deflate` (zlib wrapper) and `deflate-raw`. Not used under Node,
  * where the matched synchronous zlib functions keep decoded bytes identical.
