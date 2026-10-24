@@ -214,6 +214,16 @@ edges:
   recorded, in the feed's own timezone.
 - **Edges are structure; schedules attach to nodes.** The adjacency survives
   a no-service day because an agent walking between stops still wants it.
+- **Live delays when you point GTFS-Realtime at it.** Set `SUPERCARTO_GTFS_RT`
+  to the agency's TripUpdates URL and predictions join onto the schedule:
+  node lines gain a `live:` attribute such as `bus 16 +300s` or
+  `bus 16 cancelled`, and the note says how fresh the feed is. Spec
+  precedence holds — an explicit stop update beats the trip-level delay;
+  absolute-time predictions convert through the feed's timezone. The
+  honesty rule that matters most: **a stop with no live entry is unknown,
+  not on time**, and the note says so in words. A feed that will not read
+  (404, timeout, malformed data) degrades to the pure schedule answer with
+  a one-sentence explanation, never a silent drop.
 - **The signal is explicit.** Departure times, the schedule date, and the
   feed's timezone travel in the `note`, where a model reading only the map
   sees them.
@@ -286,7 +296,7 @@ npx supercarto bench <file.geojson>
 | **Open-Meteo** | default | Weather. No key. |
 | **TomTom / HERE** | key required | Live traffic. |
 | **Terrarium tiles** | default | Elevation and slope. No key. |
-| **GTFS feeds** | `SUPERCARTO_GTFS` | Transit stops, lines, and schedules. Any static feed, no key. |
+| **GTFS feeds** | `SUPERCARTO_GTFS` | Transit stops, lines, and schedules. Any static feed, no key. Live delays join from a GTFS-Realtime TripUpdates URL via `SUPERCARTO_GTFS_RT`. |
 
 ```bash
 export SUPERCARTO_PMTILES=https://your-bucket/planet.pmtiles
@@ -308,6 +318,7 @@ HERE_API_KEY            enables get_traffic
 SUPERCARTO_NO_TERRAIN   disable elevation
 SUPERCARTO_NO_WEATHER   disable weather
 SUPERCARTO_GTFS         path to a GTFS feed (dir or .zip); enables get_transit
+SUPERCARTO_GTFS_RT      TripUpdates URL; adds live delay lines to get_transit
 ```
 
 ---
@@ -457,8 +468,9 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-423 tests passing: 291 unit (including 26 for the GTFS layer and 7 for the
-PNG elevation decoder), 120 against live sources, and 12 MCP end-to-end.
+443 tests passing: 310 unit (including 31 for the GTFS transit layer, 14 for the
+protobuf wire and TripUpdates schema, 5 for the real-time overlay join, and 7
+for the PNG elevation decoder), 121 against live sources, and 12 MCP end-to-end.
 Outputs are byte-identical to the Python port — the parity engine runs on
 every push.
 Verified against live OpenStreetMap, live Open-Meteo, and the live MCP server
@@ -475,7 +487,8 @@ distance and direction by default; OSRM turn-by-turn is opt-in for an engine you
 have verified — the public demo router returns impossible distances), **keyless weather with
 a degraded path that refuses to invent readings**, **traffic with an honest
 free-flow fallback**, terrain elevation and slope, **GTFS transit schedules
-with three honest service states**, MCP over stdio, HTTP API, CLI,
+with three honest service states**, **GTFS-Realtime trip updates joined onto
+those schedules with unknown-not-on-time semantics**, MCP over stdio, HTTP API, CLI,
 a Python client, and a **task-level benchmark with OSRM ground truth**.
 
 Not implemented: hosted vector tiles with style delivery, and full indoor room

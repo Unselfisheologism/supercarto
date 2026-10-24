@@ -221,6 +221,19 @@ Mapbox's MCP has none. **Top pick for the next feature.**
 > the wedge, the natural follow-up is GTFS-Realtime (delays are what
 > riders actually ask about) and a `route` that mixes walking spans with
 > transit spans.
+>
+> **Status 2026-10-24: GTFS-Realtime follow-up shipped in 0.5.4.** TripUpdates
+> decode over a zero-dependency protobuf wire reader, predictions join onto
+> the schedule in `get_transit` with spec-precedence rules (explicit stop
+> update beats trip-level delay; absolute times convert through the feed
+> timezone; a stop with no prediction reads as unknown, not on time, in the
+> note). Field numbers were verified against the canonical proto and three
+> live keyless agency feeds (Adelaide, Sofia, Translink SEQ) in both
+> language ports. Accuracy note for this file: the 0.5.0 status line above
+> said GTFS was "parity-checked against the Python port" — the Python port
+> carries the compile core plus the new wire decoders, but static GTFS stays
+> TypeScript-only (long-standing precedent), so that earlier claim
+> overstated the parity surface.
 
 ### D4 — Coverage gaps as data partnerships (later)
 

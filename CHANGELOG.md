@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.5.4 — GTFS-Realtime: live delays join onto the schedule
+
+Static schedules answer "when does the route run"; riders ask "is my bus
+late". 0.5.4 adds the real-time half, with no dependency behind it:
+
+- A minimal protobuf wire reader (`src/source/proto.ts` +
+  `supercarto/proto.py`): int32 fields ride the wire as 64-bit
+  two's-complement varints, so a delay of -2 arrives as ten bytes; absolute
+  int64 times stay exact, and anything past Number fidelity is an honest
+  rejection, not a lossy render.
+- The TripUpdates schema (`src/source/gtfs-rt.ts` + `supercarto/gtfs_rt.py`)
+  pins the **current spec field numbers** - `stop_time_update` is field 2 and
+  the trip-level `delay` is field 5, both different from the 2015-era numbers
+  most tutorial decoders still encode. Verified against the canonical
+  gtfs-realtime.proto **and three live keyless agency feeds** (Adelaide
+  Metro, Sofia, Translink SEQ): both ports decode each feed to identical
+  counts. Deleted entities are retracted, never re-rendered as stale
+  predictions; unknown fields skip by wire type, so later spec amendments
+  decode everywhere; gzipped feeds inflate through a new `gunzip()` in
+  `zlibsafe.ts`.
+- `get_transit` joins the feed once per query: node lines gain a `live:`
+  attribute (`bus 16 +300s`, `bus 16 cancelled`) beside `first`/`last`, and
+  the note states how fresh the feed is. Join precedence follows the spec
+  (explicit stop update beats trip-level delay; absolute-time predictions
+  convert through the feed timezone; NO_DATA stays silent). The load-bearing
+  sentence: **a stop without a live entry has no prediction - unknown, not
+  on time**. A feed that will not read (404, timeout, malformed wire)
+  degrades to the pure schedule answer with its reason quoted, never a
+  silent drop and never a fabricated delay.
+- Configure with `SUPERCARTO_GTFS_RT` (alongside the existing
+  `SUPERCARTO_GTFS`). The hosted worker is unchanged: `/transit` still
+  requires a static feed path an operator owns, and RT is opted in the same
+  way.
+- Also fixed: a latent wire-reader bug the live-feed trace exposed in the
+  MVT decoder (`mvt.ts`/`mvt.py`) - `pos += varint()` loads the left value
+  before the right-hand side advances it in both languages, landing skipped
+  unknown length-fields one byte short.
+
+Compiled against a live Translink SEQ feed end to end in the test suite.
+
 ## 0.5.3 — Real elevation: `/terrain` decodes PNG Terrarium tiles
 
 `/terrain` answered an honest 503 at the hosted endpoint because every

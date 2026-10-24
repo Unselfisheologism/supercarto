@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { Readable } from 'node:stream';
 import {
   SuperCarto,
+  GtfsSource,
   McpStdioServer,
   MapApiServer,
   OverpassSource,
@@ -1825,5 +1830,70 @@ describe('MapApiServer', () => {
       const r = await fetch(`${base}/maplet?lat=37.7749&lon=-122.4194&radiusM=99999999`);
       expect(r.status).toBe(200);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live GTFS-Realtime TripUpdates (keyless agency feed, networked)
+// ---------------------------------------------------------------------------
+
+/**
+ * The full realtime path against the wire: a tiny static feed on disk, the
+ * SUPERCARTO_GTFS_RT-style URL config, and a real agency endpoint. The join
+ * will almost always be empty - this deployment's static trip ids are not the
+ * agency's - but decode-then-join must hold for hundreds of live entities
+ * within the render budget, and the note must name what happened.
+ */
+describe('GtfsSource against a live TripUpdates feed', () => {
+  it('decodes and joins without stalling or fabricating', { timeout: 30000 }, async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'gtfs-rt-live-'));
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        path.join(dir, 'agency.txt'),
+        'agency_name,agency_url,agency_timezone,agency_lang\nTest,AU,Australia/Brisbane,en\n',
+      );
+      writeFileSync(
+        path.join(dir, 'stops.txt'),
+        'stop_id,stop_name,stop_lat,stop_lon\nA1,Test Stop,-27.4698,153.0251\n',
+      );
+      writeFileSync(
+        path.join(dir, 'routes.txt'),
+        'route_id,route_type,route_short_name,route_long_name\nR1,3,1,Test Route\n',
+      );
+      writeFileSync(
+        path.join(dir, 'trips.txt'),
+        'route_id,service_id,trip_id,trip_headsign\nR1,SVC,T100,Test\n',
+      );
+      writeFileSync(
+        path.join(dir, 'stop_times.txt'),
+        'trip_id,stop_id,stop_sequence,departure_time\nT100,A1,1,08:00:00\n',
+      );
+      writeFileSync(
+        path.join(dir, 'calendar.txt'),
+        'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nSVC,1,1,1,1,1,1,1,20200101,20301231\n',
+      );
+
+      const source = new GtfsSource(dir, {
+        url: 'https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates',
+      });
+      const overlay = await source.realtime();
+      if (overlay.state === 'unavailable') {
+        // Network down at the far end is allowed, and must stay honest.
+        expect(overlay.reason).toBeTruthy();
+        expect(overlay.stops.size).toBe(0);
+        return;
+      }
+      expect(overlay.updates ?? 0).toBeGreaterThan(0);
+      expect(overlay.stops.size).toBe(0); // real ids, synthetic schedule: nothing joins
+      const res = source.querySlice({ lat: -27.4698, lon: 153.0251, radiusM: 400, budget: 2048 }, overlay);
+      expect(res.yaml).toMatch(/Real-time: \d+ trip predictions/);
+      expect(res.yaml).toMatch(/unknown, not on time/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
