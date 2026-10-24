@@ -234,6 +234,19 @@ Mapbox's MCP has none. **Top pick for the next feature.**
 > carries the compile core plus the new wire decoders, but static GTFS stays
 > TypeScript-only (long-standing precedent), so that earlier claim
 > overstated the parity surface.
+>
+> **Status 2026-10-24 (later): next-departure board shipped in 0.5.5** — the
+> rider question "what comes next from this stop" now answers in
+> `get_transit` itself: a `next:` attribute with upcoming departures in
+> feed order and the feed's clock, realtime predictions spoken inline
+> (`bus 16 07:05 +300s` / `cancelled`), `live:` deduplicated against the
+> board so one fact renders once, and an honest day-over note when the
+> last departure has run. This closes the "cannot see a departures board"
+> half of the competitor wedge; the remaining wedge versus the
+> transit-only servers above is unchanged — transit beside streets,
+> terrain, weather and daylight in one budgeted answer. Still open from
+> the follow-up list: a `route` that mixes walking spans with transit
+> spans.
 
 ### D4 — Coverage gaps as data partnerships (later)
 
