@@ -1,0 +1,52 @@
+---
+title: Python client
+description: An asyncio client with zero runtime dependencies, speaking JSON-RPC to the Node server over stdio.
+sidebar:
+  label: Python
+  order: 3
+---
+
+```package-install
+pip install supercarto
+```
+
+The Python package is a client, not a port of the compiler. It speaks
+JSON-RPC to the Node server over stdio, because the `mcp` package would
+pull in httpx and pydantic, and an agent framework that already depends on
+one of them should not get a second copy.
+
+<View title="Async">
+
+```python
+import asyncio
+from supercarto import SuperCarto
+
+async def main():
+    async with SuperCarto() as carto:
+        m = await carto.maplet(lat=35.6833, lon=139.762, radius_m=400, budget=1500)
+        print(m.yaml)
+        w = await carto.weather(lat=35.6833, lon=139.762)
+
+asyncio.run(main())
+```
+
+</View>
+
+<View title="Notes">
+
+- `maplet` (accepts `radius_m` snake_case) compiles a topological graph,
+  exactly the YAML the Node API returns — the [byte-parity gate](/concepts/honesty#where-this-gets-verified)
+  verifies the port agrees.
+- `weather` returns the same structured answer, degraded the same
+  way (raises when the source is down, never zeroes).
+- The client requires the Node server (`npx supercarto mcp` or a global
+  install) on PATH.
+
+</View>
+
+:::tip[Zero runtime dependencies]
+This holds by design on both sides: the Node server installs nothing, the
+Python client imports nothing. The [byte-parity gate](/concepts/honesty)
+fails the build if either side starts depending on something, or if a byte
+of output ever disagrees.
+:::

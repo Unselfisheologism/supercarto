@@ -1,0 +1,70 @@
+---
+title: HTTP API
+description: The maplet, screen, transit and route endpoints, with parameters and examples.
+sidebar:
+  label: HTTP
+  order: 1
+---
+
+Boot the API locally:
+
+```bash
+supercarto serve --port 8787
+```
+
+It serves `GET /maplet`, `GET /scr`, `GET /transit` and `GET /transit-route`,
+each answering YAML (`format=yaml`) or JSON. `GET /health` reports the
+server's cache health.
+
+## `GET /maplet`
+
+<ParamField query="lat" type="number" required>Latitude in [-90, 90].</ParamField>
+<ParamField query="lon" type="number" required>Longitude in [-180, 180].</ParamField>
+<ParamField query="radiusM" type="integer" default={300}>Radius in metres, clamped to the machine's limit.</ParamField>
+<ParamField query="budget" type="integer" default={1024}>Token budget for the emitted YAML.</ParamField>
+<ParamField query="layers" type="string">Comma-separated layer filter.</ParamField>
+<ParamField query="format" type="string" default="json">`yaml` returns the agent-ready document directly.</ParamField>
+
+<RequestExample>
+
+```bash cURL
+curl 'localhost:8787/maplet?lat=35.6833&lon=139.762&radiusM=400&budget=1500&format=yaml'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```yaml 200
+map:
+  center: "35.6833, 139.762"
+  radius: 400m
+nodes:
+  n186: {type: transit, name: 新橋駅(3), tags: [subway_entrance]}
+edges:
+  n1->n2: {dist: 120m, dir: east, path: road}
+omitted:
+  - {layer: feature, count: 1754}
+```
+
+</ResponseExample>
+
+:::warning[Errors are honest too]
+A deployment with no GTFS feed configured answers `404` with "no GTFS feed
+configured for this deployment" rather than a transcript-shaped "no
+service" — the refusal names the action (set `SUPERCARTO_GTFS` or pass
+`?feed=`) that makes the tool exist.
+:::
+
+## `GET /transit`
+
+Same parameter style: `lat`, `lon`, `radiusM`, `budget`, `at`
+(the instant to evaluate), and `format`. The per-deployment feed comes from
+`SUPERCARTO_GTFS`; a specific request can name its own feed with
+`?feed=<dir or zip>`, and the operator's `SUPERCARTO_GTFS_RT` follows feed
+overrides, so a feed override never silently drops live data.
+
+## `GET /transit-route`
+
+Adds `fromLat`, `fromLon`, `toLat`, `toLon`, and `maxWalkM`. The answer is
+the [certified ride plan](/tools/get-transit).
