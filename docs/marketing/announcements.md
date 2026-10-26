@@ -99,3 +99,32 @@ No-login entity worth duplicating presence on: GitHub Trending comes from
 stars — consider pointing existing README visitors at the star button by
 trimming the README's top to the one-liner + demo + install (measure: does
 the README answer "what/try/how" inside the first screen?).
+
+## 6. mcpservers.org submit (routes into wong2's 4.4k-star list)
+
+wong2/awesome-mcp-servers does NOT accept PRs — its README routes every
+submission through https://mcpservers.org/submit (web form; needs you).
+Paste-ready:
+
+- **Name:** supercarto
+- **Repo:** https://github.com/Unselfisheologism/supercarto
+- **Install:** `npx supercarto mcp` (stdio MCP; also CLI and HTTP server on the same code path)
+- **Category:** Maps / Location / GTFS
+- **Description:**
+  Compiles the map context an agent needs around any coordinate into one
+  token-budgeted YAML maplet: named landmarks with metre distances, walkable
+  topology, terrain slope, keyless weather, sun position/daylight, and GTFS
+  transit with routes, service windows, a next-departure board, and a
+  certified one-line ride plan. Every truncation is recorded in `omitted:`,
+  so a model can tell "not there" from "not shown". Apache-2.0. Docs:
+  https://supercarto.pages.dev/docs (llms.txt included).
+
+## 7. appcypher/awesome-mcp-servers (5.8k stars) — 1-click finish
+
+Push before any retry: branch `add-supercarto` already committed on fork
+`Unselfisheologism/awesome-mcp-servers-2` with the entry in Location
+Services. Open the PR yourself (1 command, works regardless of API state):
+
+```
+cd /tmp && gh pr create --repo appcypher/awesome-mcp-servers --base main   --head Unselfisheologism:awesome-mcp-servers-2:add-supercarto   --title "Add supercarto to Location Services"   --body "Adds supercarto to the Location Services section, alphabetically after QGIS. Token-budgeted maplets for AI agents: walkable topology, honest omissions, transit with certified ride plans. https://supercarto.pages.dev/docs"
+```
