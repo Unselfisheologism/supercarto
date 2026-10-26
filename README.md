@@ -337,6 +337,12 @@ SUPERCARTO_GTFS         path to a GTFS feed (dir or .zip); enables get_transit
 SUPERCARTO_GTFS_RT      TripUpdates URL; adds live delay lines to get_transit
 ```
 
+Whole-metro feeds load entirely into memory. A feed the size of Translink
+SEQ (35 MB zip) needs more than Node's default 2 GB heap; run with
+`NODE_OPTIONS=--max-old-space-size=4096`. Verified live at that size: the
+schedule, the departure boards, and 2400+ realtime predictions join in one
+answer.
+
 ---
 
 ## Agent integration
