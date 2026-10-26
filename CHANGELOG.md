@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — README carries the registry marker in plain text
+
+PyPI renders the package README and strips HTML comments, so the 0.5.9
+comment-form marker never reached the registry's validator. The
+`mcp-name: io.github.Unselfisheologism/supercarto` line now sits in plain
+text at the top of both READMEs (root and the Python package's own copy),
+which is what PyPI ships in sdist and wheel. `server.json` moves to 0.6.0
+with both publications.
+
 ## 0.5.9 — Metadata for the official MCP Registry
 
 No code change. This release exists so the registry can verify the package:

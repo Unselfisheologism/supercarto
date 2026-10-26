@@ -1,5 +1,7 @@
 # supercarto (Python)
 
+mcp-name: io.github.Unselfisheologism/supercarto
+
 LLM-native spatial middleware for Python. Give an AI agent a map of any
 location on earth as a token-budgeted topological graph it can reason over.
 
