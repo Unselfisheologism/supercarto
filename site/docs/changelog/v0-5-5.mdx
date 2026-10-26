@@ -1,0 +1,18 @@
+---
+changelog:
+  category: Release
+  version: 0.5.5
+date: '2026-10-24T13:50:45Z'
+seo:
+  description: >-
+    next: on every transit node. Upcoming departures at that stop, in feed time
+    order and the feed's own clock ("tram 9 25:10" stays past midnight), capped
+    at…
+title: 0.5.5 — The next-departure board
+type: changelog
+---
+- **next: on every transit node.** Upcoming departures at that stop, in feed time order and the feed's own clock ("tram 9 25:10" stays past midnight), capped at three with the hidden rest counted (`+2 more`). Rows before the local query time are gone; when the day's last departure has run, the note says the day is over instead of letting an empty board read as a broken feed.
+- **Realtime joins onto the board.** With `SUPERCARTO_GTFS_RT` set, predictions decorate their rows inline — `bus 16 07:05 +300s` or `cancelled` — using the same spec precedence as 0.5.4's live list. Predictions the board has spoken are removed from `live:`, so one fact renders once.
+- **Scheduling honesty.** A trip-level prediction decorates only its own trip's rows; another trip's departure stays unsuffixed. A stop with no prediction is unknown, not on time.
+
+314 unit tests (was 310), 121 live, 12 MCP e2e; parity gate green.

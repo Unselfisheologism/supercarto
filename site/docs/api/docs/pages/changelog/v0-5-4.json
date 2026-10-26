@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-4.json",
+  "lastModified": "2026-10-24T12:40:55Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-4.md",
+  "route": "/changelog/v0-5-4",
+  "title": "0.5.4 — GTFS-Realtime: live delays join onto the schedule",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-4",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.4\ndate: '2026-10-24T12:40:55Z'\nseo:\n  description: >-\n    Riders ask \"is my bus late\"; static schedules cannot answer. 0.5.4 adds the\n    realtime half with zero runtime dependencies: Wire reader\n    (src/source/proto.ts +…\ntitle: '0.5.4 — GTFS-Realtime: live delays join onto the schedule'\ntype: changelog\n---\nRiders ask \"is my bus late\"; static schedules cannot answer. 0.5.4 adds the realtime half with zero runtime dependencies:\n\n- **Wire reader** (src/source/proto.ts + python port): minimal protobuf; int32 delays arrive as 64-bit two's-complement varints; int64 times stay exact.\n- **TripUpdates schema** (src/source/gtfs-rt.ts + python port): current spec field numbers (stop_time_update=2, trip-level delay=5 — both differ from the 2015-era numbers still in old tutorials), verified against the canonical proto and three live keyless agency feeds (Adelaide Metro, Sofia, Translink SEQ) — both ports decode each feed to identical counts. Deleted entities are retracted, unknown fields skip by wire type, gzipped feeds inflate.\n- **Live join in get_transit**: node lines gain `live:` entries (`bus 16 +300s`, `bus 16 cancelled`) beside first/last; the note carries feed freshness and the load-bearing honesty line — a stop without a live entry is unknown, not on time. Absolute-time predictions convert through the feed timezone. A feed that will not read (404/timeout/malformed) degrades to the pure schedule answer with its reason quoted — never fabricated delays, never a silent drop.\n- **Config**: `SUPERCARTO_GTFS_RT` alongside `SUPERCARTO_GTFS`.\n- Also fixes a latent eval-order bug in the MVT wire readers (both languages) the live-feed trace exposed.\n\n443 tests passing (310 unit / 121 live / 12 MCP end-to-end); parity gate green.\n"
+}

@@ -1,0 +1,87 @@
+---
+title: get_transit and get_transit_route
+description: Schedules, departure boards, live delays, and a certified ride plan — honest in all three service states.
+sidebar:
+  label: get_transit
+  order: 7
+---
+
+advertised only with a GTFS feed
+
+Set `SUPERCARTO_GTFS` to any static GTFS feed — a directory of `.txt`
+tables or a `.zip` — and two tools appear. Add
+`SUPERCARTO_GTFS_RT` (the operator's TripUpdates URL) and their answers
+gain live per-trip information.
+
+## get_transit
+
+`get_transit(lat, lon, radiusM, budget)` — transit stops, lines, and a
+service window for the queried day, from the GTFS feed:
+
+```yaml
+transit:
+  center: "36.913, -116.77"
+  radius: 3.0km
+  feed: sample-feed
+  note: Stop distances are straight-line. Schedule from GTFS feed for 2007-01-11 in America/Los_Angeles.
+nodes:
+  STAGECOACH: {type: stop, name: "Stagecoach Hotel & Casino", tags: [bus], routes: ["30", "40"], first: 06:00, last: 06:58}
+  NADAV: {type: stop, name: "North Ave / D Ave N", tags: [bus], routes: ["40"], first: 06:14, last: 06:44}
+edges:
+  NADAV->DADAN: {dist: 601m, dir: south, path: bus 40}
+```
+
+**Three service states, never two**
+
+A running day shows today's routes and departures. A date with nothing
+running keeps the stops with `routes: []` and a note saying no service
+runs — no transit is not no stops. A feed with no calendar shows the
+whole network and declares the service window unknown, rather than
+labelling whole-feed facts as today's schedule.
+
+**Times past midnight stay past midnight**
+
+GTFS writes a departure after the service day's midnight as `25:10`.
+Re-rendering it as `01:10` fits the eye and strands the person waiting.
+It renders as recorded, in the feed's own timezone, with the evaluated
+instant in the `note`.
+
+**Edges are structure; schedules attach to nodes**
+
+The adjacency survives a no-service day, because an agent walking
+between stops still wants to know the stops are 601 m apart.
+
+**Departure boards, not just the day's window**
+
+A `next:` attribute lists upcoming departures at each stop, in feed
+time and the feed's clock, capped at three with the hidden rest counted
+(`+7 more`). With realtime configured the board speaks the prediction
+inline: `bus 16 07:05 +300s` or `cancelled`.
+
+**Live delays, and what absence means**
+
+GTFS-Realtime TripUpdates join onto the schedule: `live:` attributes
+like `bus 16 +300s` or `bus 16 cancelled`, feed-freshness stated in the
+note. A stop with no prediction has **no live entry** — unknown, not on
+time — and the note says so in words.
+
+**Whole-metro scale in the default heap**
+
+Since 0.6.1 the feed load is columnar: a Translink SEQ–size feed
+(35 MB zip) loads inside Node's default heap with byte-identical
+output, and boards join 750+ trip predictions in one answer.
+
+## get_transit_route
+
+`get_transit_route(fromLat, fromLon, toLat, toLon, maxWalkM, budget)` — a
+certified ride plan between two coordinates: walk to a stop, ride one line
+that serves both catchments, walk it off.
+
+The rule that makes it trustworthy: **never an interchange a feed cannot
+prove.** If no single line connects both ends within the walk limits, the
+note names the leg that failed — it does not invent a two-line itinerary
+that "probably works".
+
+Plans ride on the departure board's honesty: certified against the service
+day, predictions decorate their trips, cancelled trips drop out with a
+counted note, and all walking legs are labelled straight-line.

@@ -1,0 +1,26 @@
+/docs/*.md
+  Content-Type: text/markdown; charset=utf-8
+/docs/*.mdx
+  Content-Type: text/markdown; charset=utf-8
+/docs/*.txt
+  Content-Type: text/plain; charset=utf-8
+/docs/*
+  X-Powered-By: Blume
+/docs/
+  Link: </docs/.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json; profile=\"https://www.rfc-editor.org/info/rfc9727\"", </docs/.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json", </docs/openapi.json>; rel="service-desc"; type="application/json", </docs/agent-readability.json>; rel="describedby"; type="application/json", </docs/llms.txt>; rel="describedby"; type="text/plain", </docs/index.md>; rel="alternate"; type="text/markdown"
+/docs/.well-known/api-catalog
+  Content-Type: application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"
+/docs/.well-known/ai-catalog.json
+  Access-Control-Allow-Origin: *
+/docs/.well-known/ard.json
+  Access-Control-Allow-Origin: *
+/docs/.well-known/api-catalog
+  Access-Control-Allow-Origin: *
+/docs/.well-known/agent-skills/*.md
+  Content-Type: text/markdown; charset=utf-8
+/docs/.well-known/agent-skills/*.tar.gz
+  Content-Type: application/gzip
+/docs/blume-assets/*.svg
+  Content-Security-Policy: sandbox
+/docs/blume-assets/*.svg
+  X-Content-Type-Options: nosniff

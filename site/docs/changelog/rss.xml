@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>supercarto — Changelog</title>
+  <link>https://supercarto.pages.dev/docs</link>
+  <description>Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in.</description>
+  <atom:link href="https://supercarto.pages.dev/docs/changelog/rss.xml" rel="self" type="application/rss+xml" />
+  <item>
+    <title>0.6.2 — one-click install in Claude Desktop (MCPB bundle)</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-6-2</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-6-2</guid>
+    <description>Navigate to the release assets and grab supercarto-0.6.2.mcpb (384 KB). Open it with Claude Desktop and the maps tools install: the server runs from the…</description>
+    <pubDate>Mon, 26 Oct 2026 12:19:51 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.6.1 — whole-metro feeds inside the default heap</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-6-1</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-6-1</guid>
+    <description>The GTFS load path is columnar: zip entries stream one at a time and stop_times go straight into per-trip arrays (no row objects, ids interned, sorted via one…</description>
+    <pubDate>Mon, 26 Oct 2026 11:03:35 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.6.0 — registry marker in plain text</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-6-0</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-6-0</guid>
+    <description>The official MCP registry&#39;s PyPI validation reads the rendered package description, which strips HTML comments. The 0.5.9 comment-form marker never reached…</description>
+    <pubDate>Mon, 26 Oct 2026 09:29:20 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.9 — official MCP Registry metadata</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-9</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-9</guid>
+    <description>No code change. Carries the ownership markers the official MCP registry verifies: mcpName in the npm manifest, an mcp-name: comment in the README that ships…</description>
+    <pubDate>Mon, 26 Oct 2026 09:13:22 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.8 — HTTP parity for the transit surfaces</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-8</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-8</guid>
+    <description>New: /transit-route on the HTTP server — the certified one-line ride plan over plain HTTP, same words as the MCP tool, ?format=yaml for direct reads.Override…</description>
+    <pubDate>Mon, 26 Oct 2026 05:10:21 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.7 — The certified ride plan</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-7</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-7</guid>
+    <description>New tool get_transit_route (and CLI transit-route): walk to a stop, ride one shared line, walk it off. Straight-line walk legs, labelled as such. Never a…</description>
+    <pubDate>Mon, 26 Oct 2026 04:37:39 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.6 — drive the realtime join from every entry point</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-6</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-6</guid>
+    <description>Fix: get_transit (MCP, HTTP, CLI) fetched the realtime overlay but never joined it — a deployment with SUPERCARTO_GTFS_RT set answered schedule-only…</description>
+    <pubDate>Mon, 26 Oct 2026 03:20:09 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.5 — The next-departure board</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-5</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-5</guid>
+    <description>next: on every transit node. Upcoming departures at that stop, in feed time order and the feed&#39;s own clock (&quot;tram 9 25:10&quot; stays past midnight), capped at…</description>
+    <pubDate>Sat, 24 Oct 2026 13:50:45 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.4 — GTFS-Realtime: live delays join onto the schedule</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-4</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-4</guid>
+    <description>Riders ask &quot;is my bus late&quot;; static schedules cannot answer. 0.5.4 adds the realtime half with zero runtime dependencies: Wire reader (src/source/proto.ts +…</description>
+    <pubDate>Sat, 24 Oct 2026 12:40:55 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-3</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-3</guid>
+    <description>/terrain answered an honest 503 at the hosted endpoint because every real-world Terrarium tile is PNG-encoded and the bundled zero-dependency decoder read a…</description>
+    <pubDate>Fri, 23 Oct 2026 10:06:28 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.2 — PMTiles reads real archives at the true latitude</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-2</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-2</guid>
+    <description>The tile-y conversion mirrored every remote PMTiles fetch about the equator; SF streets read back at -37.77. Both ports fixed; the fixture test now asserts…</description>
+    <pubDate>Fri, 23 Oct 2026 08:03:06 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.1 — the budget kept its promise</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-1</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-1</guid>
+    <description>Patch release: three honest-output fixes on the token-budget contract - the shrink loop now admits cut vertices at the small-graph exhaustion branch (a…</description>
+    <pubDate>Fri, 23 Oct 2026 05:38:34 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.5.0 — GTFS transit schedules for agents</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-5-0</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-5-0</guid>
+    <description>New get_transit tool over any static GTFS feed (dir or .zip via SUPERCARTO_GTFS): stops, lines, and first/last departures for the queried day, with three…</description>
+    <pubDate>Fri, 23 Oct 2026 03:19:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>0.4.11</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-4-11</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-4-11</guid>
+    <description>Bug fixes: Live Overpass fetch now works for negative latitudes: supercarto emits the positional (s,w,n,e) bbox form instead of the bbox:-prefixed form, which…</description>
+    <pubDate>Sat, 17 Oct 2026 11:05:25 GMT</pubDate>
+  </item>
+</channel>
+</rss>

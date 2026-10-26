@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-9.json",
+  "lastModified": "2026-10-26T09:13:22Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-9.md",
+  "route": "/changelog/v0-5-9",
+  "title": "0.5.9 — official MCP Registry metadata",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-9",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.9\ndate: '2026-10-26T09:13:22Z'\nseo:\n  description: >-\n    No code change. Carries the ownership markers the official MCP registry\n    verifies: mcpName in the npm manifest, an mcp-name: comment in the README\n    that ships…\ntitle: 0.5.9 — official MCP Registry metadata\ntype: changelog\n---\nNo code change. Carries the ownership markers the official MCP registry verifies: `mcpName` in the npm manifest, an `mcp-name:` comment in the README that ships to PyPI, `server.json` (npm + PyPI publications, stdio), and `publish-mcp.yml`, which publishes to registry.modelcontextprotocol.io with GitHub OIDC after npm carries the tag. Adds a Dockerfile with an initialize/introspection probe for registry health checks (Glama et al.).\n"
+}

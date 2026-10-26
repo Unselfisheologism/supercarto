@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/faq.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/faq.md",
+  "route": "/faq",
+  "title": "FAQ",
+  "url": "https://supercarto.pages.dev/docs/faq",
+  "description": "Short answers to the questions every evaluation starts with.",
+  "markdown": "---\ntitle: FAQ\ndescription: Short answers to the questions every evaluation starts with.\nsidebar:\n  label: FAQ\n  order: 6\n---\n\n**Why not just paste GeoJSON into the prompt?**\n\nRaw GeoJSON costs thousands of tokens per blocks-sized extract, and\nmodels reason badly and hallucinate over raw coordinates. In\nhead-to-head task benchmarks, a compiled supercarto graph scores 38/47\nwhile raw GeoJSON for the same places scores 15/44 and no map scores\n0/47.\n\n**Does supercarto need an API key for map data?**\n\nNo. Live OpenStreetMap data over Overpass needs no key, and Open-Meteo\nweather and Terrarium elevation need no key either. For production\nvolume you can point supercarto at your own PMTiles archive. Live\ntraffic is the only feature that needs a key (TomTom or HERE).\n\n**How does it not overflow the context window?**\n\nYou set a token budget. The compiler ranks features, keeps named\nlandmarks, removes anonymous intersections first, and guarantees the\nsurviving network stays connected. Every removal is recorded in the\n`omitted:` section, so the model can tell \"not there\" from \"not shown\".\n\n**Is there a hosted version?**\n\nYes, a honest subset: a compilation endpoint answers `/maplet` and\n`/scr` over HTTP, weather and rate limiting are live, and terrain,\ntransit and traffic are stated as absent with reasons. Transit needs a\nlocal feed; hosted mode ships no flow keys.\n\n**What license, what tests?**\n\nApache-2.0. 461 tests: unit (including transit states, protobuf wire,\nrealtime join, PNG elevation decoder), 121 against live sources, and 12\nMCP end-to-end. Outputs are byte-identical to the Python port; the\nparity gate runs on every push.\n\n**What is deliberately not implemented?**\n\nHosted vector tiles with style delivery, and full indoor room geometry\nbeyond centroids. Both are stated here rather than shipped half-way.\n"
+}

@@ -1,0 +1,1230 @@
+# supercarto
+
+> Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in.
+
+# Introduction
+Source: https://supercarto.pages.dev/docs
+
+supercarto gives an AI agent a map of any location on Earth as a
+token-budgeted topological graph: streets as edges, crossings as junctions,
+indoor floors and levels as separate layers, with weather, terrain, daylight
+and transit riding along. Everything the agent reads is measured in tokens,
+so one call fits a budget — and the budget is re-measured on the emitted
+output, not estimated on the input.
+
+**[Quick start](/docs/quick-start)**
+
+Install supercarto and return your first maplet in minutes.
+
+**[The tools](/docs/tools)**
+
+The eleven tools a supercarto deployment advertises, and when each one exists.
+
+**[Honesty rules](/docs/concepts/honesty)**
+
+How refusal, absence, and degradation are stated — never a plausible-sounding guess.
+
+**[Release notes](/docs/changelog)**
+
+Every release, sourced from GitHub Releases.
+
+## A give and a take
+
+One file in, both numbers out: `examples/synthetic-dense.geojson` is 272,993
+bytes (~68,000 tokens) raw and compiles at a 1024-token budget to about 890
+tokens — 26 nodes (10 named) on 34 edges, ~99% smaller. What the agent reads:
+
+```yaml
+map:
+  center: "37.7749, -122.4194"
+  source: geojson
+  note: Simplified for reasoning; call expand_feature for exact geometry.
+nodes:
+  n530: {type: poi, name: Bank 0, tags: [bank]}
+  n531: {type: poi, name: Cafe 1, tags: [cafe]}
+  n673: {type: transit, name: Station 0, tags: [subway_entrance]}
+edges:
+  n515->n516: {dist: 80m, dir: east, path: road}
+omitted:
+  - {layer: building, count: 259}
+  - {layer: poi, count: 141}
+  - {layer: road, count: 441}
+tools:
+  - expand_feature(id)
+```
+
+It is standard YAML in flow style, using only constructs a model has read
+billions of times. The wire format is standard YAML, optimized for machines;
+the compiler, not the model, does the translation from raw geodata.
+
+## Install
+
+```package-install
+npm install supercarto
+```
+
+The [quick start](/docs/quick-start) page lists every install path: npm, pip,
+`npx supercarto mcp`, the Claude Desktop `.mcpb` bundle, and the hosted
+compilation endpoint.
+
+## Where to read next
+
+- [The budget is a real budget](/docs/concepts/budget) — how output is ranked, cut,
+  kept connected, and re-measured.
+- [Honesty rules](/docs/concepts/honesty) — the refusal and degradation semantics
+  that run through every tool.
+- [Accuracy](/docs/concepts/accuracy) — verified distances across latitudes.
+- [Transit schedules](/docs/tools/get-transit) — stops, lines, departure boards,
+  live delays, and a certified ride plan.
+- [FAQ](/docs/faq) — the questions every evaluation starts with.
+- [Interfaces](/docs/interfaces/cli) — MCP, CLI, HTTP, Python client.
+
+---
+
+# 0.4.11
+Source: https://supercarto.pages.dev/docs/changelog/v0-4-11
+
+Bug fixes:
+
+- Live Overpass fetch now works for negative latitudes: supercarto emits the positional (s,w,n,e) bbox form instead of the bbox:-prefixed form, which the public Overpass instance rejects with HTTP 400 for negative-latitude boxes. Includes a regression test.
+- Connectivity fixes for token-budgeted map graphs (PR #1, fix-connected-budget).
+
+No new features. Full details in CHANGELOG.md.
+
+---
+
+# 0.5.0 — GTFS transit schedules for agents
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-0
+
+New `get_transit` tool over any static GTFS feed (dir or .zip via `SUPERCARTO_GTFS`): stops, lines, and first/last departures for the queried day, with three honest service states (running / none / unknown), past-midnight times kept as recorded (`25:10`), straight-line distances labelled, and a hard re-measured token budget with connection-preserving pruning.
+
+Fixed: slope heat layers no longer vanish when every surviving hotspot ties (uniformly steep terrain is a fact, not an absence) — compiler change mirrored in the Python port and parity-checked.
+
+412 tests passing; verified against the GTFS sample feed in all three service states. Apache-2.0.
+
+---
+
+# 0.5.1 — the budget kept its promise
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-1
+
+Patch release: three honest-output fixes on the token-budget contract - the shrink loop now admits cut vertices at the small-graph exhaustion branch (a 512-budget maplet used to return 580 tokens), stale obstacle references are pruned on both ports, uniform-plateau heat collapses to its summary, and degenerate-range rel reads at the ceiling. The Python port mirrors the TS fixes exactly; pytest parity is byte-clean across fixture budgets 128-2048. Plus hosted-worker readiness fixes. 416 TS tests.
+
+---
+
+# 0.5.2 — PMTiles reads real archives at the true latitude
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-2
+
+The tile-y conversion mirrored every remote PMTiles fetch about the equator; SF streets read back at -37.77. Both ports fixed; the fixture test now asserts the hemisphere with parsed coordinates, not a digit regex that a mirror satisfies. Verified live against build.protomaps.com (lat 37.7164..37.7903 for the SF bbox). Parity gate now covers budgets 128-2048 and rebuilds a stale dist first.
+
+---
+
+# 0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-3
+
+`/terrain` answered an honest 503 at the hosted endpoint because every
+real-world Terrarium tile is PNG-encoded and the bundled zero-dependency
+decoder read a raw-sample variant only - realistic endpoints fetched fine and
+decoded to nothing. Worse, once PNG decoding existed, the shared formula was
+wrong by a factor of 256: the two live checks that proved it were Denver
+reading 6.2 m (should be ~1600 m) and the Everest region reading 34 m.
+
+- `src/source/png.ts` + port: chunk parser, scanline filters (None, Sub, Up,
+  Average, Paeth) and the Terrarium formula `R*256 + G + B/256 - 32768`
+  metres, for 8-bit RGB/RGBA, non-interlaced. Palettes, 16-bit depth and
+  interlace are hard rejects, not guesses. Inflate is the Web
+  `DecompressionStream` in Workers and Node's `zlib` under Node, via
+  `zlibsafe.ts` - still zero runtime npm dependencies.
+- The raw-sample decoder now also decodes to metres `((s - 32768) / 256)`,
+  and the bilinear sampler is pure interpolation over metre-valued grids.
+- Hosted `/terrain` returns real elevation: SF −25..143 m, Denver
+  1568..1646 m, Everest region 5023..6948 m, verified live. The honest-503
+  reason stays for tiles that genuinely fail to decode.
+
+---
+
+# 0.5.4 — GTFS-Realtime: live delays join onto the schedule
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-4
+
+Riders ask "is my bus late"; static schedules cannot answer. 0.5.4 adds the realtime half with zero runtime dependencies:
+
+- **Wire reader** (src/source/proto.ts + python port): minimal protobuf; int32 delays arrive as 64-bit two's-complement varints; int64 times stay exact.
+- **TripUpdates schema** (src/source/gtfs-rt.ts + python port): current spec field numbers (stop_time_update=2, trip-level delay=5 — both differ from the 2015-era numbers still in old tutorials), verified against the canonical proto and three live keyless agency feeds (Adelaide Metro, Sofia, Translink SEQ) — both ports decode each feed to identical counts. Deleted entities are retracted, unknown fields skip by wire type, gzipped feeds inflate.
+- **Live join in get_transit**: node lines gain `live:` entries (`bus 16 +300s`, `bus 16 cancelled`) beside first/last; the note carries feed freshness and the load-bearing honesty line — a stop without a live entry is unknown, not on time. Absolute-time predictions convert through the feed timezone. A feed that will not read (404/timeout/malformed) degrades to the pure schedule answer with its reason quoted — never fabricated delays, never a silent drop.
+- **Config**: `SUPERCARTO_GTFS_RT` alongside `SUPERCARTO_GTFS`.
+- Also fixes a latent eval-order bug in the MVT wire readers (both languages) the live-feed trace exposed.
+
+443 tests passing (310 unit / 121 live / 12 MCP end-to-end); parity gate green.
+
+---
+
+# 0.5.5 — The next-departure board
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-5
+
+- **next: on every transit node.** Upcoming departures at that stop, in feed time order and the feed's own clock ("tram 9 25:10" stays past midnight), capped at three with the hidden rest counted (`+2 more`). Rows before the local query time are gone; when the day's last departure has run, the note says the day is over instead of letting an empty board read as a broken feed.
+- **Realtime joins onto the board.** With `SUPERCARTO_GTFS_RT` set, predictions decorate their rows inline — `bus 16 07:05 +300s` or `cancelled` — using the same spec precedence as 0.5.4's live list. Predictions the board has spoken are removed from `live:`, so one fact renders once.
+- **Scheduling honesty.** A trip-level prediction decorates only its own trip's rows; another trip's departure stays unsuffixed. A stop with no prediction is unknown, not on time.
+
+314 unit tests (was 310), 121 live, 12 MCP e2e; parity gate green.
+
+---
+
+# 0.5.6 — drive the realtime join from every entry point
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-6
+
+- **Fix:** `get_transit` (MCP, HTTP, CLI) fetched the realtime overlay but never joined it — a deployment with `SUPERCARTO_GTFS_RT` set answered schedule-only, silently. Now every public entry point joins predictions, as 0.5.4 intended and its tests (which bypassed the public path) believed had shipped.
+- The `TransitSource` interface now carries the overlay parameter, so this bug class fails type check next time. Two regression tests pin the wire itself.
+
+316 unit / 121 live / 12 MCP e2e; parity green.
+
+---
+
+# 0.5.7 — The certified ride plan
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-7
+
+- **New tool `get_transit_route`** (and CLI `transit-route`): walk to a stop, ride one shared line, walk it off. Straight-line walk legs, labelled as such. Never a two-line interchange — a feed cannot prove one, so the renderer refuses to invent it.
+- **Certified, not presented.** Plans are certified against the service day. On an uncertified day (no calendar, no service) the note says so and `plans: 0`. When nothing can be certified the note names which leg failed: no stop in a catchment, no shared line, or the day's departures already run.
+- **Realtime with the board's precedence.** Predicted delays decorate their trips (`depart 07:00 -60s`); cancelled trips drop out with a counted note; one trip's prediction is never the network's.
+- Dense catchments search the eight nearest stops per end and say so.
+
+458 tests: 325 unit / 121 live / 12 MCP e2e; parity gate green; Python carries the mirrored toolcatalog line only.
+
+---
+
+# 0.5.8 — HTTP parity for the transit surfaces
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-8
+
+- **New: `/transit-route`** on the HTTP server — the certified one-line ride plan over plain HTTP, same words as the MCP tool, `?format=yaml` for direct reads.
+- **Override queries stop silently dropping realtime.** A `?feed=` query constructed its GTFS source without `SUPERCARTO_GTFS_RT` and never passed an overlay — 0.5.6's bug in a new coat. The server now carries the realtime URL (new `gtfsRtUrl` option, defaulting to the environment) and drives the fresh overlay onto the renderer in the same breath.
+- **Note sentence repair:** a feed with no realtime URL configured reads "All times are scheduled; no real-time feed is configured." instead of the contradictory "Real-time feed unavailable (no real-time feed configured)". A not-configured feed is a deployment fact; a down feed is a network fact. One sentence each.
+- HTTP tests pin the wire by riding a realtime URL that refuses connections: an override answer saying "Real-time feed unavailable" proves the attempt was driven.
+
+461 tests: 328 unit / 121 live / 12 MCP e2e; parity gate green.
+
+---
+
+# 0.5.9 — official MCP Registry metadata
+Source: https://supercarto.pages.dev/docs/changelog/v0-5-9
+
+No code change. Carries the ownership markers the official MCP registry verifies: `mcpName` in the npm manifest, an `mcp-name:` comment in the README that ships to PyPI, `server.json` (npm + PyPI publications, stdio), and `publish-mcp.yml`, which publishes to registry.modelcontextprotocol.io with GitHub OIDC after npm carries the tag. Adds a Dockerfile with an initialize/introspection probe for registry health checks (Glama et al.).
+
+---
+
+# 0.6.0 — registry marker in plain text
+Source: https://supercarto.pages.dev/docs/changelog/v0-6-0
+
+The official MCP registry's PyPI validation reads the rendered package description, which strips HTML comments. The 0.5.9 comment-form marker never reached it. Both READMEs now carry `mcp-name: io.github.Unselfisheologism/supercarto` as plain text. server.json updated to 0.6.0 for the npm and PyPI publications. No code change; 461 tests and the parity gate pass.
+
+---
+
+# 0.6.1 — whole-metro feeds inside the default heap
+Source: https://supercarto.pages.dev/docs/changelog/v0-6-1
+
+The GTFS load path is columnar: zip entries stream one at a time and stop_times go straight into per-trip arrays (no row objects, ids interned, sorted via one index permutation). Wire semantics unchanged — the TypeScript suite (461) and the parity gate pass.
+
+Verified live on Translink SEQ (35 MB zip): the departure-board query that previously OOMed on Node's default heap now answers on a 512 MB heap, byte-identical, and the realtime join holds at scale (757 trip predictions joined, feed 32 s old, live delay lines on the boards).
+
+---
+
+# 0.6.2 — one-click install in Claude Desktop (MCPB bundle)
+Source: https://supercarto.pages.dev/docs/changelog/v0-6-2
+
+Navigate to the release assets and grab `supercarto-0.6.2.mcpb` (384 KB). Open it with Claude Desktop and the maps tools install: the server runs from the bundle as a plain Node process with zero npm dependencies, so the only requirement on the machine is Node >= 18.
+
+Alongside the always-on tools `get_maplet`, `localize`, `route`, `search_places`, `expand_feature`, `get_terrain`, `get_weather`, `get_daylight`, the install-time configuration can wire `get_traffic` (needs a routing-provider key) and `get_transit` / `get_transit_route` (needs a local GTFS feed path, plus the operator's GTFS-Realtime TripUpdates URL for live per-trip delay lines).
+
+Optional install config:
+- an Open-Meteo API key for higher weather rate limits
+- a GTFS feed path (directory of .txt tables or a .zip)
+- the feed operator's TripUpdates URL
+
+The manifest marks the tool catalog as generated, mirroring the server's own honest-refusal design: whatever answers introspection is exactly what that installation can answer. Verified with the official `mcpb validate` CLI and an unpacked-bundle initialize probe.
+
+---
+
+# Accuracy
+Source: https://supercarto.pages.dev/docs/concepts/accuracy
+
+Distances are verified against haversine ground truth at mid and high
+latitude:
+
+- **0.11%** error at San Francisco (37.77°N)
+- **0.11%** error at Oslo (59.91°N)
+
+## Why this required work
+
+Web Mercator distances exceed ground distance by `1/cos(latitude)` on both
+axes. Two failure modes live in that sentence:
+
+1. **Getting the sign wrong** produces a 26% distance error at mid latitude
+   that compounds toward the poles.
+2. **A mean isotropic scale is wrong for a non-square bbox.** The scale is
+   applied per axis, so a wide bbox at 60°N does not inherit a scale chosen
+   for its height.
+
+:::note[The benchmark spans 64°N to 33°S deliberately]
+A benchmark run only at 37°N measures one case and hides every sign error
+toward the poles. Crossing hemispheres (11°S, 41°S, 33°S) in the task set is
+what makes "the Mercator correction is right" a checked claim rather than a
+symptom of luck.
+:::
+
+---
+
+# The budget is a real budget
+Source: https://supercarto.pages.dev/docs/concepts/budget
+
+Most map-for-agents code truncates and hopes. supercarto treats truncation
+as a correctness problem, with four mechanisms:
+
+## Ranking
+
+Named landmarks survive; anonymous intersections are cut first. An
+intersection named "2nd & Mission" ranks higher than an unnamed junction
+100 m away, because an agent can act on a name.
+
+## Connectivity
+
+Cut vertices are never removed, so the surviving network stays connected.
+A map the agent can traverse but not connect is worse than a smaller map it
+can use — "how do I get from here to there" has no answer on a severed
+graph.
+
+## No stranded names
+
+A landmark the agent can see but cannot route to is removed. It would
+confidently try to walk to it — the same hallucinated-route failure mode in
+miniature, introduced by the cutting step itself.
+
+## Verification
+
+`emitAndVerify` re-measures the **actual emitted YAML** and cuts again
+until it fits. The reported budget is the budget delivered, not an
+estimate on an intermediate representation. This is what makes the number a
+budget rather than a target. Why you can trust the geometry the budget
+delivers: the [accuracy page](/docs/concepts/accuracy) shows distance verification
+across latitudes.
+
+## Honesty
+
+Every drop is recorded in `omitted:`, aggregated per layer, so the model
+can tell "not there" from "not shown". An agent combining supercarto's
+output with other sources, or reasoning about a pharmacy that does not
+appear, can reason about the difference:
+
+```yaml
+omitted:
+  - {layer: building, count: 259}
+  - {layer: poi, count: 141}
+  - {layer: road, count: 441}
+```
+
+> **Try it yourself**
+>
+> `supercarto bench <file.geojson>` reports the token cost of any file at a
+> budget, and the benchmark repository (`supercarto-bench`) holds the
+> task-level evidence: the compiled graph scores 38/47 against 15/44 for raw
+> GeoJSON and 0/47 for no map, re-derivable from committed archives without
+> model calls.
+
+---
+
+# Honesty rules
+Source: https://supercarto.pages.dev/docs/concepts/honesty
+
+Every tool in supercarto is built on one rule, applied everywhere: **a
+missing answer must not read like a present-and-fine answer.** An agent's
+failure mode is not saying "I don't know"; it is saying something
+plausible-sounding that the person then acts on. These are the semantics
+that policy enforces:
+
+| Situation | What the deployment does | What it never does |
+| --- | --- | --- |
+| No traffic credential | tool not advertised; routing labels free-flow | report free-flow as live congestion |
+| No GTFS feed | transit tools not advertised | answer "no service" |
+| Date with no scheduled service | keeps stops, `routes: []`, says so in the note | read as "the feed is broken" |
+| Feed without a calendar | whole network, window declared unknown | present whole-feed data as today's schedule |
+| Stop with no realtime prediction | no `live:` entry, note says "unknown" | render as "on time" |
+| Weather source unreachable | `degraded` set, tool raises | return zeroes |
+| Place with no recorded hours | no `hours:` field at all | render as closed — or open |
+| Source used is a fallback | `source:` names the fallback, warnings travel | name the primary source |
+| Public demo router | `route` demoted to feasibility | hand over fiction as fact |
+
+## Three states, never two
+
+The pattern underlying most rows: absence is a **third state**. Known-open
+and known-closed are facts; never-recorded is unknown. `hours` absent is
+not `closed`. A stop without a prediction is not on time. A no-service day
+is not no stops. Each distinction changes what a person should do next, so
+each is encoded in the output — inside the map where a model reading only
+one block still sees it, not on this documentation page.
+
+## A developer's sketch
+
+Before a feature ships, its failure behavior is designed — at length and in
+the open. The honest-refusal states are part of the specification: one tool
+that could return "on time" for a scheduled-and-silent bus has more to prove
+than ten that came up short on tokens.
+
+:::note[Where this gets verified]
+121 of the 461 tests run against live sources; 42 cover the transit layer's
+service states; 5 cover the realtime join; the parity engine runs on every
+push and fails the release if TypeScript and Python ever disagree about a
+byte of output.
+:::
+
+---
+
+# FAQ
+Source: https://supercarto.pages.dev/docs/faq
+
+**Why not just paste GeoJSON into the prompt?**
+
+Raw GeoJSON costs thousands of tokens per blocks-sized extract, and
+models reason badly and hallucinate over raw coordinates. In
+head-to-head task benchmarks, a compiled supercarto graph scores 38/47
+while raw GeoJSON for the same places scores 15/44 and no map scores
+0/47.
+
+**Does supercarto need an API key for map data?**
+
+No. Live OpenStreetMap data over Overpass needs no key, and Open-Meteo
+weather and Terrarium elevation need no key either. For production
+volume you can point supercarto at your own PMTiles archive. Live
+traffic is the only feature that needs a key (TomTom or HERE).
+
+**How does it not overflow the context window?**
+
+You set a token budget. The compiler ranks features, keeps named
+landmarks, removes anonymous intersections first, and guarantees the
+surviving network stays connected. Every removal is recorded in the
+`omitted:` section, so the model can tell "not there" from "not shown".
+
+**Is there a hosted version?**
+
+Yes, a honest subset: a compilation endpoint answers `/maplet` and
+`/scr` over HTTP, weather and rate limiting are live, and terrain,
+transit and traffic are stated as absent with reasons. Transit needs a
+local feed; hosted mode ships no flow keys.
+
+**What license, what tests?**
+
+Apache-2.0. 461 tests: unit (including transit states, protobuf wire,
+realtime join, PNG elevation decoder), 121 against live sources, and 12
+MCP end-to-end. Outputs are byte-identical to the Python port; the
+parity gate runs on every push.
+
+**What is deliberately not implemented?**
+
+Hosted vector tiles with style delivery, and full indoor room geometry
+beyond centroids. Both are stated here rather than shipped half-way.
+
+---
+
+# Data sources
+Source: https://supercarto.pages.dev/docs/guides/data-sources
+
+Everything is read from the environment by one factory, so the CLI and the
+MCP server cannot disagree about where data came from — they did once, and
+nothing reported it.
+
+| Source | Status | Configure |
+| --- | --- | --- |
+| Overpass | default | `OVERPASS_ENDPOINT` (your own instance for volume) |
+| PMTiles / Protomaps | opt-in, then primary | `SUPERCARTO_PMTILES=https://your-bucket/planet.pmtiles` |
+| OSRM | opt-in for turn-by-turn | point the env at an engine you host and have verified |
+| Open-Meteo | default | key optional: `SUPERCARTO_OWM_KEY` |
+| TomTom / HERE | key required | `TOMTOM_API_KEY` / `HERE_API_KEY` |
+| Terrarium tiles | default | `TERRARIUM_ENDPOINT` |
+| GTFS feed | opt-in | `SUPERCARTO_GTFS` (dir or zip) |
+| GTFS-Realtime | with a feed | `SUPERCARTO_GTFS_RT` (TripUpdates URL) |
+
+Toggle switches:
+
+```
+SUPERCARTO_NO_TERRAIN   disable elevation
+SUPERCARTO_NO_WEATHER   disable weather
+```
+
+- `SUPERCARTO_PMTILES` — PMTiles archive URL; primary source when set
+- `OVERPASS_ENDPOINT` — your own Overpass instance
+- `TERRARIUM_ENDPOINT` — elevation tile template
+- `TOMTOM_API_KEY` / `HERE_API_KEY` — enables `get_traffic`
+- `SUPERCARTO_GTFS` — path to a GTFS feed (dir or .zip); enables the transit tools
+- `SUPERCARTO_GTFS_RT` — TripUpdates URL; adds live delay lines
+
+:::tip[PMTiles is the answer at production volume]
+Range requests against object storage, milliseconds, no rate limit — and
+the reader is included: no `pmtiles` dependency, no `mapbox-gl`, zero
+transitive packages. A built-in MVT decoder walks the archive in-process.
+:::
+
+## Whole-metro feeds, default heap
+
+Since 0.6.1 the GTFS load is columnar — `stop_times` parse straight into
+per-trip arrays, no row objects — so a feed the size of Translink SEQ
+(35 MB zip) fits Node's default heap and the answer is byte-identical to
+the pre-0.6.1 build. Verified live: schedule, departure boards, and 750+
+realtime predictions join in one answer, no `NODE_OPTIONS` needed.
+
+## GTFS at scale, and the honesty of absence
+
+A feed is only as fresh as the operator's last import, and a schedule that
+exists but is stale is worse than absent: the tool must not be advertised at
+all unless the operator has wired one. With realtime configured, a stop
+without a prediction reads as unknown — never on time — and the note says
+so in words:
+
+```yaml
+note: "… Real-time: 757 trip predictions, feed 32s old at query time.
+A stop without a live entry has no prediction: unknown, not on time."
+```
+
+---
+
+# Deployment
+Source: https://supercarto.pages.dev/docs/guides/deployment
+
+## Local HTTP
+
+```bash
+supercarto serve --port 8787
+```
+
+Full surface: maplets, SCR, transit, transit-route, health.
+
+## Cloudflare Worker
+
+The compile path is Workers-compatible (fetch-based sources, no Node
+built-ins), and `cloud/worker/` packages it as a Cloudflare Worker: the same
+`/maplet`, `/scr`, weather, daylight and terrain surface as the local HTTP
+API, with per-IP rate limiting and ODbL attribution on every map response.
+
+- cloud/worker/
+  - src
+  - wrangler.jsonc
+  - README.md
+
+It is deliberately a subset, stated on `GET /`:
+
+- transit and traffic are **not** served — a Worker has no filesystem for a
+  GTFS feed, and hosted mode ships no flow-provider keys
+- the archive fallback (`protomaps` source line) is coarse beyond z10-ish,
+  and tile/feature fetches are capped so a request stays inside a Worker
+  CPU budget
+- terrain answers `503` rather than a rough answer: Terrarium tiles are
+  PNG-encoded and the bundled zero-dependency decoder reads raw buffers
+  only
+- `GET /healthz` probes Overpass only, so a 503 there means the Overpass leg
+  is unreachable — not that the PMTiles fallback is down
+
+Every hosted answer says what it cannot serve. An excerpt cannot mislead a
+model about what a full deployment would answer.
+
+:::note[What the source line carries]
+The `source:` field names what actually served the data (`overpass` or
+`protomaps`), because the shared Overpass instances refuse the shared
+Cloudflare egress range for this deployment — the fallback is what
+actually answers, and the document says so.
+:::
+
+---
+
+# CLI
+Source: https://supercarto.pages.dev/docs/interfaces/cli
+
+The CLI runs the same library as the MCP server. One binary, every surface:
+
+| Command | What it does |
+| --- | --- |
+| `supercarto fetch --lat --lon --radiusM --budget` | compile a maplet; `--layers` filters; `--metrics` reports tokens |
+| `supercarto weather --lat --lon --hours` | forecast |
+| `supercarto traffic --from --to` | traffic or the labelled free-flow answer |
+| `supercarto transit --feed --lat --lon --radiusM` | departure boards from a GTFS feed |
+| `supercarto route --from --to --mode` | feasibility answer |
+| `supercarto compile <file.geojson> --budget` | compile a local GeoJSON into a maplet |
+| `supercarto encode <file.geojson> --out` | SCR codec to a compact file |
+| `supercarto decode <file.scr>` | back from SCR |
+| `supercarto bench <file.geojson>` | token-cost check |
+| `supercarto mcp` | MCP server over stdio |
+| `supercarto serve --port` | HTTP API |
+
+**maplet**
+
+```bash
+supercarto fetch --lat 35.6833 --lon 139.762 --radiusM 400 --budget 1500 --metrics
+```
+
+**transit**
+
+```bash
+supercarto transit --feed city-gtfs.zip --lat 36.913 --lon -116.77 --radiusM 3000
+```
+
+**traffic**
+
+```bash
+supercarto traffic --from 37.7749,-122.4194 --to 37.7849,-122.4194
+```
+
+**weather**
+
+```bash
+supercarto weather --lat 35.6833 --lon 139.762 --hours 12
+```
+
+:::note[Failure behavior]
+`fetch` layers accept `road` and `poi` alongside raw OSM tags; anything
+else is rejected rather than silently returning nothing. A request that
+would yield named places with no streets fails with a clear error —
+pass `--layers poi` for a POI-only map. Warnings travel inside the map
+output, not just stderr, so an agent that reads only the map sees them.
+:::
+
+---
+
+# HTTP API
+Source: https://supercarto.pages.dev/docs/interfaces/http
+
+Boot the API locally:
+
+```bash
+supercarto serve --port 8787
+```
+
+It serves `GET /maplet`, `GET /scr`, `GET /transit` and `GET /transit-route`,
+each answering YAML (`format=yaml`) or JSON. `GET /health` reports the
+server's cache health.
+
+## `GET /maplet`
+
+- **`lat`** · query · `number` · required
+
+  Latitude in [-90, 90].
+
+- **`lon`** · query · `number` · required
+
+  Longitude in [-180, 180].
+
+- **`radiusM`** · query · `integer` · default `300`
+
+  Radius in metres, clamped to the machine's limit.
+
+- **`budget`** · query · `integer` · default `1024`
+
+  Token budget for the emitted YAML.
+
+- **`layers`** · query · `string`
+
+  Comma-separated layer filter.
+
+- **`format`** · query · `string` · default `json`
+
+  `yaml` returns the agent-ready document directly.
+
+```bash cURL
+curl 'localhost:8787/maplet?lat=35.6833&lon=139.762&radiusM=400&budget=1500&format=yaml'
+```
+
+```yaml 200
+map:
+  center: "35.6833, 139.762"
+  radius: 400m
+nodes:
+  n186: {type: transit, name: 新橋駅(3), tags: [subway_entrance]}
+edges:
+  n1->n2: {dist: 120m, dir: east, path: road}
+omitted:
+  - {layer: feature, count: 1754}
+```
+
+:::warning[Errors are honest too]
+A deployment with no GTFS feed configured answers `404` with "no GTFS feed
+configured for this deployment" rather than a transcript-shaped "no
+service" — the refusal names the action (set `SUPERCARTO_GTFS` or pass
+`?feed=`) that makes the tool exist.
+:::
+
+## `GET /transit`
+
+Same parameter style: `lat`, `lon`, `radiusM`, `budget`, `at`
+(the instant to evaluate), and `format`. The per-deployment feed comes from
+`SUPERCARTO_GTFS`; a specific request can name its own feed with
+`?feed=<dir or zip>`, and the operator's `SUPERCARTO_GTFS_RT` follows feed
+overrides, so a feed override never silently drops live data.
+
+## `GET /transit-route`
+
+Adds `fromLat`, `fromLon`, `toLat`, `toLon`, and `maxWalkM`. The answer is
+the [certified ride plan](/docs/tools/get-transit).
+
+---
+
+# MCP and Claude Desktop
+Source: https://supercarto.pages.dev/docs/interfaces/mcp
+
+supercarto is an MCP server. Point an MCP client at it:
+
+```json
+{
+  "mcpServers": {
+    "supercarto": { "command": "npx", "args": ["supercarto", "mcp"] }
+  }
+}
+```
+
+The tool list is per-deployment: eight tools with nothing configured, and
+`get_traffic` / `get_transit` / `get_transit_route` appear exactly when
+their operator configuration exists. Introspection never lists a tool
+whose answer would be a guess.
+
+## Claude Desktop in one click
+
+**Tell your browsing agent to install supercarto**
+
+> Add https://github.com/Unselfisheologism/supercarto as an MCP server on
+> glama.ai under my logged-in account. If asked how it runs: stdio,
+> command `npx supercarto mcp`, no API key needed.
+
+Or skip agents entirely: every release publishes an
+[MCPB bundle](https://github.com/modelcontextprotocol/mcpb) — download
+`supercarto-X.Y.Z.mcpb` from the
+[latest release](https://github.com/Unselfisheologism/supercarto/releases/latest)
+and open it with Claude Desktop. Install-time configuration can wire the
+weather key, a local GTFS feed path, and the operator's TripUpdates URL.
+The server has zero npm dependencies, so the bundle itself is 384 KB.
+
+## Tool honesty on the wire
+
+The three conditional tools exist or don't. There is no stub, no empty
+array, no "feed not configured" pretence dressed as an answer: a manifest
+`tools_generated: true` plus per-maplet `tools:` blocks keep every
+introspection surface in sync with what can actually run.
+
+:::note[One factory]
+Environment configuration is read by one factory (see
+[data sources](/docs/guides/data-sources)), so the CLI and the MCP server
+cannot disagree about where data came from — they did once, and nothing
+reported it.
+:::
+
+---
+
+# Python client
+Source: https://supercarto.pages.dev/docs/interfaces/python
+
+```package-install
+pip install supercarto
+```
+
+The Python package is a client, not a port of the compiler. It speaks
+JSON-RPC to the Node server over stdio, because the `mcp` package would
+pull in httpx and pydantic, and an agent framework that already depends on
+one of them should not get a second copy.
+
+**Async**
+
+```python
+import asyncio
+from supercarto import SuperCarto
+
+async def main():
+    async with SuperCarto() as carto:
+        m = await carto.maplet(lat=35.6833, lon=139.762, radius_m=400, budget=1500)
+        print(m.yaml)
+        w = await carto.weather(lat=35.6833, lon=139.762)
+
+asyncio.run(main())
+```
+
+**Notes**
+
+- `maplet` (accepts `radius_m` snake_case) compiles a topological graph,
+  exactly the YAML the Node API returns — the [byte-parity gate](/docs/concepts/honesty)
+  verifies the port agrees.
+- `weather` returns the same structured answer, degraded the same
+  way (raises when the source is down, never zeroes).
+- The client requires the Node server (`npx supercarto mcp` or a global
+  install) on PATH.
+
+:::tip[Zero runtime dependencies]
+This holds by design on both sides: the Node server installs nothing, the
+Python client imports nothing. The [byte-parity gate](/docs/concepts/honesty)
+fails the build if either side starts depending on something, or if a byte
+of output ever disagrees.
+:::
+
+---
+
+# Quick start
+Source: https://supercarto.pages.dev/docs/quick-start
+
+supercarto needs Node.js 20+ (server) and nothing else: zero runtime npm
+dependencies, no database, no API key. A coordinate and a token budget are
+the whole interface.
+
+**npm**
+
+```package-install
+npm install supercarto
+```
+
+**pip**
+
+```package-install
+pip install supercarto
+```
+
+The Python client speaks JSON-RPC to the Node server over stdio rather
+than importing an SDK, so it carries zero runtime dependencies of its
+own.
+
+**npx (no install)**
+
+```package-install
+npx supercarto mcp
+```
+
+**Claude Desktop**
+
+Download the [latest release
+bundle](https://github.com/Unselfisheologism/supercarto/releases/latest)
+and open the `supercarto-X.Y.Z.mcpb` file with Claude Desktop — one
+click, and the tools install with optional configuration
+(weather key, GTFS feed path). The bundle is 384 KB.
+
+## Your first maplet
+
+```ts lineNumbers
+import { SuperCarto } from 'supercarto';
+
+const carto = new SuperCarto();
+
+const result = await carto.maplet({
+  lat: 35.6833,
+  lon: 139.7620,
+  radiusM: 400,
+  budget: 1500,
+});
+
+console.log(result.yaml);
+```
+
+`result.yaml` is a standard-YAML topological graph: named nodes, edges with
+distances in metres and compass directions, an `omitted:` record of
+everything cut, and the tools the agent can call next. The same answer, from
+the CLI:
+
+```bash
+supercarto fetch --lat 35.6833 --lon 139.762 --radiusM 400 --budget 1500 --metrics
+```
+
+## Turn it into an MCP server
+
+The one process answers MCP over stdio:
+
+```bash
+npx supercarto mcp
+```
+
+Standard `mcpServers` configuration for any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "supercarto": { "command": "npx", "args": ["supercarto", "mcp"] }
+  }
+}
+```
+
+## Like it as a bundle instead?
+
+One-click Claude Desktop install, install-time keys, and the honest
+"tools_generated" manifest are covered in [MCP and Claude Desktop](/docs/interfaces/mcp).
+
+Eight tools advertise out of the box (`get_maplet`, `localize`, `route`,
+`search_places`, `expand_feature`, `get_terrain`, `get_weather`,
+`get_daylight`). Three more appear only when their configuration exists —
+see [the tools](/docs/tools).
+
+## Deployment surfaces
+
+**[CLI](/docs/interfaces/cli)**
+
+fetch, weather, traffic, transit, route, compile, encode, decode, bench, mcp, serve.
+
+**[HTTP API](/docs/interfaces/http)**
+
+The same tools as GET endpoints, YAML or JSON. Boots locally with `supercarto serve`.
+
+**[Python client](/docs/interfaces/python)**
+
+asyncio client over stdio; zero runtime dependencies.
+
+**[Cloudflare Worker](/docs/guides/deployment)**
+
+Hosted compile path with rate limiting and ODbL attribution — and a stated, honest subset.
+
+---
+
+# The tools
+Source: https://supercarto.pages.dev/docs/tools
+
+A supercarto deployment advertises exactly what it can answer. Eight tools
+exist with no configuration at all; three appear only when the operator's
+environment backs them. Nothing ever advertises a tool whose answer would
+read like a guess.
+
+| Tool | Needs | Answers |
+| --- | --- | --- |
+| `get_maplet` | nothing | what is near this coordinate |
+| `localize` | nothing | what changed after the agent or the person moved |
+| `route` | nothing | straight-line distance, direction, walking feasibility |
+| `search_places` | nothing | find places by name or type |
+| `expand_feature` | nothing | exact geometry for one feature |
+| `get_terrain` | nothing | ground elevation and slope |
+| `get_weather` | nothing | current conditions and forecast |
+| `get_daylight` | nothing | sun position, sunrise, sunset |
+| `get_traffic` | TomTom or HERE key | congestion and realistic arrival time |
+| `get_transit` | GTFS feed | stops, lines, service times, departure boards |
+| `get_transit_route` | GTFS feed | certified one-line ride plan |
+
+The rule behind the table: a tool with no flow provider behind it reports
+one honest free-flow number and labels it; a schedule tool with no schedule
+behind it would teach a model to trust "no feed" as an answer that reads
+like "no service" — so it is not a tool at all until an operator imports a
+feed.
+
+**[get_maplet](/docs/tools/get-maplet)**
+
+The whole product: a walkable graph in one call.
+
+**[localize](/docs/tools/localize)**
+
+Move the session for the cost of the delta.
+
+**[route](/docs/tools/route)**
+
+Feasibility, not turn-by-turn.
+
+**[search_places / expand_feature](/docs/tools/search-places)**
+
+Query on the map, then expand geometry one feature at a time.
+
+**[get_terrain / get_daylight](/docs/tools/get-terrain)**
+
+Ground truth and sun position; no key, no archive.
+
+**[get_weather](/docs/tools/get-weather)**
+
+Keyless forecast with a degraded path that refuses to invent readings.
+
+**[get_traffic](/docs/tools/get-traffic)**
+
+Live with a key; labelled free-flow without one.
+
+**[get_transit / get_transit_route](/docs/tools/get-transit)**
+
+Schedules, boards, live delays, and the certified ride plan.
+
+---
+
+# get_maplet
+Source: https://supercarto.pages.dev/docs/tools/get-maplet
+
+always advertised
+
+`get_maplet(lat, lon, radius, layers, budget)` — the single call that
+produces the product. Fetches real geodata around a coordinate, compiles a
+topological graph, cuts it to your budget, and emits YAML.
+
+| Prop | Type | Default | Description |
+| - | - | - | - |
+| `lat` | `number` | - | Latitude in [-90, 90]. |
+| `lon` | `number` | - | Longitude in [-180, 180]. |
+| `radius?` | `number` | - | Radius in metres. Kept sane at the interface. |
+| `budget?` | `number` | - | Token budget for the emitted YAML. |
+| `layers?` | `string[]` | - | Layer filter. Raw OSM tag selectors are also taken; anything else is rejected rather than silently returning nothing. |
+
+## The output
+
+Nodes, edges, and — this is the part that makes it honest — omissions:
+
+```yaml
+map:
+  center: "35.6833, 139.762"
+  radius: 400m
+nodes:
+  n186: {type: transit, name: 新橋駅(3), tags: [subway_entrance]}
+edges:
+  n1->n2: {dist: 120m, dir: east, path: road}
+omitted:
+  - {layer: feature, count: 1754}
+tools:
+  - expand_feature(id)
+```
+
+:::note[Order of operations]
+Ranking first (named landmarks survive), then connectivity-preserving
+cuts (a cut vertex is never removed), then stranded-name removal (a
+landmark the agent cannot route to is removed), then re-measure the
+actual emitted YAML and cut again until it fits. The budget is the
+budget delivered, not an estimate.
+:::
+
+## What a node can carry
+
+Beyond topology: `hours` (evaluated in the map's timezone — a known-closed
+shop at 04:00 reads `closed`, a bench with no recorded hours emits no
+`hours` at all), `sun` and `twilight` in the `map` header, `transit` nodes,
+`indoor` floors, and the `tools:` list at the foot.
+
+The `omitted:` section exists so the model can tell **not there** from
+**not shown**. An agent reading only this block still knows the map is an
+excerpt.
+
+---
+
+# get_terrain and get_daylight
+Source: https://supercarto.pages.dev/docs/tools/get-terrain
+
+always advertised
+
+## get_terrain
+
+`get_terrain(lat, lon, radiusM, samples)` — ground elevation and slope
+around a coordinate, from Terrarium-encoded tiles. No key; the default
+endpoint is the AWS Open Data elevation archive, overridable with
+`TERRARIUM_ENDPOINT`.
+
+Slope is what changes "a park 400 m away" into "a park 400 m away and 60 m
+up a hill the wheelchair cannot climb".
+
+## get_daylight
+
+`get_daylight(lat, lon, at)` — sun position, sunrise, sunset, twilight
+band, and whether a light is needed. Always available: sun position is
+arithmetic, needing no source and no credential, so this tool never
+disappears from a deployment.
+
+The twilight band is not a boolean. Walking is fine at civil twilight and
+unwise at nautical, so the band names one of `day`, `civil`, `nautical`,
+`night`. Above the Arctic circles the map reports `polar: day` or
+`polar: night` instead of inventing a sunrise.
+
+---
+
+# get_traffic
+Source: https://supercarto.pages.dev/docs/tools/get-traffic
+
+advertised only with a key
+
+`get_traffic(from, to, mode)` — congestion level and a realistic arrival
+time for a drive, from the worst segment rather than an average.
+
+## Exists, or doesn't
+
+Traffic needs a credential, so `get_traffic` is **absent from the tool
+list** until `TOMTOM_API_KEY` or `HERE_API_KEY` is set. With no key the
+routing path still reports speed, but labels it:
+
+```bash
+supercarto traffic --from 37.7749,-122.4194 --to 37.7849,-122.4194
+traffic: unknown (no flow source configured)
+free-flow estimate: 244s, ignores congestion
+note: set TOMTOM_API_KEY or HERE_API_KEY for live conditions
+```
+
+:::danger[The single most damaging thing this library could do]
+A free-flow estimate for a congested route is worse than no answer,
+because the person leaves on the schedule the agent gave them.
+Presenting one as live is precisely what the honest-refusal design
+exists to prevent — hence the label travels with the number, and the
+tool itself does not exist until a provider does.
+:::
+
+---
+
+# get_transit and get_transit_route
+Source: https://supercarto.pages.dev/docs/tools/get-transit
+
+advertised only with a GTFS feed
+
+Set `SUPERCARTO_GTFS` to any static GTFS feed — a directory of `.txt`
+tables or a `.zip` — and two tools appear. Add
+`SUPERCARTO_GTFS_RT` (the operator's TripUpdates URL) and their answers
+gain live per-trip information.
+
+## get_transit
+
+`get_transit(lat, lon, radiusM, budget)` — transit stops, lines, and a
+service window for the queried day, from the GTFS feed:
+
+```yaml
+transit:
+  center: "36.913, -116.77"
+  radius: 3.0km
+  feed: sample-feed
+  note: Stop distances are straight-line. Schedule from GTFS feed for 2007-01-11 in America/Los_Angeles.
+nodes:
+  STAGECOACH: {type: stop, name: "Stagecoach Hotel & Casino", tags: [bus], routes: ["30", "40"], first: 06:00, last: 06:58}
+  NADAV: {type: stop, name: "North Ave / D Ave N", tags: [bus], routes: ["40"], first: 06:14, last: 06:44}
+edges:
+  NADAV->DADAN: {dist: 601m, dir: south, path: bus 40}
+```
+
+**Three service states, never two**
+
+A running day shows today's routes and departures. A date with nothing
+running keeps the stops with `routes: []` and a note saying no service
+runs — no transit is not no stops. A feed with no calendar shows the
+whole network and declares the service window unknown, rather than
+labelling whole-feed facts as today's schedule.
+
+**Times past midnight stay past midnight**
+
+GTFS writes a departure after the service day's midnight as `25:10`.
+Re-rendering it as `01:10` fits the eye and strands the person waiting.
+It renders as recorded, in the feed's own timezone, with the evaluated
+instant in the `note`.
+
+**Edges are structure; schedules attach to nodes**
+
+The adjacency survives a no-service day, because an agent walking
+between stops still wants to know the stops are 601 m apart.
+
+**Departure boards, not just the day's window**
+
+A `next:` attribute lists upcoming departures at each stop, in feed
+time and the feed's clock, capped at three with the hidden rest counted
+(`+7 more`). With realtime configured the board speaks the prediction
+inline: `bus 16 07:05 +300s` or `cancelled`.
+
+**Live delays, and what absence means**
+
+GTFS-Realtime TripUpdates join onto the schedule: `live:` attributes
+like `bus 16 +300s` or `bus 16 cancelled`, feed-freshness stated in the
+note. A stop with no prediction has **no live entry** — unknown, not on
+time — and the note says so in words.
+
+**Whole-metro scale in the default heap**
+
+Since 0.6.1 the feed load is columnar: a Translink SEQ–size feed
+(35 MB zip) loads inside Node's default heap with byte-identical
+output, and boards join 750+ trip predictions in one answer.
+
+## get_transit_route
+
+`get_transit_route(fromLat, fromLon, toLat, toLon, maxWalkM, budget)` — a
+certified ride plan between two coordinates: walk to a stop, ride one line
+that serves both catchments, walk it off.
+
+The rule that makes it trustworthy: **never an interchange a feed cannot
+prove.** If no single line connects both ends within the walk limits, the
+note names the leg that failed — it does not invent a two-line itinerary
+that "probably works".
+
+Plans ride on the departure board's honesty: certified against the service
+day, predictions decorate their trips, cancelled trips drop out with a
+counted note, and all walking legs are labelled straight-line.
+
+---
+
+# get_weather
+Source: https://supercarto.pages.dev/docs/tools/get-weather
+
+always advertised
+
+`get_weather(lat, lon, hours)` — current conditions and an hourly forecast
+from Open-Meteo. No key, no account, no billing; an optional
+`SUPERCARTO_OWM_KEY` lifts the rate limit.
+
+## Prose, not fields
+
+The MCP tool returns prose rather than number-fields, because a model
+repeats "it is raining, take the bus" reliably, and re-derives it from
+twelve numbers unreliably.
+
+## The degraded path
+
+When the source is unreachable the library sets `degraded` and the tool
+raises. It does not return zeroes.
+
+:::danger[Why zeros are the failure]
+An agent handed `precipitationMm: 0` concludes the weather is dry and
+sends someone cycling into a storm. Absence of a weather reading is not
+the same thing as absence of rain — a missing answer must announce
+itself as missing.
+:::
+
+---
+
+# localize
+Source: https://supercarto.pages.dev/docs/tools/localize
+
+always advertised
+
+`localize(scr, lat, lon, radius, layers, budget)` — you already hold a
+maplet and the person moved. A new `get_maplet` call would re-pay for every
+unchanged node; `localize` returns only what changed: nodes appeared,
+disappeared, or shifted, edges re-wired, and the same honesty records.
+
+When the prompt is already long and the user says "the other corner", this
+is the cheap path — a district stays affordable, a street corner cheaper.
+
+:::note[Cheap compared to what]
+A maplet's token cost is dominated by nodes and edges the previous
+maplet already contained. `localize` exists so a moving session never
+pays that cost twice.
+:::
+
+---
+
+# route
+Source: https://supercarto.pages.dev/docs/tools/route
+
+always advertised
+
+`route(from, to, mode)` — straight-line distance, compass direction, and
+whether the approach is walkable, from one coordinate to another.
+
+## Why not turn-by-turn by default
+
+Routing APIs sometimes return confident nonsense — in benchmark work the
+public demo OSRM answered `Ok` with a walk route that covered a
+straight-line half-kilometre in 40 seconds. A tool whose default path can
+invent a route through water is worse than a tool that refuses.
+
+So `route` is a **feasibility** answer: distance, direction, then
+"verify the approach on arrival". Turn-by-turn exists only with OSRM, opt-in, for an engine **you** host and
+have verified (see [data sources](/docs/guides/data-sources)).
+
+:::warning[Do not hand supercarto's demo defaults to a production agent]
+The `route` tool with no OSRM configured states its limits in its answer.
+Fine for "roughly how far is the café". If the trip's success depends on
+the route, self-host a routing engine and point the env at it.
+:::
+
+---
+
+# search_places and expand_feature
+Source: https://supercarto.pages.dev/docs/tools/search-places
+
+always advertised
+
+## search_places
+
+`search_places(lat, lon, radius, query, limit)` — find places by name or
+type within the maplet's catchment. This is the "where do I meet them"
+query: give it names of things ("pharmacy", "Blue Bottle") and ranked
+matches come back as node ids.
+
+## expand_feature
+
+`expand_feature(id)` — exact geometry for one feature in this maplet. The
+budget cut keeps landmarks but simplifies their geometry; when an agent
+actually needs the full shape of one building, park, or floor, it expands
+just that feature instead of re-paying for the whole area.
+
+The two tools work as a pair: budget keeps context cheap, expansion keeps
+detail reachable. The `tools:` block at the foot of every maplet advertises
+which of these its own catchment can answer.

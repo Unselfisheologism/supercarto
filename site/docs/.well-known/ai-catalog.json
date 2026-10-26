@@ -1,0 +1,44 @@
+{
+  "entries": [
+    {
+      "displayName": "supercarto",
+      "identifier": "urn:air:supercarto.pages.dev:skill:supercarto",
+      "representativeQueries": [
+        "load the supercarto agent skill",
+        "how do I use supercarto"
+      ],
+      "type": "application/agent-skills+md",
+      "url": "https://supercarto.pages.dev/docs/.well-known/agent-skills/supercarto/SKILL.md",
+      "description": "Read the supercarto docs instead of answering from memory. Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in. Use when a task involves supercarto: how it works, how to set it up or configure it, or its API."
+    },
+    {
+      "displayName": "supercarto docs API",
+      "identifier": "urn:air:supercarto.pages.dev:api:docs",
+      "representativeQueries": [
+        "fetch a page of the supercarto docs as JSON",
+        "list the pages in the supercarto docs",
+        "get the navigation tree of the supercarto docs"
+      ],
+      "type": "application/vnd.oai.openapi+json",
+      "url": "https://supercarto.pages.dev/docs/openapi.json",
+      "description": "REST API over the supercarto documentation: the page index, each page as JSON or Markdown, and the navigation tree, described by this OpenAPI document."
+    },
+    {
+      "displayName": "supercarto llms.txt",
+      "identifier": "urn:air:supercarto.pages.dev:docs:llms-txt",
+      "representativeQueries": [
+        "what is supercarto",
+        "overview of the supercarto documentation"
+      ],
+      "type": "text/plain",
+      "url": "https://supercarto.pages.dev/docs/llms.txt",
+      "description": "llms.txt index of the supercarto documentation: every page with a one-line summary, plus the agent-facing resources on this site."
+    }
+  ],
+  "host": {
+    "displayName": "supercarto",
+    "documentationUrl": "https://supercarto.pages.dev/docs",
+    "identifier": "did:web:supercarto.pages.dev"
+  },
+  "specVersion": "1.0"
+}

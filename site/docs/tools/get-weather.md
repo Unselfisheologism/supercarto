@@ -1,0 +1,31 @@
+---
+title: get_weather
+description: Keyless current conditions and forecast, with a degraded path that refuses to invent readings.
+sidebar:
+  label: get_weather
+  order: 5
+---
+
+always advertised
+
+`get_weather(lat, lon, hours)` — current conditions and an hourly forecast
+from Open-Meteo. No key, no account, no billing; an optional
+`SUPERCARTO_OWM_KEY` lifts the rate limit.
+
+## Prose, not fields
+
+The MCP tool returns prose rather than number-fields, because a model
+repeats "it is raining, take the bus" reliably, and re-derives it from
+twelve numbers unreliably.
+
+## The degraded path
+
+When the source is unreachable the library sets `degraded` and the tool
+raises. It does not return zeroes.
+
+:::danger[Why zeros are the failure]
+An agent handed `precipitationMm: 0` concludes the weather is dry and
+sends someone cycling into a storm. Absence of a weather reading is not
+the same thing as absence of rain — a missing answer must announce
+itself as missing.
+:::

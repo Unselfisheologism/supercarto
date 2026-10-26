@@ -1,0 +1,29 @@
+---
+title: route
+description: Feasibility first — straight-line distance, direction, and walking verification.
+sidebar:
+  label: route
+  order: 2
+---
+
+always advertised
+
+`route(from, to, mode)` — straight-line distance, compass direction, and
+whether the approach is walkable, from one coordinate to another.
+
+## Why not turn-by-turn by default
+
+Routing APIs sometimes return confident nonsense — in benchmark work the
+public demo OSRM answered `Ok` with a walk route that covered a
+straight-line half-kilometre in 40 seconds. A tool whose default path can
+invent a route through water is worse than a tool that refuses.
+
+So `route` is a **feasibility** answer: distance, direction, then
+"verify the approach on arrival". Turn-by-turn exists only with OSRM, opt-in, for an engine **you** host and
+have verified (see [data sources](/docs/guides/data-sources)).
+
+:::warning[Do not hand supercarto's demo defaults to a production agent]
+The `route` tool with no OSRM configured states its limits in its answer.
+Fine for "roughly how far is the café". If the trip's success depends on
+the route, self-host a routing engine and point the env at it.
+:::

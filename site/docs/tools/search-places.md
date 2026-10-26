@@ -1,0 +1,27 @@
+---
+title: search_places and expand_feature
+description: Query a maplet by name or type, then expand one feature's exact geometry on demand.
+sidebar:
+  label: search_places · expand_feature
+  order: 3
+---
+
+always advertised
+
+## search_places
+
+`search_places(lat, lon, radius, query, limit)` — find places by name or
+type within the maplet's catchment. This is the "where do I meet them"
+query: give it names of things ("pharmacy", "Blue Bottle") and ranked
+matches come back as node ids.
+
+## expand_feature
+
+`expand_feature(id)` — exact geometry for one feature in this maplet. The
+budget cut keeps landmarks but simplifies their geometry; when an agent
+actually needs the full shape of one building, park, or floor, it expands
+just that feature instead of re-paying for the whole area.
+
+The two tools work as a pair: budget keeps context cheap, expansion keeps
+detail reachable. The `tools:` block at the foot of every maplet advertises
+which of these its own catchment can answer.

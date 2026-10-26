@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/concepts/accuracy.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/concepts/accuracy.md",
+  "route": "/concepts/accuracy",
+  "title": "Accuracy",
+  "url": "https://supercarto.pages.dev/docs/concepts/accuracy",
+  "description": "Distances verified against haversine ground truth at mid and high latitude — the Mercator scale correction done per axis.",
+  "markdown": "---\ntitle: Accuracy\ndescription: Distances verified against haversine ground truth at mid and high latitude — the Mercator scale correction done per axis.\nsidebar:\n  label: Accuracy\n  order: 2\n---\n\nDistances are verified against haversine ground truth at mid and high\nlatitude:\n\n- **0.11%** error at San Francisco (37.77°N)\n- **0.11%** error at Oslo (59.91°N)\n\n## Why this required work\n\nWeb Mercator distances exceed ground distance by `1/cos(latitude)` on both\naxes. Two failure modes live in that sentence:\n\n1. **Getting the sign wrong** produces a 26% distance error at mid latitude\n   that compounds toward the poles.\n2. **A mean isotropic scale is wrong for a non-square bbox.** The scale is\n   applied per axis, so a wide bbox at 60°N does not inherit a scale chosen\n   for its height.\n\n:::note[The benchmark spans 64°N to 33°S deliberately]\nA benchmark run only at 37°N measures one case and hides every sign error\ntoward the poles. Crossing hemispheres (11°S, 41°S, 33°S) in the task set is\nwhat makes \"the Mercator correction is right\" a checked claim rather than a\nsymptom of luck.\n:::\n"
+}

@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-7.json",
+  "lastModified": "2026-10-26T04:37:39Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-7.md",
+  "route": "/changelog/v0-5-7",
+  "title": "0.5.7 — The certified ride plan",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-7",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.7\ndate: '2026-10-26T04:37:39Z'\nseo:\n  description: >-\n    New tool get_transit_route (and CLI transit-route): walk to a stop, ride one\n    shared line, walk it off. Straight-line walk legs, labelled as such. Never\n    a…\ntitle: 0.5.7 — The certified ride plan\ntype: changelog\n---\n- **New tool `get_transit_route`** (and CLI `transit-route`): walk to a stop, ride one shared line, walk it off. Straight-line walk legs, labelled as such. Never a two-line interchange — a feed cannot prove one, so the renderer refuses to invent it.\n- **Certified, not presented.** Plans are certified against the service day. On an uncertified day (no calendar, no service) the note says so and `plans: 0`. When nothing can be certified the note names which leg failed: no stop in a catchment, no shared line, or the day's departures already run.\n- **Realtime with the board's precedence.** Predicted delays decorate their trips (`depart 07:00 -60s`); cancelled trips drop out with a counted note; one trip's prediction is never the network's.\n- Dense catchments search the eight nearest stops per end and say so.\n\n458 tests: 325 unit / 121 live / 12 MCP e2e; parity gate green; Python carries the mirrored toolcatalog line only.\n"
+}

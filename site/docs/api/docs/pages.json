@@ -1,0 +1,378 @@
+{
+  "count": 35,
+  "generator": "blume@2.2.6",
+  "pages": [
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/index.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/index.md",
+      "route": "/",
+      "title": "Introduction",
+      "url": "https://supercarto.pages.dev/docs",
+      "description": "supercarto gives an AI agent a map of any location on Earth as a token-budgeted topological graph — one call, N tokens, measured on output."
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-4-11.json",
+      "lastModified": "2026-10-17T11:05:25Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-4-11.md",
+      "route": "/changelog/v0-4-11",
+      "title": "0.4.11",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-4-11"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-0.json",
+      "lastModified": "2026-10-23T03:19:00Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-0.md",
+      "route": "/changelog/v0-5-0",
+      "title": "0.5.0 — GTFS transit schedules for agents",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-0"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-1.json",
+      "lastModified": "2026-10-23T05:38:34Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-1.md",
+      "route": "/changelog/v0-5-1",
+      "title": "0.5.1 — the budget kept its promise",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-1"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-2.json",
+      "lastModified": "2026-10-23T08:03:06Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-2.md",
+      "route": "/changelog/v0-5-2",
+      "title": "0.5.2 — PMTiles reads real archives at the true latitude",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-2"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-3.json",
+      "lastModified": "2026-10-23T10:06:28Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-3.md",
+      "route": "/changelog/v0-5-3",
+      "title": "0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-3"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-4.json",
+      "lastModified": "2026-10-24T12:40:55Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-4.md",
+      "route": "/changelog/v0-5-4",
+      "title": "0.5.4 — GTFS-Realtime: live delays join onto the schedule",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-4"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-5.json",
+      "lastModified": "2026-10-24T13:50:45Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-5.md",
+      "route": "/changelog/v0-5-5",
+      "title": "0.5.5 — The next-departure board",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-5"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-6.json",
+      "lastModified": "2026-10-26T03:20:09Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-6.md",
+      "route": "/changelog/v0-5-6",
+      "title": "0.5.6 — drive the realtime join from every entry point",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-6"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-7.json",
+      "lastModified": "2026-10-26T04:37:39Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-7.md",
+      "route": "/changelog/v0-5-7",
+      "title": "0.5.7 — The certified ride plan",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-7"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-8.json",
+      "lastModified": "2026-10-26T05:10:21Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-8.md",
+      "route": "/changelog/v0-5-8",
+      "title": "0.5.8 — HTTP parity for the transit surfaces",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-8"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-9.json",
+      "lastModified": "2026-10-26T09:13:22Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-9.md",
+      "route": "/changelog/v0-5-9",
+      "title": "0.5.9 — official MCP Registry metadata",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-5-9"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-6-0.json",
+      "lastModified": "2026-10-26T09:29:20Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-6-0.md",
+      "route": "/changelog/v0-6-0",
+      "title": "0.6.0 — registry marker in plain text",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-6-0"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-6-1.json",
+      "lastModified": "2026-10-26T11:03:35Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-6-1.md",
+      "route": "/changelog/v0-6-1",
+      "title": "0.6.1 — whole-metro feeds inside the default heap",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-6-1"
+    },
+    {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-6-2.json",
+      "lastModified": "2026-10-26T12:19:51Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-6-2.md",
+      "route": "/changelog/v0-6-2",
+      "title": "0.6.2 — one-click install in Claude Desktop (MCPB bundle)",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-6-2"
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/concepts/accuracy.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/concepts/accuracy.md",
+      "route": "/concepts/accuracy",
+      "title": "Accuracy",
+      "url": "https://supercarto.pages.dev/docs/concepts/accuracy",
+      "description": "Distances verified against haversine ground truth at mid and high latitude — the Mercator scale correction done per axis."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/concepts/budget.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/concepts/budget.md",
+      "route": "/concepts/budget",
+      "title": "The budget is a real budget",
+      "url": "https://supercarto.pages.dev/docs/concepts/budget",
+      "description": "How output gets ranked, cut, kept connected, and re-measured until the reported number is the delivered number."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/concepts/honesty.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/concepts/honesty.md",
+      "route": "/concepts/honesty",
+      "title": "Honesty rules",
+      "url": "https://supercarto.pages.dev/docs/concepts/honesty",
+      "description": "The refusal, absence, and degradation semantics that run through every tool — silence is never punctuality."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/faq.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/faq.md",
+      "route": "/faq",
+      "title": "FAQ",
+      "url": "https://supercarto.pages.dev/docs/faq",
+      "description": "Short answers to the questions every evaluation starts with."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/guides/data-sources.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/guides/data-sources.md",
+      "route": "/guides/data-sources",
+      "title": "Data sources",
+      "url": "https://supercarto.pages.dev/docs/guides/data-sources",
+      "description": "Where every layer gets its data — env-controlled, one factory, honest fallbacks."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/guides/deployment.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/guides/deployment.md",
+      "route": "/guides/deployment",
+      "title": "Deployment",
+      "url": "https://supercarto.pages.dev/docs/guides/deployment",
+      "description": "Local HTTP, the hosted Cloudflare Worker and its honest subsets, plus documentation site deployment."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/cli.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/cli.md",
+      "route": "/interfaces/cli",
+      "title": "CLI",
+      "url": "https://supercarto.pages.dev/docs/interfaces/cli",
+      "description": "Every supercarto command, from fetch to decode, with the flags each one takes."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/http.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/http.md",
+      "route": "/interfaces/http",
+      "title": "HTTP API",
+      "url": "https://supercarto.pages.dev/docs/interfaces/http",
+      "description": "The maplet, screen, transit and route endpoints, with parameters and examples."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/mcp.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/mcp.md",
+      "route": "/interfaces/mcp",
+      "title": "MCP and Claude Desktop",
+      "url": "https://supercarto.pages.dev/docs/interfaces/mcp",
+      "description": "supercarto exposes MCP over stdio; one-click install ships as an MCPB bundle."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/python.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/python.md",
+      "route": "/interfaces/python",
+      "title": "Python client",
+      "url": "https://supercarto.pages.dev/docs/interfaces/python",
+      "description": "An asyncio client with zero runtime dependencies, speaking JSON-RPC to the Node server over stdio."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/quick-start.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/quick-start.md",
+      "route": "/quick-start",
+      "title": "Quick start",
+      "url": "https://supercarto.pages.dev/docs/quick-start",
+      "description": "Install supercarto, return your first maplet, and wire it into an agent — Node, Python, Claude Desktop, or the hosted endpoint."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools.md",
+      "route": "/tools",
+      "title": "The tools",
+      "url": "https://supercarto.pages.dev/docs/tools",
+      "description": "The eleven tools a supercarto deployment advertises, and exactly when each one exists."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-maplet.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-maplet.md",
+      "route": "/tools/get-maplet",
+      "title": "get_maplet",
+      "url": "https://supercarto.pages.dev/docs/tools/get-maplet",
+      "description": "The core call — a walkable, token-budgeted topological graph of any coordinate."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-terrain.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-terrain.md",
+      "route": "/tools/get-terrain",
+      "title": "get_terrain and get_daylight",
+      "url": "https://supercarto.pages.dev/docs/tools/get-terrain",
+      "description": "Ground elevation and slope, sun position, sunrise and sunset — arithmetic and tiles, no keys."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-traffic.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-traffic.md",
+      "route": "/tools/get-traffic",
+      "title": "get_traffic",
+      "url": "https://supercarto.pages.dev/docs/tools/get-traffic",
+      "description": "Live congestion with a provider key; labelled free-flow without one."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-transit.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-transit.md",
+      "route": "/tools/get-transit",
+      "title": "get_transit and get_transit_route",
+      "url": "https://supercarto.pages.dev/docs/tools/get-transit",
+      "description": "Schedules, departure boards, live delays, and a certified ride plan — honest in all three service states."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-weather.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-weather.md",
+      "route": "/tools/get-weather",
+      "title": "get_weather",
+      "url": "https://supercarto.pages.dev/docs/tools/get-weather",
+      "description": "Keyless current conditions and forecast, with a degraded path that refuses to invent readings."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/localize.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/localize.md",
+      "route": "/tools/localize",
+      "title": "localize",
+      "url": "https://supercarto.pages.dev/docs/tools/localize",
+      "description": "Move an open map session for the cost of the delta, not a new map."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/route.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/route.md",
+      "route": "/tools/route",
+      "title": "route",
+      "url": "https://supercarto.pages.dev/docs/tools/route",
+      "description": "Feasibility first — straight-line distance, direction, and walking verification."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/search-places.json",
+      "lastModified": "2026-10-26T18:57:15+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/search-places.md",
+      "route": "/tools/search-places",
+      "title": "search_places and expand_feature",
+      "url": "https://supercarto.pages.dev/docs/tools/search-places",
+      "description": "Query a maplet by name or type, then expand one feature's exact geometry on demand."
+    }
+  ],
+  "site": "https://supercarto.pages.dev"
+}

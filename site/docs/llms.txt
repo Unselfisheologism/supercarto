@@ -1,0 +1,75 @@
+# supercarto
+
+> Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in.
+
+## Docs
+
+- [Introduction](https://supercarto.pages.dev/docs): supercarto gives an AI agent a map of any location on Earth as a token-budgeted topological graph — one call, N tokens, measured on output.
+- [Quick start](https://supercarto.pages.dev/docs/quick-start): Install supercarto, return your first maplet, and wire it into an agent — Node, Python, Claude Desktop, or the hosted endpoint.
+- [FAQ](https://supercarto.pages.dev/docs/faq): Short answers to the questions every evaluation starts with.
+
+## Concepts
+
+- [The budget is a real budget](https://supercarto.pages.dev/docs/concepts/budget): How output gets ranked, cut, kept connected, and re-measured until the reported number is the delivered number.
+- [Honesty rules](https://supercarto.pages.dev/docs/concepts/honesty): The refusal, absence, and degradation semantics that run through every tool — silence is never punctuality.
+- [Accuracy](https://supercarto.pages.dev/docs/concepts/accuracy): Distances verified against haversine ground truth at mid and high latitude — the Mercator scale correction done per axis.
+
+## Tools
+
+- [The tools](https://supercarto.pages.dev/docs/tools): The eleven tools a supercarto deployment advertises, and exactly when each one exists.
+- [get_maplet](https://supercarto.pages.dev/docs/tools/get-maplet): The core call — a walkable, token-budgeted topological graph of any coordinate.
+- [localize](https://supercarto.pages.dev/docs/tools/localize): Move an open map session for the cost of the delta, not a new map.
+- [route](https://supercarto.pages.dev/docs/tools/route): Feasibility first — straight-line distance, direction, and walking verification.
+- [search_places and expand_feature](https://supercarto.pages.dev/docs/tools/search-places): Query a maplet by name or type, then expand one feature's exact geometry on demand.
+- [get_terrain and get_daylight](https://supercarto.pages.dev/docs/tools/get-terrain): Ground elevation and slope, sun position, sunrise and sunset — arithmetic and tiles, no keys.
+- [get_weather](https://supercarto.pages.dev/docs/tools/get-weather): Keyless current conditions and forecast, with a degraded path that refuses to invent readings.
+- [get_traffic](https://supercarto.pages.dev/docs/tools/get-traffic): Live congestion with a provider key; labelled free-flow without one.
+- [get_transit and get_transit_route](https://supercarto.pages.dev/docs/tools/get-transit): Schedules, departure boards, live delays, and a certified ride plan — honest in all three service states.
+
+## Interfaces
+
+- [CLI](https://supercarto.pages.dev/docs/interfaces/cli): Every supercarto command, from fetch to decode, with the flags each one takes.
+- [HTTP API](https://supercarto.pages.dev/docs/interfaces/http): The maplet, screen, transit and route endpoints, with parameters and examples.
+- [MCP and Claude Desktop](https://supercarto.pages.dev/docs/interfaces/mcp): supercarto exposes MCP over stdio; one-click install ships as an MCPB bundle.
+- [Python client](https://supercarto.pages.dev/docs/interfaces/python): An asyncio client with zero runtime dependencies, speaking JSON-RPC to the Node server over stdio.
+
+## Guides
+
+- [Data sources](https://supercarto.pages.dev/docs/guides/data-sources): Where every layer gets its data — env-controlled, one factory, honest fallbacks.
+- [Deployment](https://supercarto.pages.dev/docs/guides/deployment): Local HTTP, the hosted Cloudflare Worker and its honest subsets, plus documentation site deployment.
+
+## Changelog
+
+- [0.6.2 — one-click install in Claude Desktop (MCPB bundle)](https://supercarto.pages.dev/docs/changelog/v0-6-2): Navigate to the release assets and grab supercarto-0.6.2.mcpb (384 KB). Open it with Claude Desktop and the maps tools install: the server runs from the…
+- [0.6.1 — whole-metro feeds inside the default heap](https://supercarto.pages.dev/docs/changelog/v0-6-1): The GTFS load path is columnar: zip entries stream one at a time and stop_times go straight into per-trip arrays (no row objects, ids interned, sorted via one…
+- [0.6.0 — registry marker in plain text](https://supercarto.pages.dev/docs/changelog/v0-6-0): The official MCP registry's PyPI validation reads the rendered package description, which strips HTML comments. The 0.5.9 comment-form marker never reached…
+- [0.5.9 — official MCP Registry metadata](https://supercarto.pages.dev/docs/changelog/v0-5-9): No code change. Carries the ownership markers the official MCP registry verifies: mcpName in the npm manifest, an mcp-name: comment in the README that ships…
+- [0.5.8 — HTTP parity for the transit surfaces](https://supercarto.pages.dev/docs/changelog/v0-5-8): New: /transit-route on the HTTP server — the certified one-line ride plan over plain HTTP, same words as the MCP tool, ?format=yaml for direct reads.Override…
+- [0.5.7 — The certified ride plan](https://supercarto.pages.dev/docs/changelog/v0-5-7): New tool get_transit_route (and CLI transit-route): walk to a stop, ride one shared line, walk it off. Straight-line walk legs, labelled as such. Never a…
+- [0.5.6 — drive the realtime join from every entry point](https://supercarto.pages.dev/docs/changelog/v0-5-6): Fix: get_transit (MCP, HTTP, CLI) fetched the realtime overlay but never joined it — a deployment with SUPERCARTO_GTFS_RT set answered schedule-only…
+- [0.5.5 — The next-departure board](https://supercarto.pages.dev/docs/changelog/v0-5-5): next: on every transit node. Upcoming departures at that stop, in feed time order and the feed's own clock ("tram 9 25:10" stays past midnight), capped at…
+- [0.5.4 — GTFS-Realtime: live delays join onto the schedule](https://supercarto.pages.dev/docs/changelog/v0-5-4): Riders ask "is my bus late"; static schedules cannot answer. 0.5.4 adds the realtime half with zero runtime dependencies: Wire reader (src/source/proto.ts +…
+- [0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles](https://supercarto.pages.dev/docs/changelog/v0-5-3): /terrain answered an honest 503 at the hosted endpoint because every real-world Terrarium tile is PNG-encoded and the bundled zero-dependency decoder read a…
+- [0.5.2 — PMTiles reads real archives at the true latitude](https://supercarto.pages.dev/docs/changelog/v0-5-2): The tile-y conversion mirrored every remote PMTiles fetch about the equator; SF streets read back at -37.77. Both ports fixed; the fixture test now asserts…
+- [0.5.1 — the budget kept its promise](https://supercarto.pages.dev/docs/changelog/v0-5-1): Patch release: three honest-output fixes on the token-budget contract - the shrink loop now admits cut vertices at the small-graph exhaustion branch (a…
+- [0.5.0 — GTFS transit schedules for agents](https://supercarto.pages.dev/docs/changelog/v0-5-0): New get_transit tool over any static GTFS feed (dir or .zip via SUPERCARTO_GTFS): stops, lines, and first/last departures for the queried day, with three…
+- [0.4.11](https://supercarto.pages.dev/docs/changelog/v0-4-11): Bug fixes: Live Overpass fetch now works for negative latitudes: supercarto emits the positional (s,w,n,e) bbox form instead of the bbox:-prefixed form, which…
+
+## RSS Feeds
+
+- [supercarto — Changelog](https://supercarto.pages.dev/docs/changelog/rss.xml)
+
+## Agent skills
+
+- [supercarto](https://supercarto.pages.dev/docs/.well-known/agent-skills/supercarto/SKILL.md): Read the supercarto docs instead of answering from memory. Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in. Use when a task involves supercarto: how it works, how to set it up or configure it, or its API.
+
+## Agent resources
+
+- [llms-full.txt](https://supercarto.pages.dev/docs/llms-full.txt): The full Markdown of every page in one file.
+- [Page Markdown](https://supercarto.pages.dev/docs/index.md): Append `.md` to any page URL to fetch that page as raw Markdown.
+- [JSON API](https://supercarto.pages.dev/docs/api/docs/pages.json): Page index of the JSON docs API; each entry links the page's JSON and Markdown forms. Described by the OpenAPI document at https://supercarto.pages.dev/docs/openapi.json.
+- [Agent skills](https://supercarto.pages.dev/docs/.well-known/agent-skills/index.json): Agent Skills discovery index of the skills this site publishes.
+- [API catalog](https://supercarto.pages.dev/docs/.well-known/api-catalog): RFC 9727 linkset of the APIs documented here.
+- [AI catalog](https://supercarto.pages.dev/docs/.well-known/ai-catalog.json): ARD manifest of the agent-facing resources on this site (MCP server, skills, APIs).
+- [agent-readability.json](https://supercarto.pages.dev/docs/agent-readability.json): Manifest of every agent-facing artifact on this site.
+- [Sitemap](https://supercarto.pages.dev/docs/sitemap.xml): Every indexable page URL with its last-modified date.

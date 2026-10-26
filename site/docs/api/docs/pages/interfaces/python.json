@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/python.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/python.md",
+  "route": "/interfaces/python",
+  "title": "Python client",
+  "url": "https://supercarto.pages.dev/docs/interfaces/python",
+  "description": "An asyncio client with zero runtime dependencies, speaking JSON-RPC to the Node server over stdio.",
+  "markdown": "---\ntitle: Python client\ndescription: An asyncio client with zero runtime dependencies, speaking JSON-RPC to the Node server over stdio.\nsidebar:\n  label: Python\n  order: 3\n---\n\n```package-install\npip install supercarto\n```\n\nThe Python package is a client, not a port of the compiler. It speaks\nJSON-RPC to the Node server over stdio, because the `mcp` package would\npull in httpx and pydantic, and an agent framework that already depends on\none of them should not get a second copy.\n\n**Async**\n\n```python\nimport asyncio\nfrom supercarto import SuperCarto\n\nasync def main():\n    async with SuperCarto() as carto:\n        m = await carto.maplet(lat=35.6833, lon=139.762, radius_m=400, budget=1500)\n        print(m.yaml)\n        w = await carto.weather(lat=35.6833, lon=139.762)\n\nasyncio.run(main())\n```\n\n**Notes**\n\n- `maplet` (accepts `radius_m` snake_case) compiles a topological graph,\n  exactly the YAML the Node API returns — the [byte-parity gate](/docs/concepts/honesty)\n  verifies the port agrees.\n- `weather` returns the same structured answer, degraded the same\n  way (raises when the source is down, never zeroes).\n- The client requires the Node server (`npx supercarto mcp` or a global\n  install) on PATH.\n\n:::tip[Zero runtime dependencies]\nThis holds by design on both sides: the Node server installs nothing, the\nPython client imports nothing. The [byte-parity gate](/docs/concepts/honesty)\nfails the build if either side starts depending on something, or if a byte\nof output ever disagrees.\n:::\n"
+}

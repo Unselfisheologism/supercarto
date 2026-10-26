@@ -1,0 +1,14 @@
+---
+changelog:
+  category: Release
+  version: 0.5.9
+date: '2026-10-26T09:13:22Z'
+seo:
+  description: >-
+    No code change. Carries the ownership markers the official MCP registry
+    verifies: mcpName in the npm manifest, an mcp-name: comment in the README
+    that ships…
+title: 0.5.9 — official MCP Registry metadata
+type: changelog
+---
+No code change. Carries the ownership markers the official MCP registry verifies: `mcpName` in the npm manifest, an `mcp-name:` comment in the README that ships to PyPI, `server.json` (npm + PyPI publications, stdio), and `publish-mcp.yml`, which publishes to registry.modelcontextprotocol.io with GitHub OIDC after npm carries the tag. Adds a Dockerfile with an initialize/introspection probe for registry health checks (Glama et al.).

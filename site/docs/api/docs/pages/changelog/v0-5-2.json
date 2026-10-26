@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-2.json",
+  "lastModified": "2026-10-23T08:03:06Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-2.md",
+  "route": "/changelog/v0-5-2",
+  "title": "0.5.2 — PMTiles reads real archives at the true latitude",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-2",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.2\ndate: '2026-10-23T08:03:06Z'\nseo:\n  description: >-\n    The tile-y conversion mirrored every remote PMTiles fetch about the equator;\n    SF streets read back at -37.77. Both ports fixed; the fixture test now\n    asserts…\ntitle: 0.5.2 — PMTiles reads real archives at the true latitude\ntype: changelog\n---\nThe tile-y conversion mirrored every remote PMTiles fetch about the equator; SF streets read back at -37.77. Both ports fixed; the fixture test now asserts the hemisphere with parsed coordinates, not a digit regex that a mirror satisfies. Verified live against build.protomaps.com (lat 37.7164..37.7903 for the SF bbox). Parity gate now covers budgets 128-2048 and rebuilds a stale dist first.\n"
+}

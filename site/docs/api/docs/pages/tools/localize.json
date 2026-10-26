@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/localize.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/tools/localize.md",
+  "route": "/tools/localize",
+  "title": "localize",
+  "url": "https://supercarto.pages.dev/docs/tools/localize",
+  "description": "Move an open map session for the cost of the delta, not a new map.",
+  "markdown": "---\ntitle: localize\ndescription: Move an open map session for the cost of the delta, not a new map.\nsidebar:\n  label: localize\n  order: 1\n---\n\nalways advertised\n\n`localize(scr, lat, lon, radius, layers, budget)` — you already hold a\nmaplet and the person moved. A new `get_maplet` call would re-pay for every\nunchanged node; `localize` returns only what changed: nodes appeared,\ndisappeared, or shifted, edges re-wired, and the same honesty records.\n\nWhen the prompt is already long and the user says \"the other corner\", this\nis the cheap path — a district stays affordable, a street corner cheaper.\n\n:::note[Cheap compared to what]\nA maplet's token cost is dominated by nodes and edges the previous\nmaplet already contained. `localize` exists so a moving session never\npays that cost twice.\n:::\n"
+}

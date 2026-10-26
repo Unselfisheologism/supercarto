@@ -1,0 +1,30 @@
+{
+  "artifacts": {
+    "markdown": {
+      "pattern": "https://supercarto.pages.dev/docs/{route}.md"
+    },
+    "api": {
+      "openapi": "https://supercarto.pages.dev/docs/openapi.json",
+      "pages": "https://supercarto.pages.dev/docs/api/docs/pages.json"
+    },
+    "llmsFullTxt": "https://supercarto.pages.dev/docs/llms-full.txt",
+    "llmsTxt": "https://supercarto.pages.dev/docs/llms.txt",
+    "aiCatalog": "https://supercarto.pages.dev/docs/.well-known/ai-catalog.json",
+    "apiCatalog": "https://supercarto.pages.dev/docs/.well-known/api-catalog",
+    "agentSkills": "https://supercarto.pages.dev/docs/.well-known/agent-skills/index.json",
+    "sitemap": "https://supercarto.pages.dev/docs/sitemap.xml",
+    "feeds": [
+      "https://supercarto.pages.dev/docs/changelog/rss.xml"
+    ]
+  },
+  "description": "Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in.",
+  "generator": "blume@2.2.6",
+  "name": "supercarto",
+  "site": "https://supercarto.pages.dev",
+  "contentUsage": {
+    "search": true,
+    "ai-input": true,
+    "ai-train": true
+  },
+  "repository": "https://github.com/Unselfisheologism/supercarto"
+}

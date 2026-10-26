@@ -1,0 +1,31 @@
+---
+title: get_terrain and get_daylight
+description: Ground elevation and slope, sun position, sunrise and sunset — arithmetic and tiles, no keys.
+sidebar:
+  label: get_terrain · get_daylight
+  order: 4
+---
+
+always advertised
+
+## get_terrain
+
+`get_terrain(lat, lon, radiusM, samples)` — ground elevation and slope
+around a coordinate, from Terrarium-encoded tiles. No key; the default
+endpoint is the AWS Open Data elevation archive, overridable with
+`TERRARIUM_ENDPOINT`.
+
+Slope is what changes "a park 400 m away" into "a park 400 m away and 60 m
+up a hill the wheelchair cannot climb".
+
+## get_daylight
+
+`get_daylight(lat, lon, at)` — sun position, sunrise, sunset, twilight
+band, and whether a light is needed. Always available: sun position is
+arithmetic, needing no source and no credential, so this tool never
+disappears from a deployment.
+
+The twilight band is not a boolean. Walking is fine at civil twilight and
+unwise at nautical, so the band names one of `day`, `civil`, `nautical`,
+`night`. Above the Arctic circles the map reports `polar: day` or
+`polar: night` instead of inventing a sunrise.

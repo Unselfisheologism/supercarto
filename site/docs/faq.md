@@ -1,0 +1,48 @@
+---
+title: FAQ
+description: Short answers to the questions every evaluation starts with.
+sidebar:
+  label: FAQ
+  order: 6
+---
+
+**Why not just paste GeoJSON into the prompt?**
+
+Raw GeoJSON costs thousands of tokens per blocks-sized extract, and
+models reason badly and hallucinate over raw coordinates. In
+head-to-head task benchmarks, a compiled supercarto graph scores 38/47
+while raw GeoJSON for the same places scores 15/44 and no map scores
+0/47.
+
+**Does supercarto need an API key for map data?**
+
+No. Live OpenStreetMap data over Overpass needs no key, and Open-Meteo
+weather and Terrarium elevation need no key either. For production
+volume you can point supercarto at your own PMTiles archive. Live
+traffic is the only feature that needs a key (TomTom or HERE).
+
+**How does it not overflow the context window?**
+
+You set a token budget. The compiler ranks features, keeps named
+landmarks, removes anonymous intersections first, and guarantees the
+surviving network stays connected. Every removal is recorded in the
+`omitted:` section, so the model can tell "not there" from "not shown".
+
+**Is there a hosted version?**
+
+Yes, a honest subset: a compilation endpoint answers `/maplet` and
+`/scr` over HTTP, weather and rate limiting are live, and terrain,
+transit and traffic are stated as absent with reasons. Transit needs a
+local feed; hosted mode ships no flow keys.
+
+**What license, what tests?**
+
+Apache-2.0. 461 tests: unit (including transit states, protobuf wire,
+realtime join, PNG elevation decoder), 121 against live sources, and 12
+MCP end-to-end. Outputs are byte-identical to the Python port; the
+parity gate runs on every push.
+
+**What is deliberately not implemented?**
+
+Hosted vector tiles with style delivery, and full indoor room geometry
+beyond centroids. Both are stated here rather than shipped half-way.

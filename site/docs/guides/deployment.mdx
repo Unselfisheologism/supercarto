@@ -1,0 +1,53 @@
+---
+title: Deployment
+description: Local HTTP, the hosted Cloudflare Worker and its honest subsets, plus documentation site deployment.
+sidebar:
+  label: Deployment
+  order: 1
+---
+
+## Local HTTP
+
+```bash
+supercarto serve --port 8787
+```
+
+Full surface: maplets, SCR, transit, transit-route, health.
+
+## Cloudflare Worker
+
+The compile path is Workers-compatible (fetch-based sources, no Node
+built-ins), and `cloud/worker/` packages it as a Cloudflare Worker: the same
+`/maplet`, `/scr`, weather, daylight and terrain surface as the local HTTP
+API, with per-IP rate limiting and ODbL attribution on every map response.
+
+<Tree>
+  <Tree.Folder name="cloud/worker" defaultOpen>
+    <Tree.File name="src" />
+    <Tree.File name="wrangler.jsonc" />
+    <Tree.File name="README.md" />
+  </Tree.Folder>
+</Tree>
+
+It is deliberately a subset, stated on `GET /`:
+
+- transit and traffic are **not** served — a Worker has no filesystem for a
+  GTFS feed, and hosted mode ships no flow-provider keys
+- the archive fallback (`protomaps` source line) is coarse beyond z10-ish,
+  and tile/feature fetches are capped so a request stays inside a Worker
+  CPU budget
+- terrain answers `503` rather than a rough answer: Terrarium tiles are
+  PNG-encoded and the bundled zero-dependency decoder reads raw buffers
+  only
+- `GET /healthz` probes Overpass only, so a 503 there means the Overpass leg
+  is unreachable — not that the PMTiles fallback is down
+
+Every hosted answer says what it cannot serve. An excerpt cannot mislead a
+model about what a full deployment would answer.
+
+:::note[What the source line carries]
+The `source:` field names what actually served the data (`overpass` or
+`protomaps`), because the shared Overpass instances refuse the shared
+Cloudflare egress range for this deployment — the fallback is what
+actually answers, and the document says so.
+:::

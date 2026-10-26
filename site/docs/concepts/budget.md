@@ -1,0 +1,60 @@
+---
+title: The budget is a real budget
+description: How output gets ranked, cut, kept connected, and re-measured until the reported number is the delivered number.
+sidebar:
+  label: The budget
+  order: 0
+---
+
+Most map-for-agents code truncates and hopes. supercarto treats truncation
+as a correctness problem, with four mechanisms:
+
+## Ranking
+
+Named landmarks survive; anonymous intersections are cut first. An
+intersection named "2nd & Mission" ranks higher than an unnamed junction
+100 m away, because an agent can act on a name.
+
+## Connectivity
+
+Cut vertices are never removed, so the surviving network stays connected.
+A map the agent can traverse but not connect is worse than a smaller map it
+can use — "how do I get from here to there" has no answer on a severed
+graph.
+
+## No stranded names
+
+A landmark the agent can see but cannot route to is removed. It would
+confidently try to walk to it — the same hallucinated-route failure mode in
+miniature, introduced by the cutting step itself.
+
+## Verification
+
+`emitAndVerify` re-measures the **actual emitted YAML** and cuts again
+until it fits. The reported budget is the budget delivered, not an
+estimate on an intermediate representation. This is what makes the number a
+budget rather than a target. Why you can trust the geometry the budget
+delivers: the [accuracy page](/docs/concepts/accuracy) shows distance verification
+across latitudes.
+
+## Honesty
+
+Every drop is recorded in `omitted:`, aggregated per layer, so the model
+can tell "not there" from "not shown". An agent combining supercarto's
+output with other sources, or reasoning about a pharmacy that does not
+appear, can reason about the difference:
+
+```yaml
+omitted:
+  - {layer: building, count: 259}
+  - {layer: poi, count: 141}
+  - {layer: road, count: 441}
+```
+
+> **Try it yourself**
+>
+> `supercarto bench <file.geojson>` reports the token cost of any file at a
+> budget, and the benchmark repository (`supercarto-bench`) holds the
+> task-level evidence: the compiled graph scores 38/47 against 15/44 for raw
+> GeoJSON and 0/47 for no map, re-derivable from committed archives without
+> model calls.

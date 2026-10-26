@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/route.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/tools/route.md",
+  "route": "/tools/route",
+  "title": "route",
+  "url": "https://supercarto.pages.dev/docs/tools/route",
+  "description": "Feasibility first — straight-line distance, direction, and walking verification.",
+  "markdown": "---\ntitle: route\ndescription: Feasibility first — straight-line distance, direction, and walking verification.\nsidebar:\n  label: route\n  order: 2\n---\n\nalways advertised\n\n`route(from, to, mode)` — straight-line distance, compass direction, and\nwhether the approach is walkable, from one coordinate to another.\n\n## Why not turn-by-turn by default\n\nRouting APIs sometimes return confident nonsense — in benchmark work the\npublic demo OSRM answered `Ok` with a walk route that covered a\nstraight-line half-kilometre in 40 seconds. A tool whose default path can\ninvent a route through water is worse than a tool that refuses.\n\nSo `route` is a **feasibility** answer: distance, direction, then\n\"verify the approach on arrival\". Turn-by-turn exists only with OSRM, opt-in, for an engine **you** host and\nhave verified (see [data sources](/docs/guides/data-sources)).\n\n:::warning[Do not hand supercarto's demo defaults to a production agent]\nThe `route` tool with no OSRM configured states its limits in its answer.\nFine for \"roughly how far is the café\". If the trip's success depends on\nthe route, self-host a routing engine and point the env at it.\n:::\n"
+}

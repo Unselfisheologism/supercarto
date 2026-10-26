@@ -1,0 +1,286 @@
+{
+  "actions": [],
+  "cta": null,
+  "featured": [],
+  "root": "/",
+  "selectors": [],
+  "sidebar": [
+    {
+      "description": "supercarto gives an AI agent a map of any location on Earth as a token-budgeted topological graph — one call, N tokens, measured on output.",
+      "kind": "page",
+      "label": "Introduction",
+      "pageId": "filesystem:index.mdx",
+      "route": "/"
+    },
+    {
+      "description": "Install supercarto, return your first maplet, and wire it into an agent — Node, Python, Claude Desktop, or the hosted endpoint.",
+      "kind": "page",
+      "label": "Quick start",
+      "pageId": "filesystem:quick-start.mdx",
+      "route": "/quick-start"
+    },
+    {
+      "description": "Short answers to the questions every evaluation starts with.",
+      "kind": "page",
+      "label": "FAQ",
+      "pageId": "filesystem:faq.mdx",
+      "route": "/faq"
+    },
+    {
+      "children": [
+        {
+          "description": "How output gets ranked, cut, kept connected, and re-measured until the reported number is the delivered number.",
+          "kind": "page",
+          "label": "The budget",
+          "pageId": "filesystem:concepts/budget.mdx",
+          "route": "/concepts/budget"
+        },
+        {
+          "description": "The refusal, absence, and degradation semantics that run through every tool — silence is never punctuality.",
+          "kind": "page",
+          "label": "Honesty",
+          "pageId": "filesystem:concepts/honesty.mdx",
+          "route": "/concepts/honesty"
+        },
+        {
+          "description": "Distances verified against haversine ground truth at mid and high latitude — the Mercator scale correction done per axis.",
+          "kind": "page",
+          "label": "Accuracy",
+          "pageId": "filesystem:concepts/accuracy.mdx",
+          "route": "/concepts/accuracy"
+        }
+      ],
+      "display": "flat",
+      "icon": "lightbulb",
+      "kind": "group",
+      "label": "Concepts",
+      "path": "/concepts"
+    },
+    {
+      "children": [
+        {
+          "description": "The eleven tools a supercarto deployment advertises, and exactly when each one exists.",
+          "kind": "page",
+          "label": "Tools",
+          "pageId": "filesystem:tools/index.mdx",
+          "route": "/tools"
+        },
+        {
+          "description": "The core call — a walkable, token-budgeted topological graph of any coordinate.",
+          "kind": "page",
+          "label": "get_maplet",
+          "pageId": "filesystem:tools/get-maplet.mdx",
+          "route": "/tools/get-maplet"
+        },
+        {
+          "description": "Move an open map session for the cost of the delta, not a new map.",
+          "kind": "page",
+          "label": "localize",
+          "pageId": "filesystem:tools/localize.mdx",
+          "route": "/tools/localize"
+        },
+        {
+          "description": "Feasibility first — straight-line distance, direction, and walking verification.",
+          "kind": "page",
+          "label": "route",
+          "pageId": "filesystem:tools/route.mdx",
+          "route": "/tools/route"
+        },
+        {
+          "description": "Query a maplet by name or type, then expand one feature's exact geometry on demand.",
+          "kind": "page",
+          "label": "search_places · expand_feature",
+          "pageId": "filesystem:tools/search-places.mdx",
+          "route": "/tools/search-places"
+        },
+        {
+          "description": "Ground elevation and slope, sun position, sunrise and sunset — arithmetic and tiles, no keys.",
+          "kind": "page",
+          "label": "get_terrain · get_daylight",
+          "pageId": "filesystem:tools/get-terrain.mdx",
+          "route": "/tools/get-terrain"
+        },
+        {
+          "description": "Keyless current conditions and forecast, with a degraded path that refuses to invent readings.",
+          "kind": "page",
+          "label": "get_weather",
+          "pageId": "filesystem:tools/get-weather.mdx",
+          "route": "/tools/get-weather"
+        },
+        {
+          "description": "Live congestion with a provider key; labelled free-flow without one.",
+          "kind": "page",
+          "label": "get_traffic",
+          "pageId": "filesystem:tools/get-traffic.mdx",
+          "route": "/tools/get-traffic"
+        },
+        {
+          "description": "Schedules, departure boards, live delays, and a certified ride plan — honest in all three service states.",
+          "kind": "page",
+          "label": "get_transit",
+          "pageId": "filesystem:tools/get-transit.mdx",
+          "route": "/tools/get-transit"
+        }
+      ],
+      "display": "flat",
+      "icon": "wrench",
+      "kind": "group",
+      "label": "Tools",
+      "path": "/tools",
+      "route": "/tools"
+    },
+    {
+      "children": [
+        {
+          "description": "Every supercarto command, from fetch to decode, with the flags each one takes.",
+          "kind": "page",
+          "label": "CLI",
+          "pageId": "filesystem:interfaces/cli.mdx",
+          "route": "/interfaces/cli"
+        },
+        {
+          "description": "The maplet, screen, transit and route endpoints, with parameters and examples.",
+          "kind": "page",
+          "label": "HTTP",
+          "pageId": "filesystem:interfaces/http.mdx",
+          "route": "/interfaces/http"
+        },
+        {
+          "description": "supercarto exposes MCP over stdio; one-click install ships as an MCPB bundle.",
+          "kind": "page",
+          "label": "MCP",
+          "pageId": "filesystem:interfaces/mcp.mdx",
+          "route": "/interfaces/mcp"
+        },
+        {
+          "description": "An asyncio client with zero runtime dependencies, speaking JSON-RPC to the Node server over stdio.",
+          "kind": "page",
+          "label": "Python",
+          "pageId": "filesystem:interfaces/python.mdx",
+          "route": "/interfaces/python"
+        }
+      ],
+      "display": "flat",
+      "icon": "plug",
+      "kind": "group",
+      "label": "Interfaces",
+      "path": "/interfaces"
+    },
+    {
+      "children": [
+        {
+          "description": "Where every layer gets its data — env-controlled, one factory, honest fallbacks.",
+          "kind": "page",
+          "label": "Data sources",
+          "pageId": "filesystem:guides/data-sources.mdx",
+          "route": "/guides/data-sources"
+        },
+        {
+          "description": "Local HTTP, the hosted Cloudflare Worker and its honest subsets, plus documentation site deployment.",
+          "kind": "page",
+          "label": "Deployment",
+          "pageId": "filesystem:guides/deployment.mdx",
+          "route": "/guides/deployment"
+        }
+      ],
+      "display": "flat",
+      "icon": "book-open",
+      "kind": "group",
+      "label": "Guides",
+      "path": "/guides"
+    },
+    {
+      "children": [
+        {
+          "kind": "page",
+          "label": "0.6.2 — one-click install in Claude Desktop (MCPB bundle)",
+          "pageId": "changelog:v0-6-2.md",
+          "route": "/changelog/v0-6-2"
+        },
+        {
+          "kind": "page",
+          "label": "0.6.1 — whole-metro feeds inside the default heap",
+          "pageId": "changelog:v0-6-1.md",
+          "route": "/changelog/v0-6-1"
+        },
+        {
+          "kind": "page",
+          "label": "0.6.0 — registry marker in plain text",
+          "pageId": "changelog:v0-6-0.md",
+          "route": "/changelog/v0-6-0"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.9 — official MCP Registry metadata",
+          "pageId": "changelog:v0-5-9.md",
+          "route": "/changelog/v0-5-9"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.8 — HTTP parity for the transit surfaces",
+          "pageId": "changelog:v0-5-8.md",
+          "route": "/changelog/v0-5-8"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.7 — The certified ride plan",
+          "pageId": "changelog:v0-5-7.md",
+          "route": "/changelog/v0-5-7"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.6 — drive the realtime join from every entry point",
+          "pageId": "changelog:v0-5-6.md",
+          "route": "/changelog/v0-5-6"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.5 — The next-departure board",
+          "pageId": "changelog:v0-5-5.md",
+          "route": "/changelog/v0-5-5"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.4 — GTFS-Realtime: live delays join onto the schedule",
+          "pageId": "changelog:v0-5-4.md",
+          "route": "/changelog/v0-5-4"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles",
+          "pageId": "changelog:v0-5-3.md",
+          "route": "/changelog/v0-5-3"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.2 — PMTiles reads real archives at the true latitude",
+          "pageId": "changelog:v0-5-2.md",
+          "route": "/changelog/v0-5-2"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.1 — the budget kept its promise",
+          "pageId": "changelog:v0-5-1.md",
+          "route": "/changelog/v0-5-1"
+        },
+        {
+          "kind": "page",
+          "label": "0.5.0 — GTFS transit schedules for agents",
+          "pageId": "changelog:v0-5-0.md",
+          "route": "/changelog/v0-5-0"
+        },
+        {
+          "kind": "page",
+          "label": "0.4.11",
+          "pageId": "changelog:v0-4-11.md",
+          "route": "/changelog/v0-4-11"
+        }
+      ],
+      "display": "flat",
+      "kind": "group",
+      "label": "Changelog",
+      "path": "/changelog"
+    }
+  ],
+  "tabs": []
+}

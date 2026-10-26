@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-6-0.json",
+  "lastModified": "2026-10-26T09:29:20Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-6-0.md",
+  "route": "/changelog/v0-6-0",
+  "title": "0.6.0 — registry marker in plain text",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-6-0",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.6.0\ndate: '2026-10-26T09:29:20Z'\nseo:\n  description: >-\n    The official MCP registry's PyPI validation reads the rendered package\n    description, which strips HTML comments. The 0.5.9 comment-form marker never\n    reached…\ntitle: 0.6.0 — registry marker in plain text\ntype: changelog\n---\nThe official MCP registry's PyPI validation reads the rendered package description, which strips HTML comments. The 0.5.9 comment-form marker never reached it. Both READMEs now carry `mcp-name: io.github.Unselfisheologism/supercarto` as plain text. server.json updated to 0.6.0 for the npm and PyPI publications. No code change; 461 tests and the parity gate pass.\n"
+}

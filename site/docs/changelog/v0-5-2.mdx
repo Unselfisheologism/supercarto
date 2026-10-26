@@ -1,0 +1,14 @@
+---
+changelog:
+  category: Release
+  version: 0.5.2
+date: '2026-10-23T08:03:06Z'
+seo:
+  description: >-
+    The tile-y conversion mirrored every remote PMTiles fetch about the equator;
+    SF streets read back at -37.77. Both ports fixed; the fixture test now
+    asserts…
+title: 0.5.2 — PMTiles reads real archives at the true latitude
+type: changelog
+---
+The tile-y conversion mirrored every remote PMTiles fetch about the equator; SF streets read back at -37.77. Both ports fixed; the fixture test now asserts the hemisphere with parsed coordinates, not a digit regex that a mirror satisfies. Verified live against build.protomaps.com (lat 37.7164..37.7903 for the SF bbox). Parity gate now covers budgets 128-2048 and rebuilds a stale dist first.

@@ -1,0 +1,19 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://supercarto.pages.dev/docs/api/docs",
+      "service-desc": [
+        {
+          "href": "https://supercarto.pages.dev/docs/openapi.json",
+          "type": "application/json"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://supercarto.pages.dev/docs",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}

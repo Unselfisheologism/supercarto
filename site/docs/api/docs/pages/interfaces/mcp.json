@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/mcp.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/mcp.md",
+  "route": "/interfaces/mcp",
+  "title": "MCP and Claude Desktop",
+  "url": "https://supercarto.pages.dev/docs/interfaces/mcp",
+  "description": "supercarto exposes MCP over stdio; one-click install ships as an MCPB bundle.",
+  "markdown": "---\ntitle: MCP and Claude Desktop\ndescription: supercarto exposes MCP over stdio; one-click install ships as an MCPB bundle.\nsidebar:\n  label: MCP\n  order: 2\n---\n\nsupercarto is an MCP server. Point an MCP client at it:\n\n```json\n{\n  \"mcpServers\": {\n    \"supercarto\": { \"command\": \"npx\", \"args\": [\"supercarto\", \"mcp\"] }\n  }\n}\n```\n\nThe tool list is per-deployment: eight tools with nothing configured, and\n`get_traffic` / `get_transit` / `get_transit_route` appear exactly when\ntheir operator configuration exists. Introspection never lists a tool\nwhose answer would be a guess.\n\n## Claude Desktop in one click\n\n**Tell your browsing agent to install supercarto**\n\n> Add https://github.com/Unselfisheologism/supercarto as an MCP server on\n> glama.ai under my logged-in account. If asked how it runs: stdio,\n> command `npx supercarto mcp`, no API key needed.\n\nOr skip agents entirely: every release publishes an\n[MCPB bundle](https://github.com/modelcontextprotocol/mcpb) — download\n`supercarto-X.Y.Z.mcpb` from the\n[latest release](https://github.com/Unselfisheologism/supercarto/releases/latest)\nand open it with Claude Desktop. Install-time configuration can wire the\nweather key, a local GTFS feed path, and the operator's TripUpdates URL.\nThe server has zero npm dependencies, so the bundle itself is 384 KB.\n\n## Tool honesty on the wire\n\nThe three conditional tools exist or don't. There is no stub, no empty\narray, no \"feed not configured\" pretence dressed as an answer: a manifest\n`tools_generated: true` plus per-maplet `tools:` blocks keep every\nintrospection surface in sync with what can actually run.\n\n:::note[One factory]\nEnvironment configuration is read by one factory (see\n[data sources](/docs/guides/data-sources)), so the CLI and the MCP server\ncannot disagree about where data came from — they did once, and nothing\nreported it.\n:::\n"
+}

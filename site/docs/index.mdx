@@ -1,0 +1,80 @@
+---
+title: Introduction
+description: supercarto gives an AI agent a map of any location on Earth as a token-budgeted topological graph — one call, N tokens, measured on output.
+sidebar:
+  label: Introduction
+  order: 0
+---
+
+supercarto gives an AI agent a map of any location on Earth as a
+token-budgeted topological graph: streets as edges, crossings as junctions,
+indoor floors and levels as separate layers, with weather, terrain, daylight
+and transit riding along. Everything the agent reads is measured in tokens,
+so one call fits a budget — and the budget is re-measured on the emitted
+output, not estimated on the input.
+
+<CardGroup cols={2}>
+  <Card title="Quick start" href="/docs/quick-start" icon="rocket">
+    Install supercarto and return your first maplet in minutes.
+  </Card>
+  <Card title="The tools" href="/docs/tools" icon="wrench">
+    The eleven tools a supercarto deployment advertises, and when each one exists.
+  </Card>
+  <Card title="Honesty rules" href="/docs/concepts/honesty" icon="shield-check">
+    How refusal, absence, and degradation are stated — never a plausible-sounding guess.
+  </Card>
+  <Card title="Release notes" href="/docs/changelog" icon="history">
+    Every release, sourced from GitHub Releases.
+  </Card>
+</CardGroup>
+
+## A give and a take
+
+One file in, both numbers out: `examples/synthetic-dense.geojson` is 272,993
+bytes (~68,000 tokens) raw and compiles at a 1024-token budget to about 890
+tokens — 26 nodes (10 named) on 34 edges, ~99% smaller. What the agent reads:
+
+```yaml
+map:
+  center: "37.7749, -122.4194"
+  source: geojson
+  note: Simplified for reasoning; call expand_feature for exact geometry.
+nodes:
+  n530: {type: poi, name: Bank 0, tags: [bank]}
+  n531: {type: poi, name: Cafe 1, tags: [cafe]}
+  n673: {type: transit, name: Station 0, tags: [subway_entrance]}
+edges:
+  n515->n516: {dist: 80m, dir: east, path: road}
+omitted:
+  - {layer: building, count: 259}
+  - {layer: poi, count: 141}
+  - {layer: road, count: 441}
+tools:
+  - expand_feature(id)
+```
+
+It is standard YAML in flow style, using only constructs a model has read
+billions of times. The wire format is standard YAML, optimized for machines;
+the compiler, not the model, does the translation from raw geodata.
+
+## Install
+
+```package-install
+npm install supercarto
+```
+
+The [quick start](/docs/quick-start) page lists every install path: npm, pip,
+`npx supercarto mcp`, the Claude Desktop `.mcpb` bundle, and the hosted
+compilation endpoint.
+
+## Where to read next
+
+- [The budget is a real budget](/docs/concepts/budget) — how output is ranked, cut,
+  kept connected, and re-measured.
+- [Honesty rules](/docs/concepts/honesty) — the refusal and degradation semantics
+  that run through every tool.
+- [Accuracy](/docs/concepts/accuracy) — verified distances across latitudes.
+- [Transit schedules](/docs/tools/get-transit) — stops, lines, departure boards,
+  live delays, and a certified ride plan.
+- [FAQ](/docs/faq) — the questions every evaluation starts with.
+- [Interfaces](/docs/interfaces/cli) — MCP, CLI, HTTP, Python client.

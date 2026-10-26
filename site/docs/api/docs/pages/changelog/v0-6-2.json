@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-6-2.json",
+  "lastModified": "2026-10-26T12:19:51Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-6-2.md",
+  "route": "/changelog/v0-6-2",
+  "title": "0.6.2 — one-click install in Claude Desktop (MCPB bundle)",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-6-2",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.6.2\ndate: '2026-10-26T12:19:51Z'\nseo:\n  description: >-\n    Navigate to the release assets and grab supercarto-0.6.2.mcpb (384 KB). Open\n    it with Claude Desktop and the maps tools install: the server runs from the…\ntitle: 0.6.2 — one-click install in Claude Desktop (MCPB bundle)\ntype: changelog\n---\nNavigate to the release assets and grab `supercarto-0.6.2.mcpb` (384 KB). Open it with Claude Desktop and the maps tools install: the server runs from the bundle as a plain Node process with zero npm dependencies, so the only requirement on the machine is Node >= 18.\n\nAlongside the always-on tools `get_maplet`, `localize`, `route`, `search_places`, `expand_feature`, `get_terrain`, `get_weather`, `get_daylight`, the install-time configuration can wire `get_traffic` (needs a routing-provider key) and `get_transit` / `get_transit_route` (needs a local GTFS feed path, plus the operator's GTFS-Realtime TripUpdates URL for live per-trip delay lines).\n\nOptional install config:\n- an Open-Meteo API key for higher weather rate limits\n- a GTFS feed path (directory of .txt tables or a .zip)\n- the feed operator's TripUpdates URL\n\nThe manifest marks the tool catalog as generated, mirroring the server's own honest-refusal design: whatever answers introspection is exactly what that installation can answer. Verified with the official `mcpb validate` CLI and an unpacked-bundle initialize probe.\n"
+}

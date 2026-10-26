@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-weather.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-weather.md",
+  "route": "/tools/get-weather",
+  "title": "get_weather",
+  "url": "https://supercarto.pages.dev/docs/tools/get-weather",
+  "description": "Keyless current conditions and forecast, with a degraded path that refuses to invent readings.",
+  "markdown": "---\ntitle: get_weather\ndescription: Keyless current conditions and forecast, with a degraded path that refuses to invent readings.\nsidebar:\n  label: get_weather\n  order: 5\n---\n\nalways advertised\n\n`get_weather(lat, lon, hours)` — current conditions and an hourly forecast\nfrom Open-Meteo. No key, no account, no billing; an optional\n`SUPERCARTO_OWM_KEY` lifts the rate limit.\n\n## Prose, not fields\n\nThe MCP tool returns prose rather than number-fields, because a model\nrepeats \"it is raining, take the bus\" reliably, and re-derives it from\ntwelve numbers unreliably.\n\n## The degraded path\n\nWhen the source is unreachable the library sets `degraded` and the tool\nraises. It does not return zeroes.\n\n:::danger[Why zeros are the failure]\nAn agent handed `precipitationMm: 0` concludes the weather is dry and\nsends someone cycling into a storm. Absence of a weather reading is not\nthe same thing as absence of rain — a missing answer must announce\nitself as missing.\n:::\n"
+}

@@ -13,6 +13,7 @@
     "audit": "blume audit"
   },
   "dependencies": {
+    "@tailwindcss/typography": "^0.5.20",
     "blume": "^2.2.6"
   }
 }

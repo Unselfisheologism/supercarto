@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-8.json",
+  "lastModified": "2026-10-26T05:10:21Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-8.md",
+  "route": "/changelog/v0-5-8",
+  "title": "0.5.8 — HTTP parity for the transit surfaces",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-8",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.8\ndate: '2026-10-26T05:10:21Z'\nseo:\n  description: >-\n    New: /transit-route on the HTTP server — the certified one-line ride plan\n    over plain HTTP, same words as the MCP tool, ?format=yaml for direct\n    reads.Override…\ntitle: 0.5.8 — HTTP parity for the transit surfaces\ntype: changelog\n---\n- **New: `/transit-route`** on the HTTP server — the certified one-line ride plan over plain HTTP, same words as the MCP tool, `?format=yaml` for direct reads.\n- **Override queries stop silently dropping realtime.** A `?feed=` query constructed its GTFS source without `SUPERCARTO_GTFS_RT` and never passed an overlay — 0.5.6's bug in a new coat. The server now carries the realtime URL (new `gtfsRtUrl` option, defaulting to the environment) and drives the fresh overlay onto the renderer in the same breath.\n- **Note sentence repair:** a feed with no realtime URL configured reads \"All times are scheduled; no real-time feed is configured.\" instead of the contradictory \"Real-time feed unavailable (no real-time feed configured)\". A not-configured feed is a deployment fact; a down feed is a network fact. One sentence each.\n- HTTP tests pin the wire by riding a realtime URL that refuses connections: an override answer saying \"Real-time feed unavailable\" proves the attempt was driven.\n\n461 tests: 328 unit / 121 live / 12 MCP e2e; parity gate green.\n"
+}

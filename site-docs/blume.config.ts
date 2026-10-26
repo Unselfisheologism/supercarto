@@ -10,10 +10,14 @@ export default defineConfig({
   theme: {
     accent: "teal",
     mode: "system",
+    fonts: {
+      display: { name: "Inter", provider: "bunny" },
+      body: { name: "Inter", provider: "bunny" },
+      mono: { name: "IBM Plex Mono", provider: "bunny" },
+    },
   },
 
   content: {
-    root: "docs",
     sources: [
       filesystem({ root: "docs" }),
       githubReleases({

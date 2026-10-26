@@ -1,0 +1,33 @@
+---
+title: get_traffic
+description: Live congestion with a provider key; labelled free-flow without one.
+sidebar:
+  label: get_traffic
+  order: 6
+---
+
+advertised only with a key
+
+`get_traffic(from, to, mode)` — congestion level and a realistic arrival
+time for a drive, from the worst segment rather than an average.
+
+## Exists, or doesn't
+
+Traffic needs a credential, so `get_traffic` is **absent from the tool
+list** until `TOMTOM_API_KEY` or `HERE_API_KEY` is set. With no key the
+routing path still reports speed, but labels it:
+
+```bash
+supercarto traffic --from 37.7749,-122.4194 --to 37.7849,-122.4194
+traffic: unknown (no flow source configured)
+free-flow estimate: 244s, ignores congestion
+note: set TOMTOM_API_KEY or HERE_API_KEY for live conditions
+```
+
+:::danger[The single most damaging thing this library could do]
+A free-flow estimate for a congested route is worse than no answer,
+because the person leaves on the schedule the agent gave them.
+Presenting one as live is precisely what the honest-refusal design
+exists to prevent — hence the label travels with the number, and the
+tool itself does not exist until a provider does.
+:::

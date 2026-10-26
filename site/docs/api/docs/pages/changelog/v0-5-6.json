@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-6.json",
+  "lastModified": "2026-10-26T03:20:09Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-6.md",
+  "route": "/changelog/v0-5-6",
+  "title": "0.5.6 — drive the realtime join from every entry point",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-6",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.6\ndate: '2026-10-26T03:20:09Z'\nseo:\n  description: >-\n    Fix: get_transit (MCP, HTTP, CLI) fetched the realtime overlay but never\n    joined it — a deployment with SUPERCARTO_GTFS_RT set answered schedule-only…\ntitle: 0.5.6 — drive the realtime join from every entry point\ntype: changelog\n---\n- **Fix:** `get_transit` (MCP, HTTP, CLI) fetched the realtime overlay but never joined it — a deployment with `SUPERCARTO_GTFS_RT` set answered schedule-only, silently. Now every public entry point joins predictions, as 0.5.4 intended and its tests (which bypassed the public path) believed had shipped.\n- The `TransitSource` interface now carries the overlay parameter, so this bug class fails type check next time. Two regression tests pin the wire itself.\n\n316 unit / 121 live / 12 MCP e2e; parity green.\n"
+}

@@ -3,6 +3,6 @@ import { defineMeta } from "blume";
 export default defineMeta({
   title: "Interfaces",
   icon: "plug",
-  order: 3,
+  order: 4,
   pages: ["cli", "http", "mcp", "python"],
 });

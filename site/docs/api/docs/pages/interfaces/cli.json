@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/cli.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/cli.md",
+  "route": "/interfaces/cli",
+  "title": "CLI",
+  "url": "https://supercarto.pages.dev/docs/interfaces/cli",
+  "description": "Every supercarto command, from fetch to decode, with the flags each one takes.",
+  "markdown": "---\ntitle: CLI\ndescription: Every supercarto command, from fetch to decode, with the flags each one takes.\nsidebar:\n  label: CLI\n  order: 0\n---\n\nThe CLI runs the same library as the MCP server. One binary, every surface:\n\n| Command | What it does |\n| --- | --- |\n| `supercarto fetch --lat --lon --radiusM --budget` | compile a maplet; `--layers` filters; `--metrics` reports tokens |\n| `supercarto weather --lat --lon --hours` | forecast |\n| `supercarto traffic --from --to` | traffic or the labelled free-flow answer |\n| `supercarto transit --feed --lat --lon --radiusM` | departure boards from a GTFS feed |\n| `supercarto route --from --to --mode` | feasibility answer |\n| `supercarto compile <file.geojson> --budget` | compile a local GeoJSON into a maplet |\n| `supercarto encode <file.geojson> --out` | SCR codec to a compact file |\n| `supercarto decode <file.scr>` | back from SCR |\n| `supercarto bench <file.geojson>` | token-cost check |\n| `supercarto mcp` | MCP server over stdio |\n| `supercarto serve --port` | HTTP API |\n\n**maplet**\n\n```bash\nsupercarto fetch --lat 35.6833 --lon 139.762 --radiusM 400 --budget 1500 --metrics\n```\n\n**transit**\n\n```bash\nsupercarto transit --feed city-gtfs.zip --lat 36.913 --lon -116.77 --radiusM 3000\n```\n\n**traffic**\n\n```bash\nsupercarto traffic --from 37.7749,-122.4194 --to 37.7849,-122.4194\n```\n\n**weather**\n\n```bash\nsupercarto weather --lat 35.6833 --lon 139.762 --hours 12\n```\n\n:::note[Failure behavior]\n`fetch` layers accept `road` and `poi` alongside raw OSM tags; anything\nelse is rejected rather than silently returning nothing. A request that\nwould yield named places with no streets fails with a clear error —\npass `--layers poi` for a POI-only map. Warnings travel inside the map\noutput, not just stderr, so an agent that reads only the map sees them.\n:::\n"
+}

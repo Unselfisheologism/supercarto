@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-0.json",
+  "lastModified": "2026-10-23T03:19:00Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-0.md",
+  "route": "/changelog/v0-5-0",
+  "title": "0.5.0 — GTFS transit schedules for agents",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-0",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.0\ndate: '2026-10-23T03:19:00Z'\nseo:\n  description: >-\n    New get_transit tool over any static GTFS feed (dir or .zip via\n    SUPERCARTO_GTFS): stops, lines, and first/last departures for the queried\n    day, with three…\ntitle: 0.5.0 — GTFS transit schedules for agents\ntype: changelog\n---\nNew `get_transit` tool over any static GTFS feed (dir or .zip via `SUPERCARTO_GTFS`): stops, lines, and first/last departures for the queried day, with three honest service states (running / none / unknown), past-midnight times kept as recorded (`25:10`), straight-line distances labelled, and a hard re-measured token budget with connection-preserving pruning.\n\nFixed: slope heat layers no longer vanish when every surviving hotspot ties (uniformly steep terrain is a fact, not an absence) — compiler change mirrored in the Python port and parity-checked.\n\n412 tests passing; verified against the GTFS sample feed in all three service states. Apache-2.0.\n"
+}

@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/guides/deployment.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/guides/deployment.md",
+  "route": "/guides/deployment",
+  "title": "Deployment",
+  "url": "https://supercarto.pages.dev/docs/guides/deployment",
+  "description": "Local HTTP, the hosted Cloudflare Worker and its honest subsets, plus documentation site deployment.",
+  "markdown": "---\ntitle: Deployment\ndescription: Local HTTP, the hosted Cloudflare Worker and its honest subsets, plus documentation site deployment.\nsidebar:\n  label: Deployment\n  order: 1\n---\n\n## Local HTTP\n\n```bash\nsupercarto serve --port 8787\n```\n\nFull surface: maplets, SCR, transit, transit-route, health.\n\n## Cloudflare Worker\n\nThe compile path is Workers-compatible (fetch-based sources, no Node\nbuilt-ins), and `cloud/worker/` packages it as a Cloudflare Worker: the same\n`/maplet`, `/scr`, weather, daylight and terrain surface as the local HTTP\nAPI, with per-IP rate limiting and ODbL attribution on every map response.\n\n- cloud/worker/\n  - src\n  - wrangler.jsonc\n  - README.md\n\nIt is deliberately a subset, stated on `GET /`:\n\n- transit and traffic are **not** served — a Worker has no filesystem for a\n  GTFS feed, and hosted mode ships no flow-provider keys\n- the archive fallback (`protomaps` source line) is coarse beyond z10-ish,\n  and tile/feature fetches are capped so a request stays inside a Worker\n  CPU budget\n- terrain answers `503` rather than a rough answer: Terrarium tiles are\n  PNG-encoded and the bundled zero-dependency decoder reads raw buffers\n  only\n- `GET /healthz` probes Overpass only, so a 503 there means the Overpass leg\n  is unreachable — not that the PMTiles fallback is down\n\nEvery hosted answer says what it cannot serve. An excerpt cannot mislead a\nmodel about what a full deployment would answer.\n\n:::note[What the source line carries]\nThe `source:` field names what actually served the data (`overpass` or\n`protomaps`), because the shared Overpass instances refuse the shared\nCloudflare egress range for this deployment — the fallback is what\nactually answers, and the document says so.\n:::\n"
+}

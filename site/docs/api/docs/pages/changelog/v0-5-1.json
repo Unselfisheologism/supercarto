@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-1.json",
+  "lastModified": "2026-10-23T05:38:34Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-1.md",
+  "route": "/changelog/v0-5-1",
+  "title": "0.5.1 — the budget kept its promise",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-1",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.1\ndate: '2026-10-23T05:38:34Z'\nseo:\n  description: >-\n    Patch release: three honest-output fixes on the token-budget contract - the\n    shrink loop now admits cut vertices at the small-graph exhaustion branch (a…\ntitle: 0.5.1 — the budget kept its promise\ntype: changelog\n---\nPatch release: three honest-output fixes on the token-budget contract - the shrink loop now admits cut vertices at the small-graph exhaustion branch (a 512-budget maplet used to return 580 tokens), stale obstacle references are pruned on both ports, uniform-plateau heat collapses to its summary, and degenerate-range rel reads at the ceiling. The Python port mirrors the TS fixes exactly; pytest parity is byte-clean across fixture budgets 128-2048. Plus hosted-worker readiness fixes. 416 TS tests.\n"
+}

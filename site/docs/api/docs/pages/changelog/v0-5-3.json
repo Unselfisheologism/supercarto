@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-5-3.json",
+  "lastModified": "2026-10-23T10:06:28Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-5-3.md",
+  "route": "/changelog/v0-5-3",
+  "title": "0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-5-3",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.5.3\ndate: '2026-10-23T10:06:28Z'\nseo:\n  description: >-\n    /terrain answered an honest 503 at the hosted endpoint because every\n    real-world Terrarium tile is PNG-encoded and the bundled zero-dependency\n    decoder read a…\ntitle: '0.5.3 — real elevation: /terrain decodes PNG Terrarium tiles'\ntype: changelog\n---\n`/terrain` answered an honest 503 at the hosted endpoint because every\nreal-world Terrarium tile is PNG-encoded and the bundled zero-dependency\ndecoder read a raw-sample variant only - realistic endpoints fetched fine and\ndecoded to nothing. Worse, once PNG decoding existed, the shared formula was\nwrong by a factor of 256: the two live checks that proved it were Denver\nreading 6.2 m (should be ~1600 m) and the Everest region reading 34 m.\n\n- `src/source/png.ts` + port: chunk parser, scanline filters (None, Sub, Up,\n  Average, Paeth) and the Terrarium formula `R*256 + G + B/256 - 32768`\n  metres, for 8-bit RGB/RGBA, non-interlaced. Palettes, 16-bit depth and\n  interlace are hard rejects, not guesses. Inflate is the Web\n  `DecompressionStream` in Workers and Node's `zlib` under Node, via\n  `zlibsafe.ts` - still zero runtime npm dependencies.\n- The raw-sample decoder now also decodes to metres `((s - 32768) / 256)`,\n  and the bilinear sampler is pure interpolation over metre-valued grids.\n- Hosted `/terrain` returns real elevation: SF −25..143 m, Denver\n  1568..1646 m, Everest region 5023..6948 m, verified live. The honest-503\n  reason stays for tiles that genuinely fail to decode.\n"
+}

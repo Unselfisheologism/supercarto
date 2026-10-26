@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/search-places.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/tools/search-places.md",
+  "route": "/tools/search-places",
+  "title": "search_places and expand_feature",
+  "url": "https://supercarto.pages.dev/docs/tools/search-places",
+  "description": "Query a maplet by name or type, then expand one feature's exact geometry on demand.",
+  "markdown": "---\ntitle: search_places and expand_feature\ndescription: Query a maplet by name or type, then expand one feature's exact geometry on demand.\nsidebar:\n  label: search_places · expand_feature\n  order: 3\n---\n\nalways advertised\n\n## search_places\n\n`search_places(lat, lon, radius, query, limit)` — find places by name or\ntype within the maplet's catchment. This is the \"where do I meet them\"\nquery: give it names of things (\"pharmacy\", \"Blue Bottle\") and ranked\nmatches come back as node ids.\n\n## expand_feature\n\n`expand_feature(id)` — exact geometry for one feature in this maplet. The\nbudget cut keeps landmarks but simplifies their geometry; when an agent\nactually needs the full shape of one building, park, or floor, it expands\njust that feature instead of re-paying for the whole area.\n\nThe two tools work as a pair: budget keeps context cheap, expansion keeps\ndetail reachable. The `tools:` block at the foot of every maplet advertises\nwhich of these its own catchment can answer.\n"
+}

@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-6-1.json",
+  "lastModified": "2026-10-26T11:03:35Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-6-1.md",
+  "route": "/changelog/v0-6-1",
+  "title": "0.6.1 — whole-metro feeds inside the default heap",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-6-1",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.6.1\ndate: '2026-10-26T11:03:35Z'\nseo:\n  description: >-\n    The GTFS load path is columnar: zip entries stream one at a time and\n    stop_times go straight into per-trip arrays (no row objects, ids interned,\n    sorted via one…\ntitle: 0.6.1 — whole-metro feeds inside the default heap\ntype: changelog\n---\nThe GTFS load path is columnar: zip entries stream one at a time and stop_times go straight into per-trip arrays (no row objects, ids interned, sorted via one index permutation). Wire semantics unchanged — the TypeScript suite (461) and the parity gate pass.\n\nVerified live on Translink SEQ (35 MB zip): the departure-board query that previously OOMed on Node's default heap now answers on a 512 MB heap, byte-identical, and the realtime join holds at scale (757 trip predictions joined, feed 32 s old, live delay lines on the boards).\n"
+}

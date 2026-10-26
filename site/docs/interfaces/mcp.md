@@ -1,0 +1,52 @@
+---
+title: MCP and Claude Desktop
+description: supercarto exposes MCP over stdio; one-click install ships as an MCPB bundle.
+sidebar:
+  label: MCP
+  order: 2
+---
+
+supercarto is an MCP server. Point an MCP client at it:
+
+```json
+{
+  "mcpServers": {
+    "supercarto": { "command": "npx", "args": ["supercarto", "mcp"] }
+  }
+}
+```
+
+The tool list is per-deployment: eight tools with nothing configured, and
+`get_traffic` / `get_transit` / `get_transit_route` appear exactly when
+their operator configuration exists. Introspection never lists a tool
+whose answer would be a guess.
+
+## Claude Desktop in one click
+
+**Tell your browsing agent to install supercarto**
+
+> Add https://github.com/Unselfisheologism/supercarto as an MCP server on
+> glama.ai under my logged-in account. If asked how it runs: stdio,
+> command `npx supercarto mcp`, no API key needed.
+
+Or skip agents entirely: every release publishes an
+[MCPB bundle](https://github.com/modelcontextprotocol/mcpb) — download
+`supercarto-X.Y.Z.mcpb` from the
+[latest release](https://github.com/Unselfisheologism/supercarto/releases/latest)
+and open it with Claude Desktop. Install-time configuration can wire the
+weather key, a local GTFS feed path, and the operator's TripUpdates URL.
+The server has zero npm dependencies, so the bundle itself is 384 KB.
+
+## Tool honesty on the wire
+
+The three conditional tools exist or don't. There is no stub, no empty
+array, no "feed not configured" pretence dressed as an answer: a manifest
+`tools_generated: true` plus per-maplet `tools:` blocks keep every
+introspection surface in sync with what can actually run.
+
+:::note[One factory]
+Environment configuration is read by one factory (see
+[data sources](/docs/guides/data-sources)), so the CLI and the MCP server
+cannot disagree about where data came from — they did once, and nothing
+reported it.
+:::

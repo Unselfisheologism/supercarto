@@ -1,0 +1,26 @@
+{
+  "code": "PAGE_NOT_FOUND",
+  "detail": "We couldn't find the page you're looking for.",
+  "resolution": "Where to look next: https://supercarto.pages.dev/docs, https://supercarto.pages.dev/docs/sitemap.xml, https://supercarto.pages.dev/docs/llms.txt, https://supercarto.pages.dev/docs/openapi.json",
+  "status": 404,
+  "title": "Page not found",
+  "type": "about:blank",
+  "links": [
+    {
+      "href": "https://supercarto.pages.dev/docs",
+      "label": "Back to home"
+    },
+    {
+      "href": "https://supercarto.pages.dev/docs/sitemap.xml",
+      "label": "Sitemap"
+    },
+    {
+      "href": "https://supercarto.pages.dev/docs/llms.txt",
+      "label": "Docs index for AI agents (llms.txt)"
+    },
+    {
+      "href": "https://supercarto.pages.dev/docs/openapi.json",
+      "label": "JSON API description (openapi.json)"
+    }
+  ]
+}

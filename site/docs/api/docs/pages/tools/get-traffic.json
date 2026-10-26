@@ -1,0 +1,12 @@
+{
+  "contentType": "doc",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-traffic.json",
+  "lastModified": "2026-10-26T18:57:15+05:30",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-traffic.md",
+  "route": "/tools/get-traffic",
+  "title": "get_traffic",
+  "url": "https://supercarto.pages.dev/docs/tools/get-traffic",
+  "description": "Live congestion with a provider key; labelled free-flow without one.",
+  "markdown": "---\ntitle: get_traffic\ndescription: Live congestion with a provider key; labelled free-flow without one.\nsidebar:\n  label: get_traffic\n  order: 6\n---\n\nadvertised only with a key\n\n`get_traffic(from, to, mode)` — congestion level and a realistic arrival\ntime for a drive, from the worst segment rather than an average.\n\n## Exists, or doesn't\n\nTraffic needs a credential, so `get_traffic` is **absent from the tool\nlist** until `TOMTOM_API_KEY` or `HERE_API_KEY` is set. With no key the\nrouting path still reports speed, but labels it:\n\n```bash\nsupercarto traffic --from 37.7749,-122.4194 --to 37.7849,-122.4194\ntraffic: unknown (no flow source configured)\nfree-flow estimate: 244s, ignores congestion\nnote: set TOMTOM_API_KEY or HERE_API_KEY for live conditions\n```\n\n:::danger[The single most damaging thing this library could do]\nA free-flow estimate for a congested route is worse than no answer,\nbecause the person leaves on the schedule the agent gave them.\nPresenting one as live is precisely what the honest-refusal design\nexists to prevent — hence the label travels with the number, and the\ntool itself does not exist until a provider does.\n:::\n"
+}

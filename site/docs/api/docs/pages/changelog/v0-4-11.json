@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-4-11.json",
+  "lastModified": "2026-10-17T11:05:25Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-4-11.md",
+  "route": "/changelog/v0-4-11",
+  "title": "0.4.11",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-4-11",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.4.11\ndate: '2026-10-17T11:05:25Z'\nseo:\n  description: >-\n    Bug fixes: Live Overpass fetch now works for negative latitudes: supercarto\n    emits the positional (s,w,n,e) bbox form instead of the bbox:-prefixed form,\n    which…\ntitle: 0.4.11\ntype: changelog\n---\nBug fixes:\n\n- Live Overpass fetch now works for negative latitudes: supercarto emits the positional (s,w,n,e) bbox form instead of the bbox:-prefixed form, which the public Overpass instance rejects with HTTP 400 for negative-latitude boxes. Includes a regression test.\n- Connectivity fixes for token-budgeted map graphs (PR #1, fix-connected-budget).\n\nNo new features. Full details in CHANGELOG.md.\n"
+}
