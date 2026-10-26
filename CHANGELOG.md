@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.9 — Metadata for the official MCP Registry
+
+No code change. This release exists so the registry can verify the package:
+
+- `mcpName: io.github.Unselfisheologism/supercarto` added to the npm
+  manifest — the ownership marker the official registry checks before it
+  lists `supercarto`.
+- `mcp-name:` comment added to the README, which ships to PyPI inside both
+  sdist and wheel, so the Python publication verifies the same namespace.
+- `server.json` added at the repo root: npm and PyPI publications, stdio
+  transport, the three optional environment variables spelled out
+  (`SUPERCARTO_OWM_KEY`, `SUPERCARTO_GTFS_URL`, `SUPERCARTO_GTFS_RT`).
+- `publish-mcp.yml` added: on a version tag, installs the Sigstore-verified
+  `mcp-publisher`, waits until npm carries the tag's version, then
+  authenticates with GitHub OIDC and publishes the server metadata to
+  `registry.modelcontextprotocol.io`.
+
 ## 0.5.8 — HTTP parity for the transit surfaces
 
 The HTTP server now carries both transit tools, and the feed-override query
