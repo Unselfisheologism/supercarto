@@ -247,6 +247,18 @@ Mapbox's MCP has none. **Top pick for the next feature.**
 > terrain, weather and daylight in one budgeted answer. Still open from
 > the follow-up list: a `route` that mixes walking spans with transit
 > spans.
+>
+> **Status 2026-10-26: the transit follow-ups are all shipped.** 0.5.6
+> fixed a granting regression — every public entry point (MCP, HTTP, CLI)
+> fetched the realtime overlay and never passed it, so 0.5.4–0.5.5 joined
+> nothing in production while renderer-level tests stayed green. Editorial
+> lesson recorded in lore: pin the wire, not just the renderer. 0.5.7 then
+> shipped `get_transit_route`, closing the follow-up above: walk to a
+> stop, ride one line that serves both catchments, walk it off, certified
+> against the service day, never a two-line interchange (a feed cannot
+> prove one). The remaining wedge versus the transit-only servers is
+> transit **beside** streets, terrain, weather and daylight in one
+> budgeted answer — now a three-tool story instead of a claim.
 
 ### D4 — Coverage gaps as data partnerships (later)
 
