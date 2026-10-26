@@ -154,6 +154,9 @@ tools:
       <li><b>Traffic.</b> Live with a TomTom or HERE key. Without one it reports free-flow and labels it as such.</li>
       <li><b>Indoor floors.</b> Floor-by-floor graphs with lifts collapsed into one vertical link.</li>
       <li><b>Transit schedules.</b> Stops, lines and first/last departures from any GTFS feed, built into the same map. Three honest service states: running, none, unknown - so an agent can answer "can you be somewhere by 9" without guessing.</li>
+      <li><b>Live transit delays.</b> Point it at an agency's GTFS-Realtime TripUpdates feed and predictions join the schedule: a stop with no prediction reads as unknown, not on time.</li>
+      <li><b>Departure board.</b> Each stop lists the next departures in feed order and the feed's own clock, capped and counted - "what comes next" answered where the schedule is.</li>
+      <li><b>Certified ride plan.</b> <code>get_transit_route</code> walks to a stop, rides one line that serves both ends, and walks it off. Certified against the service day; never an interchange a feed cannot prove.</li>
       <li><b>MCP.</b> Works as an MCP tool server for agents.</li>
     </ul>
   </section>
@@ -170,6 +173,8 @@ tools:
         <tr><td>Open-Meteo</td><td>Weather, no key</td></tr>
         <tr><td>TomTom / HERE</td><td>Live traffic, key required</td></tr>
         <tr><td>Terrarium tiles</td><td>Elevation and slope, no key</td></tr>
+        <tr><td>GTFS feed</td><td>Stops, lines and schedules; SUPERCARTO_GTFS or <code>?feed=</code></td></tr>
+        <tr><td>GTFS-Realtime</td><td>Live delay predictions; SUPERCARTO_GTFS_RT, no key</td></tr>
       </tbody>
     </table>
     </div>
