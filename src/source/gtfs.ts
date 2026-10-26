@@ -50,9 +50,23 @@ import { decodeTripUpdatesFeed, type RtFeed, type RtStopUpdate } from './gtfs-rt
  * GTFS permits them between rows.
  */
 export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  parseCsvRows(text, (fields) => rows.push(fields));
+  return rows;
+}
+
+/**
+ * Row-by-row CSV scan: the same RFC 4180 semantics as {@link parseCsv} built
+ * around a callback, so a caller can consume huge tables without materializing
+ * every field at once. The BOM, blank lines, and header handling stay identical;
+ * the callback that wants no blank rows filters them itself (csvRecords does).
+ */
+export function parseCsvRows(
+  text: string,
+  onRow: (fields: string[]) => void,
+): void {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
-  const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
@@ -64,7 +78,7 @@ export function parseCsv(text: string): string[][] {
   };
   const endRow = (): void => {
     endField();
-    rows.push(row);
+    onRow(row);
     row = [];
   };
 
@@ -108,7 +122,6 @@ export function parseCsv(text: string): string[][] {
   // Final field without a trailing line break. A trailing break has already
   // flushed its row above, so the guards keep it from emitting empty rows.
   if (field !== '' || row.length > 0) endRow();
-  return rows;
 }
 
 /**
@@ -151,6 +164,22 @@ const LOCAL_SIG = 0x04034b50;
  * silently wrong decode would present garbage as if it were a schedule.
  */
 export function unzipSync(data: Uint8Array): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  unzipEntries(data, (name, bytes) => {
+    out.set(name, bytes);
+  });
+  return out;
+}
+
+/**
+ * Entry-by-entry zip walk: the same decode as {@link unzipSync} handed to a
+ * callback, so a caller can process the biggest entry and drop its bytes
+ * before the next one instead of holding every inflated entry at once.
+ */
+export function unzipEntries(
+  data: Uint8Array,
+  onEntry: (name: string, bytes: Uint8Array) => void,
+): void {
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
 
   let eocd = -1;
@@ -172,7 +201,6 @@ export function unzipSync(data: Uint8Array): Map<string, Uint8Array> {
     throw new Error('zip64 archives are not supported');
   }
 
-  const out = new Map<string, Uint8Array>();
   let p = cdOffset;
   let parsed = 0;
   while (parsed < entryCount) {
@@ -215,9 +243,8 @@ export function unzipSync(data: Uint8Array): Map<string, Uint8Array> {
     const localExtraLen = dv.getUint16(localOffset + 28, true);
     const dataStart = localOffset + 30 + localNameLen + localExtraLen;
     const raw = data.subarray(dataStart, dataStart + compressedSize);
-    out.set(name, method === 0 ? raw : inflateRawSync(raw));
+    onEntry(name, method === 0 ? raw : inflateRawSync(raw));
   }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,12 +287,6 @@ interface GtfsTrip {
   serviceId: string;
 }
 
-interface GtfsStopTime {
-  stopId: string;
-  /** Minutes from the service day's midnight. May exceed 1440. */
-  dep?: number;
-}
-
 interface GtfsCalendar {
   serviceId: string;
   /** Indexed by JS weekday, 0 = Sunday. */
@@ -275,12 +296,30 @@ interface GtfsCalendar {
   end?: number;
 }
 
+/**
+ * One trip's rows in stop_sequence order, held columnar: the stop ids in one
+ * array and the departure minutes in the other, sharing indexes. A whole-metro
+ * feed carries millions of these rows; row objects would spend an object
+ * header per row and a wrapper during their sort, so the answer is two packed
+ * arrays and a grouping pass that never builds the row form at all.
+ */
+interface TripTimes {
+  /** stop_id per row, stop_sequence order (file order when the feed omits it). */
+  ids: string[];
+  /**
+   * Departure minutes per row (arrival minutes when the feed gives only those),
+   * NaN when the row has no time at all — the untimed-row honesty the old
+   * row-object `dep?: number` carried, in an index's clothing.
+   */
+  deps: number[];
+}
+
 interface Feed {
   stops: Map<string, GtfsStop>;
   routes: Map<string, GtfsRoute>;
   trips: GtfsTrip[];
-  /** Per trip, ordered by stop_sequence. Rows with no time are kept untimed. */
-  stopTimes: Map<string, GtfsStopTime[]>;
+  /** Per trip, ordered by stop_sequence. Untimed rows keep their place. */
+  stopTimes: Map<string, TripTimes>;
   calendar: GtfsCalendar[] | undefined;
   calendarDates: { serviceId: string; date: number; type: number }[] | undefined;
   timezone: string | undefined;
@@ -473,22 +512,26 @@ interface MatchedStop {
  */
 function rowIndexFor(
   s: RtStopUpdate,
-  rows: GtfsStopTime[] | undefined,
+  rows: TripTimes | undefined,
 ): MatchedStop | undefined {
   if (s.stopId !== undefined) {
-    const index = rows ? rows.findIndex((r) => r.stopId === s.stopId) : -1;
+    const index = rows ? rows.ids.indexOf(s.stopId) : -1;
     return {
       stopId: s.stopId,
-      dep: index >= 0 ? rows![index]!.dep : undefined,
+      dep: index >= 0 ? orUndefined(rows!.deps[index]!) : undefined,
       index: Math.max(index, 0),
     };
   }
   const seq = s.stopSequence;
-  if (seq !== undefined && rows && seq >= 1 && seq <= rows.length) {
-    const row = rows[seq - 1]!;
-    return { stopId: row.stopId, dep: row.dep, index: seq - 1 };
+  if (seq !== undefined && rows && seq >= 1 && seq <= rows.ids.length) {
+    return { stopId: rows.ids[seq - 1]!, dep: orUndefined(rows.deps[seq - 1]!), index: seq - 1 };
   }
   return undefined;
+}
+
+/** Columnar race-guard: NaN is the untimed row, the wire-visible truth is undefined. */
+function orUndefined(dep: number): number | undefined {
+  return Number.isNaN(dep) ? undefined : dep;
 }
 
 /** Signed whole seconds, e.g. -45 -> '-45s'. */
@@ -550,9 +593,16 @@ function pushLive(store: Map<string, string[]>, stopId: string, entry: string): 
 const REQUIRED_TABLES = ['stops', 'routes', 'trips', 'stop_times'] as const;
 
 /** Table name -> raw CSV text, from either a directory or a zip archive. */
-function loadTables(feedPath: string): Map<string, string> {
+/**
+ * Feed tables, one at a time: each table's decoded text reaches `process` and
+ * is gone before the next table arrives, so a whole-metro feed spends its
+ * transient memory on one inflated table instead of the whole archive.
+ */
+function loadTables(
+  feedPath: string,
+  process: (name: string, text: string) => void,
+): void {
   const st = statSync(feedPath);
-  const tables = new Map<string, string>();
 
   if (st.isDirectory()) {
     for (const name of readdirSync(feedPath)) {
@@ -561,37 +611,200 @@ function loadTables(feedPath: string): Map<string, string> {
       if (dot <= 0) continue;
       const ext = base.slice(dot + 1);
       if (ext !== 'txt' && ext !== 'csv') continue;
-      tables.set(base.slice(0, dot), readFileSync(path.join(feedPath, name), 'utf8'));
+      process(base.slice(0, dot), readFileSync(path.join(feedPath, name), 'utf8'));
     }
-    return tables;
+    return;
   }
 
-  const zip = unzipSync(new Uint8Array(readFileSync(feedPath)));
-  for (const [name, bytes] of zip) {
+  const decoder = new TextDecoder();
+  unzipEntries(new Uint8Array(readFileSync(feedPath)), (name, bytes) => {
     const dot = name.lastIndexOf('.');
-    if (dot <= 0) continue;
+    if (dot <= 0) return;
     const ext = name.slice(dot + 1).toLowerCase();
-    if (ext !== 'txt' && ext !== 'csv') continue;
+    if (ext !== 'txt' && ext !== 'csv') return;
     const slash = name.lastIndexOf('/');
-    tables.set(name.slice(slash + 1, dot).toLowerCase(), new TextDecoder().decode(bytes));
-  }
-  return tables;
+    process(name.slice(slash + 1, dot).toLowerCase(), decoder.decode(bytes));
+  });
 }
 
-function requireTable(tables: Map<string, string>, name: string): Record<string, string>[] {
-  const text = tables.get(name);
-  if (text === undefined) {
-    throw new Error(`GTFS feed is missing ${name}.txt (or ${name}.csv), which this source requires`);
+/**
+ * stop_times.txt, straight into the columnar per-trip form.
+ *
+ * This is the biggest table by two orders of magnitude on a whole-metro feed,
+ * so it gets no row objects, no keyed records, and no second pass: the row
+ * callback appends into per-trip arrays, stop ids are interned, and the sort
+ * happens on one index permutation per trip. Row semantics are byte-identical
+ * to the old keyed-record path: header cells trimmed, last duplicate header
+ * wins, missing columns read as absent so those rows are skipped, and a row
+ * without its own stop_sequence falls to its file position.
+ */
+function loadStopTimes(text: string, out: Map<string, TripTimes>): void {
+  interface Build {
+    ids: string[];
+    deps: number[];
+    seqs: number[];
   }
-  return csvRecords(text);
+  const builds = new Map<string, Build>();
+  const interned = new Map<string, string>();
+
+  let cols: { trip: number | undefined; stop: number | undefined; dep: number | undefined; arr: number | undefined; seq: number | undefined } = {
+    trip: undefined,
+    stop: undefined,
+    dep: undefined,
+    arr: undefined,
+    seq: undefined,
+  };
+  let header = true;
+
+  parseCsvRows(text, (fields) => {
+    if (header) {
+      header = false;
+      // Header cells are trimmed; a duplicate column name leaves the *last*
+      // column holding the value, which is what the keyed record did too.
+      for (let i = 0; i < fields.length; i++) {
+        const key = fields[i]?.trim();
+        if (key === 'trip_id') cols.trip = i;
+        else if (key === 'stop_id') cols.stop = i;
+        else if (key === 'departure_time') cols.dep = i;
+        else if (key === 'arrival_time') cols.arr = i;
+        else if (key === 'stop_sequence') cols.seq = i;
+      }
+      return;
+    }
+    if (fields.length === 1 && fields[0] === '') return;
+    const tripId = cols.trip === undefined ? '' : fields[cols.trip] ?? '';
+    const stopId = cols.stop === undefined ? '' : fields[cols.stop] ?? '';
+    if (!tripId || !stopId) return;
+    const dep = parseGtfsTime(cols.dep === undefined ? undefined : fields[cols.dep]) ??
+      parseGtfsTime(cols.arr === undefined ? undefined : fields[cols.arr]);
+    let b = builds.get(tripId);
+    if (!b) {
+      b = { ids: [], deps: [], seqs: [] };
+      builds.set(tripId, b);
+    }
+    const seen = interned.get(stopId) ?? stopId;
+    interned.set(stopId, seen);
+    const fallbackSeq = b.ids.length;
+    b.ids.push(seen);
+    b.deps.push(dep === undefined ? Number.NaN : dep);
+    const seq = num(cols.seq === undefined ? undefined : fields[cols.seq]);
+    b.seqs.push(seq === undefined ? fallbackSeq : seq);
+  });
+
+  for (const [tripId, b] of builds) {
+    const order = b.ids.map((_, i) => i);
+    order.sort((x, y) => b.seqs[x]! - b.seqs[y]!);
+    out.set(tripId, {
+      ids: order.map((i) => b.ids[i]!),
+      deps: order.map((i) => b.deps[i]!),
+    });
+  }
 }
 
-function optionalTable(
-  tables: Map<string, string>,
-  name: string,
-): Record<string, string>[] | undefined {
-  const text = tables.get(name);
-  return text === undefined ? undefined : csvRecords(text);
+function loadFeed(feedPath: string): Feed {
+  const stops = new Map<string, GtfsStop>();
+  const routes = new Map<string, GtfsRoute>();
+  const trips: GtfsTrip[] = [];
+  const stopTimes = new Map<string, TripTimes>();
+  let calendar: GtfsCalendar[] = [];
+  let calendarDates: { serviceId: string; date: number; type: number }[] = [];
+  let timezone: string | undefined;
+  let identifiedName: string | undefined;
+  let calendarSeen = false;
+  const seen = new Set<string>();
+
+  loadTables(feedPath, (name, text) => {
+    seen.add(name);
+    switch (name) {
+      case 'stops':
+        for (const r of csvRecords(text)) {
+          const id = r.stop_id?.trim();
+          const lat = num(r.stop_lat);
+          const lon = num(r.stop_lon);
+          if (!id || lat === undefined || lon === undefined) continue;
+          stops.set(id, { id, name: r.stop_name?.trim() || id, lat, lon });
+        }
+        break;
+      case 'routes':
+        for (const r of csvRecords(text)) {
+          const id = r.route_id?.trim();
+          if (!id) continue;
+          const typeWord = ROUTE_TYPES[num(r.route_type) ?? Number.NaN] ?? 'transit';
+          const name = r.route_short_name?.trim() || r.route_long_name?.trim() || id;
+          routes.set(id, { id, typeWord, name, label: `${typeWord} ${name}` });
+        }
+        break;
+      case 'trips':
+        for (const r of csvRecords(text)) {
+          const id = r.trip_id?.trim();
+          if (!id) continue;
+          trips.push({
+            id,
+            routeId: r.route_id?.trim() ?? '',
+            serviceId: r.service_id?.trim() ?? '',
+          });
+        }
+        break;
+      case 'stop_times':
+        loadStopTimes(text, stopTimes);
+        break;
+      case 'calendar':
+        calendarSeen = true;
+        calendar = csvRecords(text).map((r) => ({
+          serviceId: r.service_id?.trim() ?? '',
+          days: [
+            bool(r.sunday),
+            bool(r.monday),
+            bool(r.tuesday),
+            bool(r.wednesday),
+            bool(r.thursday),
+            bool(r.friday),
+            bool(r.saturday),
+          ],
+          start: gtfsDate(r.start_date),
+          end: gtfsDate(r.end_date),
+        }));
+        break;
+      case 'calendar_dates':
+        calendarSeen = true;
+        calendarDates = csvRecords(text).map((r) => ({
+          serviceId: r.service_id?.trim() ?? '',
+          date: gtfsDate(r.date) ?? 0,
+          type: num(r.exception_type) ?? 1,
+        }));
+        break;
+      case 'agency':
+        timezone = csvRecords(text)[0]?.agency_timezone?.trim() || undefined;
+        break;
+      case 'feed_info':
+        identifiedName = csvRecords(text)[0]?.feed_publisher_name?.trim() || undefined;
+        break;
+      default:
+        // A table this feed model has no place for is not an error: real feeds
+        // carry fare rules, shapes and attributions they never mention.
+        break;
+    }
+  });
+
+  const missing = REQUIRED_TABLES.filter((t) => !seen.has(t));
+  if (missing.length > 0) {
+    throw new Error(
+      `GTFS feed is missing table(s) ${missing.join(', ')} (looked in ${feedPath})`,
+    );
+  }
+
+  const calendarPresent = calendarSeen;
+
+  return {
+    stops,
+    routes,
+    trips,
+    stopTimes,
+    calendar: calendarPresent ? calendar : undefined,
+    calendarDates: calendarPresent ? calendarDates : undefined,
+    timezone,
+    identifiedName,
+  };
 }
 
 function num(v: string | undefined): number | undefined {
@@ -646,108 +859,6 @@ export function formatGtfsClock(mins: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function loadFeed(feedPath: string): Feed {
-  const tables = loadTables(feedPath);
-  const missing = REQUIRED_TABLES.filter((t) => !tables.has(t));
-  if (missing.length > 0) {
-    throw new Error(
-      `GTFS feed is missing table(s) ${missing.join(', ')} (looked in ${feedPath})`,
-    );
-  }
-
-  const stops = new Map<string, GtfsStop>();
-  for (const r of requireTable(tables, 'stops')) {
-    const id = r.stop_id?.trim();
-    const lat = num(r.stop_lat);
-    const lon = num(r.stop_lon);
-    if (!id || lat === undefined || lon === undefined) continue;
-    stops.set(id, { id, name: r.stop_name?.trim() || id, lat, lon });
-  }
-
-  const routes = new Map<string, GtfsRoute>();
-  for (const r of requireTable(tables, 'routes')) {
-    const id = r.route_id?.trim();
-    if (!id) continue;
-    const typeWord = ROUTE_TYPES[num(r.route_type) ?? Number.NaN] ?? 'transit';
-    const name = r.route_short_name?.trim() || r.route_long_name?.trim() || id;
-    routes.set(id, { id, typeWord, name, label: `${typeWord} ${name}` });
-  }
-
-  const trips: GtfsTrip[] = [];
-  for (const r of requireTable(tables, 'trips')) {
-    const id = r.trip_id?.trim();
-    if (!id) continue;
-    trips.push({
-      id,
-      routeId: r.route_id?.trim() ?? '',
-      serviceId: r.service_id?.trim() ?? '',
-    });
-  }
-
-  // Rows accumulate per trip and sort on stop_sequence. A missing sequence
-  // falls back to row order, which matches the file's own order for feeds that
-  // omit the column.
-  const byTrip = new Map<string, { seq: number; st: GtfsStopTime }[]>();
-  for (const r of requireTable(tables, 'stop_times')) {
-    const tripId = r.trip_id?.trim();
-    const stopId = r.stop_id?.trim();
-    if (!tripId || !stopId) continue;
-    const dep = parseGtfsTime(r.departure_time) ?? parseGtfsTime(r.arrival_time);
-    const seq = num(r.stop_sequence);
-    const list = byTrip.get(tripId) ?? [];
-    list.push({ seq: seq ?? list.length, st: { stopId, dep } });
-    byTrip.set(tripId, list);
-  }
-  const stopTimes = new Map<string, GtfsStopTime[]>();
-  for (const [tripId, list] of byTrip) {
-    list.sort((a, b) => a.seq - b.seq);
-    stopTimes.set(
-      tripId,
-      list.map((x) => x.st),
-    );
-  }
-
-  const calendarText = optionalTable(tables, 'calendar');
-  const calendar: GtfsCalendar[] = (calendarText ?? []).map((r) => ({
-    serviceId: r.service_id?.trim() ?? '',
-    days: [
-      bool(r.sunday),
-      bool(r.monday),
-      bool(r.tuesday),
-      bool(r.wednesday),
-      bool(r.thursday),
-      bool(r.friday),
-      bool(r.saturday),
-    ],
-    start: gtfsDate(r.start_date),
-    end: gtfsDate(r.end_date),
-  }));
-
-  const calendarDates = (optionalTable(tables, 'calendar_dates') ?? []).map((r) => ({
-    serviceId: r.service_id?.trim() ?? '',
-    date: gtfsDate(r.date) ?? 0,
-    type: num(r.exception_type) ?? 1,
-  }));
-
-  const calendarPresent = calendarText !== undefined || calendarDates.length > 0;
-
-  const timezone =
-    optionalTable(tables, 'agency')?.[0]?.agency_timezone?.trim() || undefined;
-
-  const identifiedName =
-    optionalTable(tables, 'feed_info')?.[0]?.feed_publisher_name?.trim() || undefined;
-
-  return {
-    stops,
-    routes,
-    trips,
-    stopTimes,
-    calendar: calendarPresent ? calendar : undefined,
-    calendarDates: calendarPresent ? calendarDates : undefined,
-    timezone,
-    identifiedName,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Service-day arithmetic
@@ -1115,13 +1226,14 @@ export class GtfsSource implements TransitSource {
 
       // The trip-level delay applies where the feed gave no explicit update.
       if (update.delay !== undefined && rows) {
-        for (let i = 0; i < rows.length; i++) {
+        for (let i = 0; i < rows.ids.length; i++) {
           if (touched.has(i)) continue;
-          const row = rows[i]!;
-          if (row.dep === undefined) continue;
-          pushLive(stops, row.stopId, `${label} ${signed(update.delay)}`);
+          const rowStopId = rows.ids[i]!;
+          const dep = rows.deps[i]!;
+          if (Number.isNaN(dep)) continue;
+          pushLive(stops, rowStopId, `${label} ${signed(update.delay)}`);
           if (update.tripId) {
-            predict.set(`${update.tripId}|${row.stopId}`, signed(update.delay));
+            predict.set(`${update.tripId}|${rowStopId}`, signed(update.delay));
           }
         }
       }
@@ -1193,10 +1305,10 @@ export class GtfsSource implements TransitSource {
     for (const trip of feed.trips) {
       const route = feed.routes.get(trip.routeId);
       if (!route) continue;
-      const times = feed.stopTimes.get(trip.id) ?? [];
-      for (let i = 1; i < times.length; i++) {
-        const from = times[i - 1]!.stopId;
-        const to = times[i]!.stopId;
+      const times = feed.stopTimes.get(trip.id) ?? { ids: [], deps: [] };
+      for (let i = 1; i < times.ids.length; i++) {
+        const from = times.ids[i - 1]!;
+        const to = times.ids[i]!;
         if (from === to) continue;
         const key = `${from}->${to}`;
         const edge = edgePaths.get(key);
@@ -1210,28 +1322,30 @@ export class GtfsSource implements TransitSource {
       // skipped for every trip, leaving empty sets that render as [].
       const onSchedule = serviceToday === undefined || services!.has(trip.serviceId);
       if (!onSchedule) continue;
-      for (const st of times) {
-        let ids = routesAt.get(st.stopId);
+      for (let ri = 0; ri < times.ids.length; ri++) {
+        const stStopId = times.ids[ri]!;
+        let ids = routesAt.get(stStopId);
         if (!ids) {
           ids = new Set();
-          routesAt.set(st.stopId, ids);
+          routesAt.set(stStopId, ids);
         }
         ids.add(route.id);
-        if (trackDepartures && st.dep !== undefined) {
-          const d = departures.get(st.stopId);
+        const stDep = times.deps[ri]!;
+        if (trackDepartures && !Number.isNaN(stDep)) {
+          const d = departures.get(stStopId);
           if (!d) {
-            departures.set(st.stopId, { first: st.dep, last: st.dep });
+            departures.set(stStopId, { first: stDep, last: stDep });
           } else {
-            d.first = Math.min(d.first, st.dep);
-            d.last = Math.max(d.last, st.dep);
+            d.first = Math.min(d.first, stDep);
+            d.last = Math.max(d.last, stDep);
           }
-          if (trackNext && st.dep >= nowMinutes!) {
-            let list = upcoming.get(st.stopId);
+          if (trackNext && stDep >= nowMinutes!) {
+            let list = upcoming.get(stStopId);
             if (!list) {
               list = [];
-              upcoming.set(st.stopId, list);
+              upcoming.set(stStopId, list);
             }
-            list.push({ dep: st.dep, tripId: trip.id, label: route.label });
+            list.push({ dep: stDep, tripId: trip.id, label: route.label });
           }
         }
       }
@@ -1439,11 +1553,11 @@ export class GtfsSource implements TransitSource {
     for (const trip of feed.trips) {
       const rows = feed.stopTimes.get(trip.id);
       if (!rows) continue;
-      for (const row of rows) {
-        let set = routesAt.get(row.stopId);
+      for (const rowStopId of rows.ids) {
+        let set = routesAt.get(rowStopId);
         if (!set) {
           set = new Set();
-          routesAt.set(row.stopId, set);
+          routesAt.set(rowStopId, set);
         }
         set.add(trip.routeId);
       }
@@ -1500,11 +1614,18 @@ export class GtfsSource implements TransitSource {
           // The earliest board row pairs with the first matching later alight
           // row, which is also the loop-line rule: an out-and-back trip boards
           // from the row the rider is standing at.
-          const aIdx = rows.findIndex((r) => r.stopId === anchor.a.id);
+          const aIdx = rows.ids.indexOf(anchor.a.id);
           if (aIdx < 0) continue;
-          const bIdx = rows.findIndex((r, i) => i > aIdx && r.stopId === anchor.b.id);
+          let bIdx = -1;
+          for (let i = aIdx + 1; i < rows.ids.length; i++) {
+            if (rows.ids[i] === anchor.b.id) {
+              bIdx = i;
+              break;
+            }
+          }
           if (bIdx < 0) continue;
-          const dep = rows[aIdx]!.dep;
+          const depRaw = rows.deps[aIdx]!;
+          const dep = Number.isNaN(depRaw) ? undefined : depRaw;
           if (dep === undefined) continue;
           if (dep < nowMinutes!) continue;
           const suffix = rt?.predict?.get(`${trip.id}|${anchor.a.id}`);
@@ -1518,7 +1639,7 @@ export class GtfsSource implements TransitSource {
             b: anchor.b,
             tripId: trip.id,
             dep,
-            arrive: rows[bIdx]!.dep,
+            arrive: orUndefined(rows.deps[bIdx]!),
             rides: bIdx - aIdx,
             suffix,
           });

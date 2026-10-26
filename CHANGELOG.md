@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.1 — whole-metro feeds inside the default heap
+
+The GTFS load path is columnar now. Before this release, `stop_times`
+became one object per row plus a keyed wrapper per row during the sort pass,
+on top of every table held decoded at once; a Translink-SEQ-scale feed (35 MB
+zip, millions of rows) spilled past Node's default heap and operators carried
+`NODE_OPTIONS=--max-old-space-size=4096`. The load:
+
+- streams zip entries one at a time, decoding and parsing each table before
+  the next one touches memory (`unzipEntries` + a load callback);
+- parses `stop_times` without keyed records into per-trip columnar arrays
+  (`TripTimes { ids, deps }`), stop ids interned, sorted through one index
+  permutation per trip — wire semantics unchanged, including the row-order
+  fallback for feeds without `stop_sequence`;
+- keeps CSV semantics in one place: `parseCsvRows` carries the RFC 4180
+  scanner and `parseCsv` sits on top of it.
+
+Verified live on the SEQ feed: the same departure-board query that OOMed on
+Node's default heap now answers on a 512 MB heap, byte-identical, and the
+realtime join holds at scale — 757 trip predictions, feed 32 s old, live
+delay lines on the boards. No interface change; the TypeScript suite (461)
+and the parity gate pass.
+
 ## 0.6.0 — README carries the registry marker in plain text
 
 PyPI renders the package README and strips HTML comments, so the 0.5.9
