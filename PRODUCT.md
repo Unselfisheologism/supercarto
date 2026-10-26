@@ -13,18 +13,27 @@ tell *not there* from *not shown*, so it invents.
 
 ## The product
 
-A compiler, a document format, and nine MCP tools. A budget (say 1024
+A compiler, a document format, and eleven MCP tools. A budget (say 1024
 tokens) buys a compiled maplet of one area: named landmarks, walkable
 connectivity, heat, terrain, weather, omissions recorded per layer.
 
 The tools: `get_maplet`, `localize`, `route`, `search_places`,
 `expand_feature`, `get_terrain`, `get_weather`, `get_traffic`,
-`get_daylight`.
+`get_daylight`, `get_transit`, `get_transit_route`.
 
 `route` answers feasibility on purpose: straight-line distance, compass
 direction, then verify the approach on arrival. It does not pretend to
 navigate. Turn-by-turn comes only from a routing engine the operator has
 verified; none ships by default.
+
+Transit arrives with the same refusal to pretend. `get_transit` reads a
+GTFS feed and names the stops, lines, and service windows around a point;
+with a realtime feed configured, predicted delays join the schedule and a
+stop without a prediction reads as unknown, not on time.
+`get_transit_route` certifies a plan: walk to a stop, ride one line that
+serves both ends, walk it off. It never proposes an interchange, because a
+feed cannot prove one, and it answers "can you be somewhere by 9" without
+guessing.
 
 ## The number to check us on
 
