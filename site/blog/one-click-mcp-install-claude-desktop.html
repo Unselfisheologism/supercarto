@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-webtui-theme="catppuccin-mocha">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install an MCP server in Claude Desktop with one click - supercarto</title>
+  <meta name="description" content="MCPB bundles are the one-click install format for local MCP servers. What they are, what Claude does with them, and supercarto's 384 KB bundle: zero npm dependencies, optional weather and transit configuration at install time.">
+  <link rel="canonical" href="https://supercarto.pages.dev/blog/one-click-mcp-install-claude-desktop">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:title" content="Install an MCP server in Claude Desktop with one click">
+  <meta property="og:description" content=".mcpb is to MCP servers what .vsix is to editor extensions: one double-click, no config file editing. How the format works and what supercarto's bundle carries.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supercarto.pages.dev/blog/one-click-mcp-install-claude-desktop">
+  <meta property="og:image" content="https://supercarto.pages.dev/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Install an MCP server in Claude Desktop with one click",
+    "datePublished": "2026-10-26",
+    "dateModified": "2026-10-26",
+    "author": { "@type": "Organization", "name": "supercarto" },
+    "publisher": { "@type": "Organization", "name": "supercarto" },
+    "url": "https://supercarto.pages.dev/blog/one-click-mcp-install-claude-desktop",
+    "about": ["MCP bundle", "Claude Desktop install", ".mcpb", "MCP server"]
+  }
+  </script>
+  <link rel="stylesheet" href="../webtui.css">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+
+  <header>
+    <nav>
+      <a is-="badge" variant-="foreground0" cap-="round" href="https://supercarto.pages.dev/">supercarto</a>
+      <a is-="badge" variant-="background2" cap-="round">how-to - Oct 2026</a>
+    </nav>
+    <h1>Install an MCP server in Claude Desktop with one click</h1>
+  </header>
+
+  <div is-="separator"></div>
+
+  <section>
+    <p>The standard way to add an MCP server to Claude Desktop is a JSON
+    file: find <code>claude_desktop_config.json</code>, hand-write a
+    <code>mcpServers</code> block with the right command and arguments, paste
+    env keys in the right shape, restart. It works, and it filters out
+    almost everyone who would want the tool but not the ritual.</p>
+
+    <p>The <a href="https://github.com/modelcontextprotocol/mcpb">MCPB
+    bundle</a> format fixes this: a <code>.mcpb</code> file is a zip archive
+    with a <code>manifest.json</code> describing the server, its entry
+    point, and optional install-time configuration. It is to MCP servers
+    what <code>.vsix</code> is to editor extensions. Open the file with
+    Claude Desktop and it unpacks the server, shows any configuration the
+    author declared (API keys, file paths), and starts it when the session
+    needs it.</p>
+
+    <p>supercarto ships one with every release. From the
+    <a href="https://github.com/Unselfisheologism/supercarto/releases/latest">latest
+    release page</a>, take <code>supercarto-X.Y.Z.mcpb</code> — 384 KB — and
+    open it with Claude Desktop. Two reasons the bundle is small: the server
+    has zero npm dependencies (no <code>node_modules</code> inside the
+    archive), and the map source is OpenStreetMap over HTTP, so no data
+    ships in the bundle either. Node 18 or newer is the only requirement on
+    the machine; Claude Desktop bundles Node on the platforms it runs on.</p>
+
+    <p>What the install screen can configure, all optional:</p>
+
+    <ul>
+      <li>an <strong>Open-Meteo API key</strong> — the free tier works
+      without it, the key lifts the rate limit</li>
+      <li>a <strong>GTFS feed path</strong> — a directory of
+      <code>.txt</code> tables or a feed <code>.zip</code>. This is what
+      turns on <code>get_transit</code> and <code>get_transit_route</code>:
+      schedules, departure boards, and a certified single-line ride plan
+      between two coordinates</li>
+      <li>a <strong>GTFS-Realtime TripUpdates URL</strong> — the operator's
+      realtime endpoint for the same feed; boards then show live per-trip
+      delays ("bus 433, +27s") and, just as important, honest absence: a
+      stop with no prediction says unknown, never "on time"</li>
+    </ul>
+
+    <p>Getting the feed path is the operator's part — feeds are per-city
+    and per-operator, and the transit database is loaded locally, so no
+    coordinate of yours leaks into a third-party schedule service. If you
+    want a feed to try, most transit agencies publish theirs openly; search
+    for "&lt;your city&gt; GTFS".</p>
+
+    <h2>Why the manifest says what it says</h2>
+
+    <p>The manifest lists the eight always-on tools and marks the catalog as
+    <code>tools_generated</code>, because <code>get_traffic</code> and the
+    two transit tools appear only when their configuration exists. The
+    alternative — advertising a schedule tool that answers "no feed
+    configured" — reads like "no service" to a model, and that distinction
+    is the whole design center of this project.</p>
+
+    <h2>If you'd rather not click</h2>
+
+    <p>Everything in the bundle is also plain source: <code>npx supercarto
+    mcp</code> runs the same server over stdio, the config-block form still
+    works exactly as documented in the README, and
+    <code>scripts/mcpb.py</code> (38 lines, Python stdlib only) rebuilds the
+    bundle from any checkout.</p>
+
+    <div class="row">
+      <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto/releases/latest">Download the bundle</a>
+      <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto">GitHub</a>
+      <a is-="button" box-="square" href="https://supercarto.pages.dev/#install">Other installs</a>
+    </div>
+  </section>
+
+  <div is-="separator"></div>
+
+  <footer>
+    <p>Written Oct 2026, on the release of supercarto 0.6.2. How the transit
+    tools behave under realtime data: <a
+    href="https://supercarto.pages.dev/blog/get-transit-gtfs-schedules-for-agents">GTFS schedules for agents</a>.
+    supercarto is open source under Apache-2.0.</p>
+  </footer>
+
+</main>
+</body>
+</html>

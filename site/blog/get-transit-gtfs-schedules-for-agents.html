@@ -122,11 +122,12 @@ edges:
 
   <section>
     <h2>Next</h2>
-    <p>Natural follow-ups in order of rider pain: GTFS-Realtime (a delay is
-    what changes the answer for someone already standing at the stop), and a
-    <code>route</code> that mixes walking spans with transit spans under the
-    feasibility stance. Neither has a date yet; the honesty rules get
-    designed before the code.</p>
+    <p>Both landed since this post: GTFS-Realtime TripUpdates decorate the
+    boards with live per-trip delays (and mark absence honestly — "no
+    prediction: unknown, not on time") since 0.5.8, and the certified
+    one-ride-line plan mixed with walking spans shipped as
+    <code>get_transit_route</code> in 0.5.7. Whole-metro feeds load inside
+    Node's default heap since 0.6.1.</p>
     <div class="row">
       <a is-="button" box-="square" href="https://github.com/Unselfisheologism/supercarto">GitHub</a>
       <a is-="button" box-="square" href="https://www.npmjs.com/package/supercarto">npm</a>
