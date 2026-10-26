@@ -1023,7 +1023,9 @@ export class GtfsSource implements TransitSource {
    * This never throws. A schedule answer must keep working when the
    * prediction feed is down, so every failure lands as an `unavailable`
    * overlay with a reason the map note can quote - the honest state, not an
-   * absent `get_transit`.
+   * absent `get_transit`. An unconfigured source answers unavailable with a
+   * reason of "no real-time feed configured", and the note renders that as
+   * the one sentence the state deserves - see `realtimeNote`.
    */
   async realtime(now?: string | Date): Promise<RealtimeOverlay> {
     if (!this.rtConfig) {
@@ -1741,6 +1743,12 @@ function realtimeNote(
     return ['All times are scheduled; no real-time feed is configured.'];
   }
   if (rt.state === 'unavailable') {
+    // A feed that is not configured is a different fact from a feed that is
+    // down: the first says what the deployment is, the second says what the
+    // network is doing. One sentence each, never a merge of the two.
+    if (rt.reason === 'no real-time feed configured') {
+      return ['All times are scheduled; no real-time feed is configured.'];
+    }
     const reason = rt.reason ? ` (${rt.reason})` : '';
     return [`Real-time feed unavailable${reason}; all times shown are scheduled.`];
   }

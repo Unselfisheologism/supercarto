@@ -22,6 +22,13 @@ export interface ApiOptions {
   origin?: string;
   /** Dev origins, to narrow CORS when deploying. */
   devOrigins?: string[];
+  /**
+   * Realtime TripUpdates URL for `?feed=` override queries. Defaults to the
+   * SUPERCARTO_GTFS_RT environment at server start. Without it an override
+   * query silently answers schedule-only, which is the 0.5.6 bug in a new
+   * coat: the join exists but nothing drives it here.
+   */
+  gtfsRtUrl?: string;
 }
 
 const MAX_RADIUS_M = 25_000;
@@ -31,11 +38,13 @@ export class MapApiServer {
   private readonly carto: SuperCarto;
   private readonly maxTokens: number;
   private readonly origin: string;
+  private readonly gtfsRtUrl: string | undefined;
 
   constructor(opts: ApiOptions = {}) {
     this.carto = opts.carto ?? new SuperCarto();
     this.maxTokens = opts.maxTokens ?? 16_384;
     this.origin = opts.origin ?? '*';
+    this.gtfsRtUrl = opts.gtfsRtUrl ?? process.env.SUPERCARTO_GTFS_RT;
   }
 
   /** Build a `node:http` server bound to this API. */
@@ -83,6 +92,11 @@ export class MapApiServer {
       return;
     }
 
+    if (url.pathname === '/transit-route') {
+      await this.transitRoute(url, res);
+      return;
+    }
+
     this.json(res, 404, {
       error: 'not found',
       routes: [
@@ -90,6 +104,7 @@ export class MapApiServer {
         '/maplet?lat=&lon=&radiusM=&budget=',
         '/scr?bbox=w,s,e,n',
         '/transit?lat=&lon=&radiusM=&budget=',
+        '/transit-route?fromLat=&fromLon=&toLat=&toLon=',
       ],
     });
   }
@@ -178,12 +193,9 @@ export class MapApiServer {
     let result: Awaited<ReturnType<SuperCarto['transitAt']>>;
     try {
       if (feedPath) {
-        let source = this.transitFeeds.get(feedPath);
-        if (!source) {
-          source = new GtfsSource(feedPath);
-          this.transitFeeds.set(feedPath, source);
-        }
-        result = source.querySlice({ lat, lon, radiusM, budget, now });
+        const source = this.feedSource(feedPath);
+        const rt = source.realtime ? await source.realtime(now) : undefined;
+        result = source.querySlice({ lat, lon, radiusM, budget, now }, rt);
       } else {
         if (!this.carto.hasTransit) {
           this.json(res, 404, {
@@ -215,6 +227,96 @@ export class MapApiServer {
       edges: result.edges,
       omittedStops: result.prunedStops,
     });
+  }
+
+  /**
+   * `GET /transit-route?fromLat=&fromLon=&toLat=&toLon=&maxWalkM=&budget=&now=[&feed=]`
+   *
+   * One shared ride line between the two coordinates, same words the MCP
+   * tool uses. Realtime rides on exactly the wiring `config.ts` gives the
+   * configured feed: the operator's `SUPERCARTO_GTFS_RT` follows `?feed=`
+   * overrides, and the fresh overlay is fetched and passed in the same
+   * breath - the join-buttressed-elsewhere lesson keeps its shape.
+   */
+  private async transitRoute(url: URL, res: ServerResponse): Promise<void> {
+    const fromLat = numParam(url, 'fromLat');
+    const fromLon = numParam(url, 'fromLon');
+    const toLat = numParam(url, 'toLat');
+    const toLon = numParam(url, 'toLon');
+    if ([fromLat, fromLon, toLat, toLon].some((v) => v === undefined)) {
+      this.json(res, 400, { error: 'fromLat, fromLon, toLat and toLon are required' });
+      return;
+    }
+    for (const v of [fromLat, toLat]) {
+      if (v! < -90 || v! > 90) {
+        this.json(res, 400, { error: 'fromLat and toLat must be in [-90,90]' });
+        return;
+      }
+    }
+    for (const v of [fromLon, toLon]) {
+      if (v! < -180 || v! > 180) {
+        this.json(res, 400, { error: 'fromLon and toLon must be in [-180,180]' });
+        return;
+      }
+    }
+
+    const maxWalkM = clamp(numParam(url, 'maxWalkM', 500), 50, 2000);
+    const budget = clamp(numParam(url, 'budget', DEFAULT_BUDGET), 64, this.maxTokens);
+    const now = url.searchParams.get('now') ?? undefined;
+    const feedPath = url.searchParams.get('feed');
+
+    try {
+      let result: Awaited<ReturnType<SuperCarto['transitRoute']>>;
+      if (feedPath) {
+        const source = this.feedSource(feedPath);
+        const rt = source.realtime ? await source.realtime(now) : undefined;
+        result = source.planTrip!({ from: { lat: fromLat!, lon: fromLon! }, to: { lat: toLat!, lon: toLon! }, maxWalkM, budget, now }, rt);
+      } else {
+        if (!this.carto.hasTransit) {
+          this.json(res, 404, {
+            error:
+              'no GTFS feed configured for this deployment: set SUPERCARTO_GTFS or pass ?feed=<dir|zip>',
+          });
+          return;
+        }
+        result = await this.carto.transitRoute({
+          from: { lat: fromLat!, lon: fromLon! },
+          to: { lat: toLat!, lon: toLon! },
+          maxWalkM,
+          budget,
+          now,
+        });
+      }
+
+      const format = url.searchParams.get('format') ?? 'json';
+      if (format === 'yaml' || format === 'text') {
+        res.writeHead(200, { 'content-type': 'text/yaml; charset=utf-8' });
+        res.end(result.yaml);
+        return;
+      }
+      this.json(res, 200, {
+        yaml: result.yaml,
+        tokens: result.tokens,
+        budget: result.budget,
+        plans: result.plans,
+      });
+    } catch (err) {
+      this.json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /**
+   * The per-feed source cache, with realtime wired the way the configured
+   * feed is: an operator's SUPERCARTO_GTFS_RT follows feed overrides, or an
+   * override query would silently answer schedule-only.
+   */
+  private feedSource(feedPath: string): GtfsSource {
+    let source = this.transitFeeds.get(feedPath);
+    if (!source) {
+      source = new GtfsSource(feedPath, this.gtfsRtUrl ? { url: this.gtfsRtUrl } : undefined);
+      this.transitFeeds.set(feedPath, source);
+    }
+    return source;
   }
 
   private json(res: ServerResponse, status: number, body: unknown): void {

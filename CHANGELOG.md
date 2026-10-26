@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.8 — HTTP parity for the transit surfaces
+
+The HTTP server now carries both transit tools, and the feed-override query
+stops silently dropping realtime:
+
+- `/transit-route` joins `/transit`: the certified ride plan over plain
+  HTTP, same words, `?format=yaml` for direct reads. Rides the same
+  validation, the same `?feed=` override, and the same 64-token budget
+  floor.
+- `?feed=` override queries now fetch the realtime overlay with the
+  operator's `SUPERCARTO_GTFS_RT` (or the new `gtfsRtUrl` server option)
+  and pass it to the renderer. Before this release an override query
+  constructed its source without the realtime URL and never passed an
+  overlay — 0.5.6's bug in a new coat, one layer further out.
+- HTTP tests pin the wire by riding a realtime URL that refuses
+  connections: an override answer whose note says "Real-time feed
+  unavailable" proves the attempt was driven.
+- Note sentence repair: a feed with no realtime URL configured now reads
+  "All times are scheduled; no real-time feed is configured." — the one
+  sentence the state deserves — instead of the contradictory
+  "Real-time feed unavailable (no real-time feed configured)". A not-
+  configured feed is a fact about the deployment; a down feed is a fact
+  about the network. One sentence each.
+
+461 tests passing: 328 unit (42 for the GTFS transit layer, including the
+HTTP endpoints), 121 live, 12 MCP e2e. Parity gate green; Python port
+untouched (HTTP stays TypeScript-first). Note: the sentence repair above
+lies in the TS transit layer only, where every quoted note string lives.
+
 ## 0.5.7 — The certified ride plan
 
 The last transit follow-up from the strategy list: a `route` that mixes

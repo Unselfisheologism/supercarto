@@ -69,6 +69,8 @@ curl 'localhost:8787/maplet?lat=35.6833&lon=139.762&radiusM=400&budget=1500&form
 | `get_weather(lat,lon,hours)` | Current conditions and forecast. |
 | `get_traffic(from,to,mode)` | Drive congestion and realistic arrival time. |
 | `get_daylight(lat,lon,at)` | Sun position, sunrise/sunset, "does the walker need a light". |
+| `get_transit(lat,lon,radiusM,budget)` | Stops, lines, service windows around a point, from the configured GTFS feed. With a realtime feed set, predicted delays join; a stop with no prediction is unknown, not on time. |
+| `get_transit_route(fromLat,fromLon,toLat,toLon,maxWalkM,budget)` | A certified one-line ride plan between two points: walk, ride, walk. Refuses to invent an interchange or certify an uncertifiable day; the note names the leg that failed. |
 
 ## Budget discipline
 

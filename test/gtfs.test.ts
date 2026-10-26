@@ -986,3 +986,65 @@ describe('GtfsSource.planTrip - mixed walking and transit', () => {
     expect(res.yaml.length).toBeGreaterThan(0);
   });
 });
+
+describe('HTTP transit endpoints', () => {
+  // gtfsRtUrl points at a port that refuses connections, so an attempted
+  // realtime fetch fails fast, lands as an unavailable overlay, and the
+  // YAML records it - proof that the wire from env to the override join
+  // was driven, not merely present.
+  let server: import('node:http').Server;
+  let base = '';
+  let rootHttp = '';
+
+  beforeAll(async () => {
+    rootHttp = mkdtempSync(path.join(tmpdir(), 'supercarto-http-'));
+    writeFeed(path.join(rootHttp, 'feed'), FEED_FILES);
+    const { MapApiServer } = await import('../src/server/http.js');
+    const api = new MapApiServer({
+      carto: new SuperCarto({ sources: [] }),
+      gtfsRtUrl: 'http://127.0.0.1:9/tripupdates',
+    });
+    server = api.handler();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    base = `http://127.0.0.1:${(server.address() as unknown as { port: number }).port}`;
+  });
+
+  afterAll(() => {
+    rmSync(rootHttp, { recursive: true, force: true });
+    server?.close();
+  });
+
+  it('serves the schedule slice from a feed override, realtime attempted', async () => {
+    const feed = encodeURIComponent(path.join(rootHttp, 'feed'));
+    const res = await fetch(
+      `${base}/transit?feed=${feed}&lat=37.7749&lon=-122.4194&now=${encodeURIComponent('2026-10-21T17:30:00Z')}&format=yaml`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('transit:');
+    expect(body).toContain('Real-time feed unavailable');
+  });
+
+  it('serves the certified ride plan the same way', async () => {
+    const feed = encodeURIComponent(path.join(rootHttp, 'feed'));
+    const res = await fetch(
+      `${base}/transit-route?feed=${feed}&fromLat=37.7749&fromLon=-122.4194&toLat=37.7775&toLon=-122.4194&now=${encodeURIComponent('2026-10-21T14:00:00Z')}&format=yaml`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('transit_route:');
+    expect(body).toContain('depart 07:00');
+  });
+
+  it('refuses malformed requests with names of what is missing', async () => {
+    const missing = await fetch(`${base}/transit-route`);
+    expect(missing.status).toBe(400);
+    const body = (await missing.json()) as { error: string };
+    expect(body.error).toContain('required');
+
+    const noFeed = await fetch(
+      `${base}/transit-route?fromLat=37.7749&fromLon=-122.4194&toLat=37.7775&toLon=-122.4194`,
+    );
+    expect(noFeed.status).toBe(404);
+  });
+});

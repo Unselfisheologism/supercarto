@@ -353,10 +353,10 @@ SUPERCARTO_GTFS_RT      TripUpdates URL; adds live delay lines to get_transit
 
 Seven tools: `get_maplet`, `route`, `search_places`, `expand_feature`,
 `get_daylight`, `get_terrain`, `get_weather`, plus `get_traffic` when a key is
-present and `get_transit` when a GTFS feed is configured. Each maplet lists
-exactly the tools that deployment can answer, so an agent never calls one that
-cannot work. `get_daylight` is always available: sun position is arithmetic,
-needing no source and no credential.
+present, `get_transit` and `get_transit_route` when a GTFS feed is
+configured. Each maplet lists exactly the tools that deployment can answer,
+so an agent never calls one that cannot work. `get_daylight` is always
+available: sun position is arithmetic, needing no source and no credential.
 
 ### What a maplet says about a place
 
@@ -484,14 +484,13 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-458 tests passing: 325 unit (including 39 for the GTFS transit layer, 14 for the
+461 tests passing: 328 unit (including 42 for the GTFS transit layer, 14 for the
 protobuf wire and TripUpdates schema, 5 for the real-time overlay join, and 7
 for the PNG elevation decoder), 121 against live sources, and 12 MCP
 end-to-end.
-Outputs are byte-identical to the Python port — the parity engine runs on
-every push.
-Verified against live OpenStreetMap, live Open-Meteo, and the live MCP server
-driven from Python.
+Outputs are byte-identical to the Python port - the parity engine runs on
+every push. Verified against live OpenStreetMap, live Open-Meteo, and the
+live MCP server driven from Python.
 
 Implemented: SCR codec (text and binary, delta geometry, ring groups, three heat
 encodings, omissions, routes, refs), Web Mercator with per-axis scale correction,
