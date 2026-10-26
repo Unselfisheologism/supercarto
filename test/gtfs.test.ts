@@ -15,6 +15,7 @@ import {
   SuperCarto,
   type TransitRequest,
   type TransitResult,
+  type TransitSource,
 } from '../src/index.js';
 
 /**
@@ -448,6 +449,19 @@ const stubTransit = {
   }),
 };
 
+// Same session slice but its querySlice records the second argument, so a
+// test can prove the realtime overlay actually travels from transitAt into
+// the join - 0.5.4 shipped computing the overlay and dropping it, which the
+// direct-querySlice tests could not see.
+const recordingTransit = {
+  ...stubTransit,
+  receivedRt: undefined as unknown,
+  querySlice(req: TransitRequest, rt?: unknown): TransitResult {
+    this.receivedRt = rt;
+    return stubTransit.querySlice(req);
+  },
+};
+
 describe('get_transit advertisement', () => {
   it('withholds the tool until a feed is configured', () => {
     // Mirror of the traffic rule: a schedule tool with no feed behind it would
@@ -489,6 +503,34 @@ describe('get_transit advertisement', () => {
     await expect(
       new SuperCarto({ sources: [] }).transitAt({ lat: 37.7749, lon: -122.4194 }),
     ).rejects.toThrow(/no GTFS feed configured/i);
+  });
+
+  it('hands the realtime overlay to the join, not just to the void', async () => {
+    // Grant regressions: 0.5.4 fetched the overlay here and then never
+    // passed it to querySlice, so every public entry point (MCP, HTTP, CLI)
+    // joined nothing and every test that called querySlice directly kept
+    // passing. Recording the second argument is the only way to catch a
+    // join that happens to be wired nowhere.
+    const overlay = {
+      state: 'live',
+      fetchedAt: 1,
+      stops: new Map<string, string[]>(),
+      predict: new Map<string, string>(),
+    } as never;
+    const transit = {
+      ...recordingTransit,
+      realtime: async () => overlay,
+    };
+    const carto = new SuperCarto({ sources: [], transit: transit as unknown as TransitSource });
+    await carto.transitAt({ lat: 37.7749, lon: -122.4194 });
+    expect((transit as { receivedRt?: unknown }).receivedRt).toBe(overlay);
+  });
+
+  it('works against a session source with no realtime configured', async () => {
+    const transit = { ...recordingTransit, realtime: undefined };
+    const carto = new SuperCarto({ sources: [], transit: transit as unknown as TransitSource });
+    await carto.transitAt({ lat: 37.7749, lon: -122.4194 });
+    expect((transit as { receivedRt?: unknown }).receivedRt).toBeUndefined();
   });
 });
 

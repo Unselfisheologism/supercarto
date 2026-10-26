@@ -601,11 +601,14 @@ export class SuperCarto {
     // URL configured gets no overlay and the map note says everything shown
     // is scheduled.
     const overlay = this.transit.realtime ? await this.transit.realtime(req.now) : undefined;
-    return this.transit.querySlice({
-      ...req,
-      radiusM: req.radiusM ?? 400,
-      budget: req.budget ?? this.defaultBudget,
-    });
+    return this.transit.querySlice(
+      {
+        ...req,
+        radiusM: req.radiusM ?? 400,
+        budget: req.budget ?? this.defaultBudget,
+      },
+      overlay,
+    );
   }
 
   /** The full capability set, used for tool advertisement. */

@@ -477,7 +477,7 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-447 tests passing: 314 unit (including 35 for the GTFS transit layer, 14 for the
+449 tests passing: 316 unit (including 37 for the GTFS transit layer, 14 for the
 protobuf wire and TripUpdates schema, 5 for the real-time overlay join, and 7
 for the PNG elevation decoder), 121 against live sources, and 12 MCP
 end-to-end.

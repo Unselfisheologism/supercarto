@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.6 — The join that was wired nowhere
+
+A granting-regression fix, found two releases late:
+
+- `transitAt` (the path every public entry point takes — MCP `get_transit`,
+  the HTTP server, the CLI) fetched the realtime overlay and then never
+  passed it to the schedule renderer. A deployment with `SUPERCARTO_GTFS_RT`
+  set answered with the schedule only and no message saying why. The direct
+  tests kept passing because they called the renderer with the overlay
+  themselves — the wire existed, but nothing was driving it.
+- Fixed in `src/live.ts`, and the `TransitSource` interface now carries the
+  overlay parameter, so a future join wired nowhere fails the type check.
+- Two regression tests pin the wire itself: an overlay-configured session
+  must hand its overlay to the renderer, and a session without realtime
+  must arrive clean.
+
+316 unit tests (was 314); Python port untouched (the join lives in the
+TypeScript-first transit layer); parity gate green.
+
 ## 0.5.5 — The next-departure board
 
 A departure window (`first`/`last`) tells an agent the day's shape; a rider

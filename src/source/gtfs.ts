@@ -315,7 +315,15 @@ export interface TransitResult {
 export interface TransitSource {
   readonly name: string;
   readonly feedName: string;
-  querySlice(req: TransitRequest): TransitResult;
+  /**
+   * The schedule slice around a point. `rt` is the freshly fetched realtime
+   * overlay, optional because nothing guarantees the deployment configured a
+   * realtime feed; 0.5.4 shipped this parameter existing on the only
+   * implementation while every public entry point called without it, which is
+   * why the parameter sits in the interface now - a join wired nowhere is a
+   * regression the type system can hear.
+   */
+  querySlice(req: TransitRequest, rt?: RealtimeOverlay): TransitResult;
   /**
    * Fetch the real-time overlay, when this source carries one.
    *
