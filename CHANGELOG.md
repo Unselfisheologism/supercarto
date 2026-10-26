@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.2 — one-click install in Claude Desktop
+
+Releases now ship `supercarto-X.Y.Z.mcpb`, an [MCPB \
+bundle](https://github.com/modelcontextprotocol/mcpb): download from the \
+release page, open with Claude Desktop, and the server installs with optional \
+install-time configuration (Open-Meteo key, local GTFS feed path, \
+TripUpdates URL). The manifest lists the eight always-on tools and marks the \
+catalog as generated, because `get_traffic` and the two transit tools appear \
+only when their operator config exists - a bundle that advertised a schedule \
+tool with no feed behind it would be the same lie the honest-refusal design \
+exists to prevent. Node >= 18 is the only runtime requirement; with zero npm \
+dependencies the bundle is 0.4 MB. `scripts/mcpb.py` packs it with Python's \
+stdlib, so the packaging step adds no dependency tree either. Validated \
+with the official `mcpb` CLI and by an unpacked-bundle initialize probe.
+
 ## 0.6.1 — whole-metro feeds inside the default heap
 
 The GTFS load path is columnar now. Before this release, `stop_times`

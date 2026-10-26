@@ -351,6 +351,16 @@ their own inflated size; give such a run `NODE_OPTIONS=--max-old-space-size=4096
 
 ## Agent integration
 
+### Claude Desktop (one-click)
+
+Every release ships `supercarto-X.Y.Z.mcpb` — an [MCPB bundle](https://github.com/modelcontextprotocol/mcpb):
+download it from the [latest release](https://github.com/Unselfisheologism/supercarto/releases/latest),
+open it with Claude Desktop, and the maps tools install with one click.
+Optional install-time configuration: an Open-Meteo key for higher weather
+limits, and a local GTFS feed path (plus the operator's TripUpdates URL) for
+the transit tools. Node ≥ 18 is the only requirement; the bundle carries the
+server, which has zero npm dependencies, so it is half a megabyte.
+
 ### MCP
 
 ```json

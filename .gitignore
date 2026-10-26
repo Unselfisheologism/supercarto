@@ -21,3 +21,5 @@ python/dist/
 venv/
 # benchmark archives and reports
 .bench/
+
+*.mcpb
