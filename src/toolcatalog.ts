@@ -127,6 +127,15 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     requiresTransit: true,
   },
   {
+    name: 'get_transit_route',
+    signature: 'get_transit_route(fromLat,fromLon,toLat,toLon,maxWalkM,budget)',
+    use: 'one shared ride line between two coordinates: walk to a stop, ride it, walk it off; certified against the service day, never two-line interchanges',
+    requiresElevation: false,
+    requiresWeather: false,
+    requiresTraffic: false,
+    requiresTransit: true,
+  },
+  {
     name: 'get_daylight',
     signature: 'get_daylight(lat,lon,at)',
     use: 'sun position, sunrise, sunset, and whether a light is needed',

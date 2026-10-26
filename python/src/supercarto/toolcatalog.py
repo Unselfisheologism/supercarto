@@ -43,6 +43,7 @@ TOOL_CATALOG: list[ToolDescriptor] = [
     ToolDescriptor("get_traffic", "get_traffic(from,to,mode)", "congestion and realistic arrival time for a drive", False, False, True, False),
     ToolDescriptor("get_daylight", "get_daylight(lat,lon,at)", "sun position, sunrise, sunset, and whether a light is needed", False, False, False, False),
     ToolDescriptor("get_transit", "get_transit(lat,lon,radiusM,budget)", "transit stops, lines, and service times around a coordinate, from a configured GTFS feed", False, False, False, True),
+    ToolDescriptor("get_transit_route", "get_transit_route(fromLat,fromLon,toLat,toLon,maxWalkM,budget)", "one shared ride line between two coordinates: walk to a stop, ride it, walk it off; certified against the service day, never two-line interchanges", False, False, False, True),
 ]
 
 

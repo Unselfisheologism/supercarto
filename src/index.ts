@@ -186,6 +186,8 @@ export {
   type TransitSource,
   type TransitRequest,
   type TransitResult,
+  type TransitRouteRequest,
+  type TransitRouteResult,
   type RealtimeOverlay,
   type GtfsRealtimeOptions,
 } from './source/gtfs.js';

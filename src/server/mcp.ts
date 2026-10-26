@@ -327,7 +327,10 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
   // Transit mirrors traffic: offered only when a GTFS feed is configured, and
   // always absent - never a "no feed" stub - when it is not, so a missing tool
   // means "no schedule source here" and can never read as "no service".
-  if (carto.hasTransit) tools.push(getTransitTool(carto, maxTokens));
+  if (carto.hasTransit) {
+    tools.push(getTransitTool(carto, maxTokens));
+    tools.push(getTransitRouteTool(carto, maxTokens));
+  }
   // Daylight needs no source and no credential, so it is unconditional.
   tools.push(getDaylightTool());
   // A maplet advertises its tools from the same catalogue, so a tool served
@@ -718,6 +721,71 @@ function getTransitTool(carto: SuperCarto, maxTokens: number): McpTool {
       ];
       if (t.prunedStops > 0) header.push(`# NOTE: ${t.prunedStops} stop(s) pruned to fit the budget.`);
       return text([...header, '', t.yaml].join('\n'));
+    },
+  };
+}
+
+/**
+ * The ride plan tool: one shared line between two coordinates.
+ *
+ * Its description carries the honesty rules the renderer enforces: certified
+ * against the service day, walk legs are straight-line, and the plan is
+ * always a single ride - the renderer refuses to invent an interchange the
+ * feed cannot prove.
+ */
+function getTransitRouteTool(carto: SuperCarto, maxTokens: number): McpTool {
+  return {
+    name: 'get_transit_route',
+    description:
+      'A certified ride plan between two coordinates from the operator\u2019s ' +
+      'configured GTFS feed: walk to a stop, ride one line that serves both ' +
+      'catchments, then walk to the destination. Plans are certified against ' +
+      'the service day in the feed timezone; walk legs are straight-line with ' +
+      'a compass word, not streets. The tool never proposes a two-line ' +
+      'interchange, and when no plan can be certified the note names which ' +
+      'leg failed - no stops in a catchment, no shared line, or the day\u2019s ' +
+      'departures already run. With a realtime feed configured, predicted ' +
+      'delays ride on the departure times and cancelled trips are dropped ' +
+      'from the plans.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromLat: { type: 'number' },
+        fromLon: { type: 'number' },
+        toLat: { type: 'number' },
+        toLon: { type: 'number' },
+        maxWalkM: {
+          type: 'number',
+          description: 'Catchment radius around each end for finding stops. Default 500.',
+          default: 500,
+        },
+        budget: {
+          type: 'number',
+          description: `Token budget for the response. Default 1024, hard cap ${maxTokens}.`,
+          default: 1024,
+        },
+        now: {
+          type: 'string',
+          description:
+            'ISO 8601 instant to judge the service day against. Defaults to now.',
+        },
+      },
+      required: ['fromLat', 'fromLon', 'toLat', 'toLon'],
+    },
+    handler: async (args) => {
+      const budget = clampBudget(args.budget, 1024, maxTokens);
+      const r = await carto.transitRoute({
+        from: { lat: requireNumber(args, 'fromLat'), lon: requireNumber(args, 'fromLon') },
+        to: { lat: requireNumber(args, 'toLat'), lon: requireNumber(args, 'toLon') },
+        maxWalkM: optionalNumber(args, 'maxWalkM', 500),
+        budget,
+        now: typeof args.now === 'string' && args.now !== '' ? args.now : undefined,
+      });
+      const header = [
+        `# transit route`,
+        `# tokens ${r.tokens}/${budget}  plans ${r.plans}`,
+      ];
+      return text([...header, '', r.yaml].join('\n'));
     },
   };
 }

@@ -15,9 +15,10 @@ import {
   SuperCarto,
   type TransitRequest,
   type TransitResult,
+  type TransitRouteRequest,
+  type TransitRouteResult,
   type TransitSource,
 } from '../src/index.js';
-
 /**
  * GTFS transit slice.
  *
@@ -532,6 +533,51 @@ describe('get_transit advertisement', () => {
     await carto.transitAt({ lat: 37.7749, lon: -122.4194 });
     expect((transit as { receivedRt?: unknown }).receivedRt).toBeUndefined();
   });
+
+  it('drives the ride plan from the session with its own overlay pass', async () => {
+    // Same grant as the transitAt wire test, for the route-shaped sibling:
+    // the overlay is fetched by transitRoute and must land on planTrip in
+    // the same breath, because a join wired nowhere is unreachable at test
+    // time and ships as a silent schedule-only answer.
+    const overlay = {
+      state: 'live',
+      fetchedAt: 1,
+      stops: new Map<string, string[]>(),
+      predict: new Map<string, string>(),
+    } as never;
+    let gotRt: unknown;
+    let gotReq: TransitRouteRequest | undefined;
+    const transit = {
+      ...recordingTransit,
+      realtime: async () => overlay,
+      planTrip(req: TransitRouteRequest, rt?: unknown): TransitRouteResult {
+        gotRt = rt;
+        gotReq = req;
+        return {
+          yaml: 'transit_route: {}\n',
+          tokens: 4,
+          budget: req.budget ?? 1024,
+          plans: 0,
+        };
+      },
+    };
+    const carto = new SuperCarto({ sources: [], transit: transit as unknown as TransitSource });
+    const res = await carto.transitRoute({
+      from: { lat: 37.7749, lon: -122.4194 },
+      to: { lat: 37.7775, lon: -122.4194 },
+      budget: 512,
+    });
+    expect(gotRt).toBe(overlay);
+    expect(gotReq?.budget).toBe(512);
+    expect(res.yaml).toContain('transit_route:');
+
+    await expect(
+      new SuperCarto({ sources: [] }).transitRoute({
+        from: { lat: 37.7749, lon: -122.4194 },
+        to: { lat: 37.7775, lon: -122.4194 },
+      }),
+    ).rejects.toThrow(/no GTFS feed configured/i);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -820,5 +866,123 @@ describe('GtfsSource next-departure board', () => {
     const res = query(dir, { now: MORNING });
     expect(res.yaml).toMatch(/Every scheduled departure for these stops has already run/);
     expect(res.yaml).not.toMatch(/next: /);
+  });
+});
+
+describe('GtfsSource.planTrip - mixed walking and transit', () => {
+  // Local 07:00, so T1's 07:00 rows are upcoming at the query instant.
+  const MORNING = '2026-10-21T14:00:00Z';
+  const S1 = { lat: 37.7749, lon: -122.4194 };
+  const S2 = { lat: 37.7762, lon: -122.4194 };
+  const S3 = { lat: 37.7775, lon: -122.4194 };
+  const MID = { lat: 37.77555, lon: -122.4194 }; // ~70m from every stop
+
+  function plan(
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+    req: Partial<TransitRouteRequest> = {},
+    feedName = 'feed',
+    rt?: Parameters<GtfsSource['planTrip']>[1],
+  ): TransitRouteResult {
+    return new GtfsSource(path.join(root, feedName)).planTrip(
+      {
+        from,
+        to,
+        now: MORNING,
+        budget: 4096,
+        ...req,
+      },
+      rt,
+    );
+  }
+
+  it('rides a shared line between the two catchments and certifies the calendar', () => {
+    const res = plan(S1, S3);
+    expect(res.plans).toBe(2);
+    expect(res.yaml).toContain('transit_route:');
+    expect(res.yaml).toContain('direct: 289m straight-line');
+    expect(res.yaml).toMatch(/bus 16: Civic Center 0m \w+, depart 07:00, ride 2 stops, alight 07:10/);
+    expect(res.yaml).toMatch(/tram 9: Market 8th 145m \w+, depart 25:10, ride 1 stop, alight 25:20/);
+    expect(res.yaml).toContain(
+      'Rides follow the GTFS schedule for 2026-10-21 in America/Los_Angeles; walk legs are straight-line, not streets.',
+    );
+  });
+
+  it('rides northbound trips likewise, from the other end', () => {
+    const res = plan(S3, S1);
+    expect(res.plans).toBe(1);
+    expect(res.yaml).toMatch(/depart 08:00, ride 2 stops, alight 08:10/);
+  });
+
+  it('states which leg failed, rather than emitting an empty plan block', () => {
+    const noDest = plan(S1, MID, { maxWalkM: 50 });
+    expect(noDest.plans).toBe(0);
+    expect(noDest.yaml).toContain('No stop within 50m of the destination.');
+
+    const noOrigin = plan(MID, MID, { maxWalkM: 50 });
+    expect(noOrigin.plans).toBe(0);
+    expect(noOrigin.yaml).toContain('No stop within 50m of the origin.');
+  });
+
+  it('refuses to certify on a service-less date', () => {
+    // Oct 31 2026 is a Saturday; SVC1 runs weekdays only and no exception covers it.
+    const res = plan(S1, S3, { now: '2026-10-31T14:00:00Z' });
+    expect(res.plans).toBe(0);
+    expect(res.yaml).toContain('No service runs on this date');
+  });
+
+  it('refuses to certify without a service calendar at all', () => {
+    const res = plan(S1, S3, {}, 'no-calendar');
+    expect(res.plans).toBe(0);
+    expect(res.yaml).toContain('cannot be made');
+  });
+
+  it('drops cancelled trips from the plans and says so', async () => {
+    // T1 boards at S1: cancelling it at the board means the only remaining
+    // certified plan is the tram. A prediction about one trip is not a
+    // prediction about the network.
+    const body = rtFeed(RT_HEADER_TS, [
+      {
+        id: 'rt-T1',
+        trip: rtrip({ tripId: 'T1', routeId: 'R16', stops: [{ stopId: 'S1', rel: 1 }] }),
+      },
+    ]);
+    const { fetch } = rtFetcher(body);
+    const source = new GtfsSource(path.join(root, 'feed'), {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: fetch,
+    });
+    const overlay = await source.realtime(MORNING);
+    const res = plan(S1, S3, {}, 'feed', overlay);
+    expect(res.plans).toBe(1);
+    expect(res.yaml).not.toContain('bus 16:');
+    expect(res.yaml).toMatch(/1 trip realtime marked cancelled is left out/);
+  });
+
+  it('decorates departures with trip-level predictions', async () => {
+    const body = rtFeed(RT_HEADER_TS, [
+      {
+        id: 'rt-T1',
+        trip: rtrip({ tripId: 'T1', routeId: 'R16', delay: -60, stops: [] }),
+      },
+    ]);
+    const { fetch } = rtFetcher(body);
+    const source = new GtfsSource(path.join(root, 'feed'), {
+      url: 'https://rt.example.test/tripupdates',
+      fetchImpl: fetch,
+    });
+    const overlay = await source.realtime(MORNING);
+    const res = plan(S1, S3, {}, 'feed', overlay);
+    expect(res.yaml).toContain('depart 07:00 -60s');
+    // The tram plan survives untouched: a prediction about one trip is not a
+    // prediction about the network.
+    expect(res.plans).toBe(2);
+    expect(res.yaml).toMatch(/tram 9: Market 8th 145m \w+, depart 25:10/);
+  });
+
+  it('stays inside the budget it was given', () => {
+    const res = plan(S1, S3, { budget: 96 });
+    expect(res.tokens).toBeLessThanOrEqual(96);
+    expect(res.yaml.length).toBeGreaterThan(0);
   });
 });

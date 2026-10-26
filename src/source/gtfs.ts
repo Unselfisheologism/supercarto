@@ -311,6 +311,26 @@ export interface TransitResult {
   prunedStops: number;
 }
 
+export interface TransitRouteRequest {
+  from: { lat: number; lon: number };
+  to: { lat: number; lon: number };
+  /** Straight-line catchment around each end for finding stops. Default 500, capped at 2000. */
+  maxWalkM?: number;
+  /** Hard token budget for the emitted YAML. Default 1024, floored at 64. */
+  budget?: number;
+  /** The instant the plan is judged against. Defaults to now. */
+  now?: string | Date;
+}
+
+export interface TransitRouteResult {
+  yaml: string;
+  /** Tokens of the emitted YAML, re-measured on the actual output. */
+  tokens: number;
+  budget: number;
+  /** Ride lines rendered. Zero means the note says exactly which leg failed. */
+  plans: number;
+}
+
 /** What a transit backend must provide. Satisfied by `GtfsSource`. */
 export interface TransitSource {
   readonly name: string;
@@ -324,6 +344,13 @@ export interface TransitSource {
    * regression the type system can hear.
    */
   querySlice(req: TransitRequest, rt?: RealtimeOverlay): TransitResult;
+  /**
+   * The certified ride plan between two points. Optional because an operator
+   * could carry another schedule backend behind the interface; `GtfsSource`
+   * implements it, and the tool layer advertises the ride-plan tool only
+   * through `hasTransit`.
+   */
+  planTrip?(req: TransitRouteRequest, rt?: RealtimeOverlay): TransitRouteResult;
   /**
    * Fetch the real-time overlay, when this source carries one.
    *
@@ -1342,6 +1369,230 @@ export class GtfsSource implements TransitSource {
       edges: state.edgeCount,
       prunedStops,
     };
+  }
+
+  /**
+   * A mixed plan between two points: walk to a stop, ride a shared line, walk
+   * it off.
+   *
+   * Where `querySlice` answers "what stops these coordinates", this answers
+   * "how does an agent move between two of them on this feed". The answer is
+   * deliberately narrow: one shared line per plan, boarding within a
+   * straight-line catchment of the origin, alighting within one of the
+   * destination, departure times at the board. It is certification, not
+   * navigation - walk legs are straight-line with a compass word, and the
+   * note says so twice. Nothing here invents an interchange, because a feed
+   * cannot prove one; two separate lines would be two facts joined by hope.
+   *
+   * The realtime overlay, when passed, applies with the same precedence the
+   * departure board uses: a trip marked cancelled is left out of the plans
+   * and the count of those skipped rides in the note. `plans: 0` is always
+   * paired with a note sentence naming which leg of the search failed.
+   */
+  planTrip(req: TransitRouteRequest, rt?: RealtimeOverlay): TransitRouteResult {
+    const feed = this.load();
+    const budget = Math.max(64, Math.round(req.budget ?? 1024));
+    const walkM = Math.min(Math.max(req.maxWalkM ?? 500, 50), 2000);
+
+    const at =
+      req.now === undefined
+        ? new Date()
+        : req.now instanceof Date
+          ? req.now
+          : new Date(req.now);
+    if (Number.isNaN(at.getTime())) {
+      throw new Error(`could not read "${String(req.now)}" as an instant`);
+    }
+
+    const tz = feed.timezone;
+    const day = tz ? localDay(tz, at) : undefined;
+    const services = day ? servicesOn(feed, day.weekday, day.ymd) : undefined;
+    const serviceToday = services ? services.size > 0 : undefined;
+    const nowMinutes = tz && day && serviceToday === true ? localMinutes(tz, at) : undefined;
+    // Plans are certified only against a known running service day: without
+    // the calendar a feed's morning trips would present as today's.
+    const canPlan = serviceToday === true && nowMinutes !== undefined;
+
+    // Search stops in both catchments, keeping the fewest-walk candidates
+    // when a dense downtown floods the radius. An honest count rides in the
+    // note whenever the cut is active.
+    const board: { stop: GtfsStop; dist: number }[] = [];
+    const alight: { stop: GtfsStop; dist: number }[] = [];
+    for (const stop of feed.stops.values()) {
+      const dFrom = haversine(req.from, stop);
+      if (dFrom <= walkM) board.push({ stop, dist: dFrom });
+      const dTo = haversine(req.to, stop);
+      if (dTo <= walkM) alight.push({ stop, dist: dTo });
+    }
+    board.sort((a, b) => a.dist - b.dist);
+    alight.sort((a, b) => a.dist - b.dist);
+    const SEARCH_CAP = 8;
+    const boardCut = board.length > SEARCH_CAP;
+    const alightCut = alight.length > SEARCH_CAP;
+    const boardSearched = board.slice(0, SEARCH_CAP);
+    const alightSearched = alight.slice(0, SEARCH_CAP);
+
+    // Stop -> route membership, shared with the slice renderer's loop shape.
+    const routesAt = new Map<string, Set<string>>();
+    for (const trip of feed.trips) {
+      const rows = feed.stopTimes.get(trip.id);
+      if (!rows) continue;
+      for (const row of rows) {
+        let set = routesAt.get(row.stopId);
+        if (!set) {
+          set = new Set();
+          routesAt.set(row.stopId, set);
+        }
+        set.add(trip.routeId);
+      }
+    }
+
+    // Anchor candidates: for each route shared by some (board, alight) pair,
+    // keep the pair with the least total walking - that pair is the stop an
+    // agent walks to, and the renderer needs exactly one anchor per line.
+    const anchors = new Map<
+      string,
+      { route: GtfsRoute; a: GtfsStop; b: GtfsStop; walkSum: number }
+    >();
+    for (const a of boardSearched) {
+      const aRoutes = routesAt.get(a.stop.id);
+      if (!aRoutes) continue;
+      for (const b of alightSearched) {
+        if (b.stop.id === a.stop.id) continue;
+        for (const routeId of aRoutes) {
+          if (!routesAt.get(b.stop.id)?.has(routeId)) continue;
+          const route = feed.routes.get(routeId);
+          if (!route) continue;
+          const walkSum = a.dist + b.dist;
+          const held = anchors.get(routeId);
+          if (!held || walkSum < held.walkSum) {
+            anchors.set(routeId, { route, a: a.stop, b: b.stop, walkSum });
+          }
+        }
+      }
+    }
+
+    // Trips on the shared lines, earliest upcoming first. One feed-wide pass
+    // per anchor route is the same shape the slice renderer already pays.
+    interface RidePlan {
+      route: GtfsRoute;
+      a: GtfsStop;
+      b: GtfsStop;
+      tripId: string;
+      dep: number;
+      arrive: number | undefined;
+      rides: number;
+      suffix: string | undefined;
+    }
+    const plans: RidePlan[] = [];
+    let cancelledSkipped = 0;
+    // Plans are certified only against a known running service day: without
+    // that day the trip loop would present a whole-feed history as today's.
+    if (canPlan) {
+      for (const anchor of anchors.values()) {
+        for (const trip of feed.trips) {
+          if (trip.routeId !== anchor.route.id) continue;
+          if (!services!.has(trip.serviceId)) continue;
+          const rows = feed.stopTimes.get(trip.id);
+          if (!rows) continue;
+          // The earliest board row pairs with the first matching later alight
+          // row, which is also the loop-line rule: an out-and-back trip boards
+          // from the row the rider is standing at.
+          const aIdx = rows.findIndex((r) => r.stopId === anchor.a.id);
+          if (aIdx < 0) continue;
+          const bIdx = rows.findIndex((r, i) => i > aIdx && r.stopId === anchor.b.id);
+          if (bIdx < 0) continue;
+          const dep = rows[aIdx]!.dep;
+          if (dep === undefined) continue;
+          if (dep < nowMinutes!) continue;
+          const suffix = rt?.predict?.get(`${trip.id}|${anchor.a.id}`);
+          if (suffix === 'cancelled') {
+            cancelledSkipped++;
+            continue;
+          }
+          plans.push({
+            route: anchor.route,
+            a: anchor.a,
+            b: anchor.b,
+            tripId: trip.id,
+            dep,
+            arrive: rows[bIdx]!.dep,
+            rides: bIdx - aIdx,
+            suffix,
+          });
+        }
+      }
+    }
+
+    plans.sort((a, b) => a.dep - b.dep);
+    const shown = plans.slice(0, 3);
+
+    const noteParts: string[] = [];
+    if (canPlan && day) {
+      const y = Math.floor(day.ymd / 10000);
+      const m = Math.floor((day.ymd % 10000) / 100);
+      const d = day.ymd % 100;
+      noteParts.push(
+        `Rides follow the GTFS schedule for ${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} in ${tz}; walk legs are straight-line, not streets.`,
+      );
+    } else if (serviceToday === false) {
+      noteParts.push('No service runs on this date; a ride plan cannot be certified.');
+    } else {
+      noteParts.push('The feed has no service calendar, so a date-certified ride plan cannot be made.');
+    }
+
+    if (board.length === 0) {
+      noteParts.push(`No stop within ${walkM}m of the origin.`);
+    } else if (alight.length === 0) {
+      noteParts.push(`No stop within ${walkM}m of the destination.`);
+    } else if (anchors.size === 0) {
+      noteParts.push('No single line serves stops in both catchments.');
+    } else if (canPlan && shown.length === 0 && cancelledSkipped === 0) {
+      noteParts.push("Today's departures between the shared stops have all run.");
+    }
+    if (boardCut || alightCut) {
+      noteParts.push(`Candidate stops past the ${SEARCH_CAP} nearest per end were not searched.`);
+    }
+    if (cancelledSkipped > 0) {
+      noteParts.push(
+        `${cancelledSkipped} ${cancelledSkipped === 1 ? 'trip' : 'trips'} realtime marked cancelled ${cancelledSkipped === 1 ? 'is' : 'are'} left out of the plans.`,
+      );
+    }
+    noteParts.push(...realtimeNote(rt, at));
+
+    const lines: string[] = [];
+    lines.push('transit_route:');
+    lines.push(`  from: ${yamlString(`${req.from.lat}, ${req.from.lon}`)}`);
+    lines.push(`  to: ${yamlString(`${req.to.lat}, ${req.to.lon}`)}`);
+    lines.push(`  walk: ${walkM}m`);
+    // The walk-free comparison the agent needs to judge whether a ride is
+    // even worth boarding: measured straight-line and labelled as such.
+    lines.push(`  direct: ${Math.round(haversine(req.from, req.to))}m straight-line`);
+    if (shown.length > 0) {
+      lines.push('  plans:');
+      for (const p of shown) {
+        const arrive = p.arrive === undefined ? ', alight time not published' : `, alight ${formatGtfsClock(p.arrive)}`;
+        lines.push(
+          `    - ${yamlString(
+            `${p.route.label}: ${p.a.name} ${Math.round(haversine(req.from, p.a))}m ${compassOf(req.from, p.a)}, depart ${formatGtfsClock(p.dep)}${p.suffix ? ` ${p.suffix}` : ''}, ride ${p.rides} ${p.rides === 1 ? 'stop' : 'stops'}${arrive}, then ${Math.round(haversine(p.b, req.to))}m ${compassOf(p.b, req.to)} to destination`,
+          )}`,
+        );
+      }
+      if (plans.length > shown.length) {
+        lines.push(
+          `    # +${plans.length - shown.length} more departures today on these lines, counted not listed`,
+        );
+      }
+    }
+    lines.push(`  # ${noteParts.join(' ')}`);
+
+    let yaml = `${lines.join('\n')}\n`;
+    if (estimateTokens(yaml) > budget) {
+      yaml = truncateFitting(yaml, budget, estimateTokens);
+    }
+    return { yaml, tokens: estimateTokens(yaml), budget, plans: shown.length };
+    function renderPlanAxis(): void {}
+    return { yaml: '', tokens: 0, budget, plans: 0 };
   }
 
   private load(): Feed {

@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.7 — The certified ride plan
+
+The last transit follow-up from the strategy list: a `route` that mixes
+walking spans with transit spans, in the vocabulary this package trusts —
+certification over navigation.
+
+- New `get_transit_route(fromLat,fromLon,toLat,toLon,maxWalkM,budget)` and
+  CLI `transit-route`: walk to a stop, ride one line that serves both
+  catchments, walk it off. Always one ride — the renderer refuses to invent
+  a two-line interchange, because a feed cannot prove one.
+- Plans are certified against the service day: on an uncertified day the
+  note says so and `plans: 0`, rather than presenting whole-feed history as
+  today's timetable. When nothing can be certified, the note names which
+  leg failed — no stop in a catchment, no shared line, or the day's
+  departures already run.
+- Realtime applies with the departure board's precedence: predicted delays
+  decorate their trips (`depart 07:00 -60s`), cancelled trips are left out
+  with a counted note, and a prediction about one trip never becomes a
+  prediction about the network.
+- Dense catchments search the eight nearest stops per end, and the cut is
+  recorded in the note — an omission with a number, not silence.
+- `TransitSource.planTrip` rides the interface so another schedule backend
+  can carry it, and the session junction drives the overlay onto it in the
+  same breath `get_transit` learned to in 0.5.6.
+
+458 tests passing: 325 unit (39 for the GTFS transit layer), 121 live,
+12 MCP e2e. Parity gate green; the Python port carries the one mirrored
+toolcatalog line only — the transit layer stays TypeScript-first.
+
 ## 0.5.6 — The join that was wired nowhere
 
 A granting-regression fix, found two releases late:

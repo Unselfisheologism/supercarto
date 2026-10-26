@@ -233,6 +233,13 @@ edges:
   said, so nothing prints twice. When the day's last departure has run, the
   note says the day is over instead of letting an empty board read as a
   broken feed.
+- **A certified ride plan between two coordinates.** `get_transit_route`
+  walks to a stop, rides one line that serves both catchments, and walks it
+  off — all straight-line legs labelled as such, never an interchange the
+  feed cannot prove. Plans ride on the departure board's honesty: certified
+  against the service day, predictions decorate their trips, cancelled
+  trips drop out with a counted note, and when nothing can be certified
+  the note names the leg that failed.
 - **The signal is explicit.** Departure times, the schedule date, and the
   feed's timezone travel in the `note`, where a model reading only the map
   sees them.
@@ -477,7 +484,7 @@ The benchmark task set spans 64°N to 33°S deliberately. A benchmark run only a
 
 ## Status
 
-449 tests passing: 316 unit (including 37 for the GTFS transit layer, 14 for the
+458 tests passing: 325 unit (including 39 for the GTFS transit layer, 14 for the
 protobuf wire and TripUpdates schema, 5 for the real-time overlay join, and 7
 for the PNG elevation decoder), 121 against live sources, and 12 MCP
 end-to-end.

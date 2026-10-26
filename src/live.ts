@@ -41,6 +41,8 @@ import type { GeoJsonFeature } from './ingest/geojson.js';
 import type {
   TransitRequest,
   TransitResult,
+  TransitRouteRequest,
+  TransitRouteResult,
   TransitSource,
 } from './source/gtfs.js';
 import { encodeDocument } from './wire/encode.js';
@@ -605,6 +607,29 @@ export class SuperCarto {
       {
         ...req,
         radiusM: req.radiusM ?? 400,
+        budget: req.budget ?? this.defaultBudget,
+      },
+      overlay,
+    );
+  }
+
+  /**
+   * A certified ride plan between two coordinates on the configured feed.
+   *
+   * Same overlay discipline as `transitAt`: one prediction read per query,
+   * fetched here, passed to the renderer in the same breath - 0.5.6 exists
+   * because a join fetched here and not passed there shipped undetected. The
+   * tool layer never advertises this when no feed is configured.
+   */
+  async transitRoute(req: TransitRouteRequest): Promise<TransitRouteResult> {
+    if (!this.transit) {
+      throw new Error('no GTFS feed configured for this deployment');
+    }
+    const overlay = this.transit.realtime ? await this.transit.realtime(req.now) : undefined;
+    return this.transit.planTrip!.call(
+      this.transit,
+      {
+        ...req,
         budget: req.budget ?? this.defaultBudget,
       },
       overlay,

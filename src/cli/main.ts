@@ -97,6 +97,10 @@ COMMANDS
   transit  Transit stops, lines, and service times from a GTFS feed. Needs
            --feed <dir|zip> or SUPERCARTO_GTFS; without one it refuses, so a
            missing feed never reads as "no service".
+  transit-route  A certified ride plan between two coordinates on the feed:
+           walk to a stop, ride one shared line, walk it off. Refuses to
+           plan on an uncertified service day, and never invents an
+           interchange.
   compile <file.geojson>   Compile a local GeoJSON file into a YAML map graph.
   encode  <file.geojson>   Compile a local file to the SCR wire format.
   decode  <file.scr>       Inspect an SCR document (text or binary).
@@ -116,6 +120,8 @@ LIVE COMMANDS
   traffic --from <lat,lon> --to <lat,lon> [--mode drive]
   transit --feed <dir|zip> --lat <n> --lon <n> [--radiusM 400] [--budget 1024]
           [--now ISO-8601] [--out path]
+  transit-route --feed <dir|zip> --from <lat,lon> --to <lat,lon>
+          [--maxWalkM 500] [--budget 1024] [--now ISO-8601] [--out path]
   serve [--port 8787]
   mcp   [--max-tokens 8192]
 
@@ -344,6 +350,38 @@ async function main(): Promise<void> {
       process.stderr.write(
         `tokens ${res.tokens}/${res.budget}  feed ${res.feedName}  ` +
           `stops ${res.stops}  edges ${res.edges}  pruned ${res.prunedStops}\n`,
+      );
+      return;
+    }
+
+    case 'transit-route': {
+      const from = parseLatLon(String(flags.from ?? ''));
+      const to = parseLatLon(String(flags.to ?? ''));
+      if (!from || !to) {
+        throw new Error('transit-route requires --from <lat,lon> and --to <lat,lon>');
+      }
+      const carto = buildCarto(flags);
+      if (!carto.hasTransit) {
+        process.stderr.write(
+          'no GTFS feed configured: pass --feed <dir|zip> or set SUPERCARTO_GTFS\n',
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const res = await carto.transitRoute({
+        from,
+        to,
+        maxWalkM: num(flags.maxWalkM, 500),
+        budget: num(flags.budget, 1024),
+        now: typeof flags.now === 'string' ? flags.now : undefined,
+      });
+      if (flags.format === 'json') {
+        writeOut(JSON.stringify(res, null, 2) + '\n', flags.out);
+        return;
+      }
+      writeOut(res.yaml, flags.out);
+      process.stderr.write(
+        `tokens ${res.tokens}/${res.budget}  plans ${res.plans}\n`,
       );
       return;
     }
