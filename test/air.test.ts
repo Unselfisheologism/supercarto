@@ -132,18 +132,18 @@ describe('OpenMeteoAir', () => {
 
   it('turns a null gap into NaN rather than clean air', async () => {
     const gap = structuredClone(BODY) as typeof BODY;
-    (gap.current as Record<string, number | string>).__proto__ = null;
+    // Every numeric field nulls out; only the timestamp survives.
     gap.current = {
       time: '2026-10-27T07:00',
       european_aqi: 62,
       us_aqi: 65,
-      pm10: null as unknown as string,
-      pm2_5: null as unknown as string,
-      carbon_monoxide: null as unknown as string,
-      nitrogen_dioxide: null as unknown as string,
-      sulphur_dioxide: null as unknown as string,
-      ozone: null as unknown as string,
-    };
+      pm10: null,
+      pm2_5: null,
+      carbon_monoxide: null,
+      nitrogen_dioxide: null,
+      sulphur_dioxide: null,
+      ozone: null,
+    } as unknown as typeof gap.current;
     const src = airWith(gap as never);
     const res = await src.fetch(35.68, 139.76);
     expectResult(res);
