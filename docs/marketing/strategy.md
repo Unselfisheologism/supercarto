@@ -311,7 +311,28 @@ Concrete implications:
 
 ---
 
-*Decision log:* no VC-fund Ambition in v1; compounding distribution assets
+## 8-f. Gaps an independent agent audit surfaced (2026-10-27)
+
+A working agent evaluated supercarto against a full geospatial needs
+list. Half its ❌s were stale (localize/search_places, POI hours, GTFS
+timetables, indoor floors all shipped). The genuinely-missing items are
+now explicit roadmap lines, in priority order:
+
+1. **POI attributes beyond OSM** — ratings, contact, "open right now"
+   (Foursquare pairing; honest-state only, never guess).
+2. **AQI + civic alerts** — flood/monsoon levels as its own source with
+   the honesty grammar (flood: assertion, absence, or unknown).
+3. **Live road closures** — beyond keyed traffic's worst-segment.
+4. **India fare models** — auto fare tables; needed for transport promise.
+5. **Boundaries/compliance layer** — ward/pincode answer for what's
+   available where ( clears a long-standing fixing need for DPDP-type queries).
+6. **Imagery hook** — deliberate exclusion for now; revisit only as a
+   pointer to source URLs, never bytes in a maplet.
+
+---
+
+*Decision log:* no VC-funded ambition in v1; compounding distribution
+assets
 (npm/PyPI/registry listings, HF dataset, docs) before paid traffic; every
 claim in this document must satisfy the honesty rules applied to
 supercarto's own tools — numbers sourced or marked ~.
