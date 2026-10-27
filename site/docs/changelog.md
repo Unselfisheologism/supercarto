@@ -4,6 +4,7 @@ Every supercarto release, newest first, sourced from GitHub Releases.
 
 ## 2026
 
+- [0.7.0 — air quality joins the honest decision set](https://supercarto.pages.dev/docs/changelog/v0-7-0) — 2026-10-27, Release
 - [0.6.2 — one-click install in Claude Desktop (MCPB bundle)](https://supercarto.pages.dev/docs/changelog/v0-6-2) — 2026-10-26, Release
 - [0.6.1 — whole-metro feeds inside the default heap](https://supercarto.pages.dev/docs/changelog/v0-6-1) — 2026-10-26, Release
 - [0.6.0 — registry marker in plain text](https://supercarto.pages.dev/docs/changelog/v0-6-0) — 2026-10-26, Release

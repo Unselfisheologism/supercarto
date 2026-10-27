@@ -23,6 +23,7 @@
 - [search_places and expand_feature](https://supercarto.pages.dev/docs/tools/search-places): Query a maplet by name or type, then expand one feature's exact geometry on demand.
 - [get_terrain and get_daylight](https://supercarto.pages.dev/docs/tools/get-terrain): Ground elevation and slope, sun position, sunrise and sunset — arithmetic and tiles, no keys.
 - [get_weather](https://supercarto.pages.dev/docs/tools/get-weather): Keyless current conditions and forecast, with a degraded path that refuses to invent readings.
+- [get_air](https://supercarto.pages.dev/docs/tools/get-air): Keyless air quality with the honest-path guarantees - gases named only when elevated, unknown never rendered as zero.
 - [get_traffic](https://supercarto.pages.dev/docs/tools/get-traffic): Live congestion with a provider key; labelled free-flow without one.
 - [get_transit and get_transit_route](https://supercarto.pages.dev/docs/tools/get-transit): Schedules, departure boards, live delays, and a certified ride plan — honest in all three service states.
 
@@ -40,6 +41,7 @@
 
 ## Changelog
 
+- [0.7.0 — air quality joins the honest decision set](https://supercarto.pages.dev/docs/changelog/v0-7-0): — air quality joins the honest decision set get_air reads the Open-Meteo Air Quality API (CAMS data; keyless, no account) and answers the question weather…
 - [0.6.2 — one-click install in Claude Desktop (MCPB bundle)](https://supercarto.pages.dev/docs/changelog/v0-6-2): Navigate to the release assets and grab supercarto-0.6.2.mcpb (384 KB). Open it with Claude Desktop and the maps tools install: the server runs from the…
 - [0.6.1 — whole-metro feeds inside the default heap](https://supercarto.pages.dev/docs/changelog/v0-6-1): The GTFS load path is columnar: zip entries stream one at a time and stop_times go straight into per-trip arrays (no row objects, ids interned, sorted via one…
 - [0.6.0 — registry marker in plain text](https://supercarto.pages.dev/docs/changelog/v0-6-0): The official MCP registry's PyPI validation reads the rendered package description, which strips HTML comments. The 0.5.9 comment-form marker never reached…

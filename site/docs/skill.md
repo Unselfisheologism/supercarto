@@ -38,6 +38,7 @@ This skill points you at the supercarto docs, at https://supercarto.pages.dev/do
 - [search_places and expand_feature](https://supercarto.pages.dev/docs/tools/search-places.md): Query a maplet by name or type, then expand one feature's exact geometry on demand.
 - [get_terrain and get_daylight](https://supercarto.pages.dev/docs/tools/get-terrain.md): Ground elevation and slope, sun position, sunrise and sunset — arithmetic and tiles, no keys.
 - [get_weather](https://supercarto.pages.dev/docs/tools/get-weather.md): Keyless current conditions and forecast, with a degraded path that refuses to invent readings.
+- [get_air](https://supercarto.pages.dev/docs/tools/get-air.md): Keyless air quality with the honest-path guarantees - gases named only when elevated, unknown never rendered as zero.
 - [get_traffic](https://supercarto.pages.dev/docs/tools/get-traffic.md): Live congestion with a provider key; labelled free-flow without one.
 - [get_transit and get_transit_route](https://supercarto.pages.dev/docs/tools/get-transit.md): Schedules, departure boards, live delays, and a certified ride plan — honest in all three service states.
 

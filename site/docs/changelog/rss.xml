@@ -6,6 +6,13 @@
   <description>Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in.</description>
   <atom:link href="https://supercarto.pages.dev/docs/changelog/rss.xml" rel="self" type="application/rss+xml" />
   <item>
+    <title>0.7.0 — air quality joins the honest decision set</title>
+    <link>https://supercarto.pages.dev/docs/changelog/v0-7-0</link>
+    <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-7-0</guid>
+    <description>— air quality joins the honest decision set get_air reads the Open-Meteo Air Quality API (CAMS data; keyless, no account) and answers the question weather…</description>
+    <pubDate>Tue, 27 Oct 2026 07:34:53 GMT</pubDate>
+  </item>
+  <item>
     <title>0.6.2 — one-click install in Claude Desktop (MCPB bundle)</title>
     <link>https://supercarto.pages.dev/docs/changelog/v0-6-2</link>
     <guid isPermaLink="true">https://supercarto.pages.dev/docs/changelog/v0-6-2</guid>

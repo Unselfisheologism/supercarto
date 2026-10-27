@@ -53,7 +53,7 @@ Sync (no event loop), keyless, zero dependencies.
 ```python
 from supercarto.live import SuperCarto
 
-carto = SuperCarto()  # Overpass + Open-Meteo + OSRM by default
+carto = SuperCarto()  # Overpass + Open-Meteo (weather & air) + OSRM by default
 m = carto.maplet(37.7599, -122.4142, radius_m=400, budget=1500)
 print(m["yaml"])          # budget-verified YAML, same shape as the Node server
 print(m["fetchedFrom"], m["fetchMs"], m["sourceTruncated"])
@@ -166,6 +166,25 @@ w.feels_like_c     # what a person actually feels
 w.advisory         # prose, in the vocabulary of the decision
 ```
 
+### Air
+
+No API key needed either. `air()` answers the question weather cannot:
+whether the outing costs the person part of their day.
+
+```python
+a = await carto.air(35.6833, 139.7620, hours=12)
+
+a.band             # "poor" — European AQI named in words
+a.european_aqi     # 62.0, and a.us_aqi alongside
+a.pm25             # 28.1 µg/m³
+a.elevated_gases   # ['NO2 63.5'] — gases named only when above the good range
+a.advisory         # "poor air - sensitive groups should shorten outdoor exertion"
+```
+
+Every reading is `None` when the source is unreachable, and the advisory
+says so. A missing gas reading is never a zero: a zero invented from a gap
+is how a tool certifies airspace as clean.
+
 ### Traffic
 
 Needs `TOMTOM_API_KEY` or `HERE_API_KEY` in the environment.
@@ -221,6 +240,7 @@ SUPERCARTO_PMTILES      PMTiles archive; the production data source
 OVERPASS_ENDPOINT       your own Overpass instance
 TOMTOM_API_KEY          enables live traffic
 HERE_API_KEY            enables live traffic
+SUPERCARTO_NO_AIR=1     turns the air-quality tool off for this deployment
 ```
 
 Point at a specific binary with `SUPERCARTO_SERVER_CMD`, or pass `command=[...]`

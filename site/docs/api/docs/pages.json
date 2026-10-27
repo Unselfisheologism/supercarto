@@ -1,11 +1,11 @@
 {
-  "count": 35,
+  "count": 37,
   "generator": "blume@2.2.6",
   "pages": [
     {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/index.json",
-      "lastModified": "2026-10-26T18:57:15+05:30",
+      "lastModified": "2026-10-26T22:05:49+05:30",
       "locale": "",
       "markdownUrl": "https://supercarto.pages.dev/docs/index.md",
       "route": "/",
@@ -154,6 +154,16 @@
       "url": "https://supercarto.pages.dev/docs/changelog/v0-6-2"
     },
     {
+      "contentType": "changelog",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-7-0.json",
+      "lastModified": "2026-10-27T07:34:53Z",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-7-0.md",
+      "route": "/changelog/v0-7-0",
+      "title": "0.7.0 — air quality joins the honest decision set",
+      "url": "https://supercarto.pages.dev/docs/changelog/v0-7-0"
+    },
+    {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/concepts/accuracy.json",
       "lastModified": "2026-10-26T18:57:15+05:30",
@@ -167,7 +177,7 @@
     {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/concepts/budget.json",
-      "lastModified": "2026-10-26T18:57:15+05:30",
+      "lastModified": "2026-10-26T22:05:49+05:30",
       "locale": "",
       "markdownUrl": "https://supercarto.pages.dev/docs/concepts/budget.md",
       "route": "/concepts/budget",
@@ -189,7 +199,7 @@
     {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/faq.json",
-      "lastModified": "2026-10-26T18:57:15+05:30",
+      "lastModified": "2026-10-26T22:05:49+05:30",
       "locale": "",
       "markdownUrl": "https://supercarto.pages.dev/docs/faq.md",
       "route": "/faq",
@@ -255,7 +265,7 @@
     {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/interfaces/python.json",
-      "lastModified": "2026-10-26T18:57:15+05:30",
+      "lastModified": "2026-10-26T22:05:49+05:30",
       "locale": "",
       "markdownUrl": "https://supercarto.pages.dev/docs/interfaces/python.md",
       "route": "/interfaces/python",
@@ -266,7 +276,7 @@
     {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/quick-start.json",
-      "lastModified": "2026-10-26T18:57:15+05:30",
+      "lastModified": "2026-10-27T12:59:04+05:30",
       "locale": "",
       "markdownUrl": "https://supercarto.pages.dev/docs/quick-start.md",
       "route": "/quick-start",
@@ -277,13 +287,24 @@
     {
       "contentType": "doc",
       "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools.json",
-      "lastModified": "2026-10-26T18:57:15+05:30",
+      "lastModified": "2026-10-27T12:59:04+05:30",
       "locale": "",
       "markdownUrl": "https://supercarto.pages.dev/docs/tools.md",
       "route": "/tools",
       "title": "The tools",
       "url": "https://supercarto.pages.dev/docs/tools",
       "description": "The eleven tools a supercarto deployment advertises, and exactly when each one exists."
+    },
+    {
+      "contentType": "doc",
+      "json": "https://supercarto.pages.dev/docs/api/docs/pages/tools/get-air.json",
+      "lastModified": "2026-10-27T12:59:04+05:30",
+      "locale": "",
+      "markdownUrl": "https://supercarto.pages.dev/docs/tools/get-air.md",
+      "route": "/tools/get-air",
+      "title": "get_air",
+      "url": "https://supercarto.pages.dev/docs/tools/get-air",
+      "description": "Keyless air quality with the honest-path guarantees - gases named only when elevated, unknown never rendered as zero."
     },
     {
       "contentType": "doc",

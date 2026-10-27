@@ -108,6 +108,13 @@
           "route": "/tools/get-weather"
         },
         {
+          "description": "Keyless air quality with the honest-path guarantees - gases named only when elevated, unknown never rendered as zero.",
+          "kind": "page",
+          "label": "get_air",
+          "pageId": "filesystem:tools/get-air.mdx",
+          "route": "/tools/get-air"
+        },
+        {
           "description": "Live congestion with a provider key; labelled free-flow without one.",
           "kind": "page",
           "label": "get_traffic",
@@ -191,6 +198,12 @@
     },
     {
       "children": [
+        {
+          "kind": "page",
+          "label": "0.7.0 — air quality joins the honest decision set",
+          "pageId": "changelog:v0-7-0.md",
+          "route": "/changelog/v0-7-0"
+        },
         {
           "kind": "page",
           "label": "0.6.2 — one-click install in Claude Desktop (MCPB bundle)",

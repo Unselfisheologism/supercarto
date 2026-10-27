@@ -19,6 +19,7 @@ read like a guess.
 | `expand_feature` | nothing | exact geometry for one feature |
 | `get_terrain` | nothing | ground elevation and slope |
 | `get_weather` | nothing | current conditions and forecast |
+| `get_air` | nothing | AQI bands, particulates, and the window forecast |
 | `get_daylight` | nothing | sun position, sunrise, sunset |
 | `get_traffic` | TomTom or HERE key | congestion and realistic arrival time |
 | `get_transit` | GTFS feed | stops, lines, service times, departure boards |
@@ -53,6 +54,10 @@ Ground truth and sun position; no key, no archive.
 **[get_weather](/docs/tools/get-weather)**
 
 Keyless forecast with a degraded path that refuses to invent readings.
+
+**[get_air](/docs/tools/get-air)**
+
+Keyless air quality; gases named only when elevated.
 
 **[get_traffic](/docs/tools/get-traffic)**
 

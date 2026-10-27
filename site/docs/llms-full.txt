@@ -241,6 +241,34 @@ The manifest marks the tool catalog as generated, mirroring the server's own hon
 
 ---
 
+# 0.7.0 — air quality joins the honest decision set
+Source: https://supercarto.pages.dev/docs/changelog/v0-7-0
+
+— air quality joins the honest decision set
+
+`get_air` reads the Open-Meteo Air Quality API (CAMS data; keyless, no
+account) and answers the question weather cannot: whether the outing costs
+the person part of their day. European and US AQI with the band named in
+words, PM2.5 and PM10, an hourly window trimmed to start at "now", and the
+worst point in the window. Gases are named only when they clear their own
+good bound on the European scale, so a clean day costs four tokens instead
+of twelve. Every answer carries its grid offset: CAMS resolves at ~11 km,
+and an agent quoting one reading for a metro that is four districts apart
+should know the sample was taken upwind of where the person stands.
+
+A missing gas reading renders `unknown`, never 0 - the same rule weather set
+for precipitation, because a zero invented from a gap is the one way a tool
+certifies airspace as clean. Deployment toggles: `SUPERCARTO_NO_AIR=1`
+removes the tool everywhere; the MCP layer stops advertising it rather than
+serving an "unconfigured" stub, same as weather's switch. TS and Python
+share the port with byte-parity tests on both sides.
+
+**Install:** `npm i supercarto@0.7.0` · `pip install supercarto==0.7.0` · one-click [.mcpb](https://github.com/modelcontextprotocol/mcpb) below for Claude Desktop.
+
+**Docs:** [https://supercarto.pages.dev/tools/get-air](/docs/tools/get-air)
+
+---
+
 # Accuracy
 Source: https://supercarto.pages.dev/docs/concepts/accuracy
 
@@ -841,9 +869,9 @@ Standard `mcpServers` configuration for any MCP client:
 One-click Claude Desktop install, install-time keys, and the honest
 "tools_generated" manifest are covered in [MCP and Claude Desktop](/docs/interfaces/mcp).
 
-Eight tools advertise out of the box (`get_maplet`, `localize`, `route`,
-`search_places`, `expand_feature`, `get_terrain`, `get_weather`,
-`get_daylight`). Three more appear only when their configuration exists —
+Nine tools advertise out of the box (`get_maplet`, `localize`, `route`,
+`search_places`, `expand_feature`, `get_terrain`, `get_weather`, `get_air`,
+`get_daylight`). Two more appear only when their configuration exists —
 see [the tools](/docs/tools).
 
 ## Deployment surfaces
@@ -883,6 +911,7 @@ read like a guess.
 | `expand_feature` | nothing | exact geometry for one feature |
 | `get_terrain` | nothing | ground elevation and slope |
 | `get_weather` | nothing | current conditions and forecast |
+| `get_air` | nothing | AQI bands, particulates, and the window forecast |
 | `get_daylight` | nothing | sun position, sunrise, sunset |
 | `get_traffic` | TomTom or HERE key | congestion and realistic arrival time |
 | `get_transit` | GTFS feed | stops, lines, service times, departure boards |
@@ -918,6 +947,10 @@ Ground truth and sun position; no key, no archive.
 
 Keyless forecast with a degraded path that refuses to invent readings.
 
+**[get_air](/docs/tools/get-air)**
+
+Keyless air quality; gases named only when elevated.
+
 **[get_traffic](/docs/tools/get-traffic)**
 
 Live with a key; labelled free-flow without one.
@@ -925,6 +958,65 @@ Live with a key; labelled free-flow without one.
 **[get_transit / get_transit_route](/docs/tools/get-transit)**
 
 Schedules, boards, live delays, and the certified ride plan.
+
+---
+
+# get_air
+Source: https://supercarto.pages.dev/docs/tools/get-air
+
+always advertised
+
+`get_air(lat, lon, hours)` — air quality now and over a forecast window,
+from the Open-Meteo Air Quality API (CAMS data). No key, no account, no
+billing.
+
+## What it reports
+
+- **European AQI** with the band named in words, plus the **US EPA AQI**
+  (prompts quote either scale).
+- **PM2.5 and PM10**, the particulate fractions a person is told about.
+- Gases — NO2, O3, SO2, CO — named only when they clear their own
+  `good` bound on the European scale.
+- An hourly window trimmed to start at "now", plus the worst point in
+  the window.
+- The distance to the sample grid point, always, above 2 km.
+
+## Prose, not fields
+
+Like weather, the MCP tool answers in prose a model can act on directly:
+
+```text
+$ supercarto air --lat 35.6833 --lon 139.762
+now  air poor (AQI 62 EU, 65 US), PM2.5 28.1µg/m³, PM10 29.7µg/m³
+     gases above good range: NO2 63.5µg/m³
+  2026-10-27T08:00:00Z  AQI 74  33.4µg/m³ PM2.5
+```
+
+An advisory line closes every answer, in the cost framing public-health
+agencies use: "poor air - sensitive groups should shorten outdoor
+exertion", never a verdict on an individual.
+
+## Two honest-number rules
+
+:::danger[Unknown is not zero]
+A missing gas reading renders `unknown`, not `0`. A zero invented from a
+source gap is the one way an air tool certifies airspace as clean - a
+model handed `pm25UgM3: 0` will tell a person with asthma it is safe
+outside.
+:::
+
+:::note[Where the sample was taken]
+The source resolves a coordinate onto a ~11 km model grid, not onto a
+station. Every answer states how far the grid point sits from the
+requested coordinate. One reading does not cover four districts of a
+metro, and an agent quoting it should say so.
+:::
+
+## Turned off, not stubbed
+
+`SUPERCARTO_NO_AIR=1` removes the tool everywhere and the MCP layer stops
+advertising it: an agent never calls a tool that can only answer
+"unconfigured for this deployment".
 
 ---
 

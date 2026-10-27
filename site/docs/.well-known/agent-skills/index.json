@@ -3,7 +3,7 @@
   "skills": [
     {
       "description": "Read the supercarto docs instead of answering from memory. Documentation for supercarto — token-budgeted map context for AI agents: one call returns a walkable topological graph of any coordinate, with weather, terrain, daylight, indoor floors and GTFS transit built in. Use when a task involves supercarto: how it works, how to set it up or configure it, or its API.",
-      "digest": "sha256:d3ca0810b8013f2ebcab276a592cac6d8a7cff6990a2609ffdbbee1a8defaa8a",
+      "digest": "sha256:d806503fce1049987d6d1a3f83e1a6dcdcd3a12e27a83f7038e1fcaed9bfcc42",
       "name": "supercarto",
       "type": "skill-md",
       "url": "/docs/.well-known/agent-skills/supercarto/SKILL.md"

@@ -1,0 +1,11 @@
+{
+  "contentType": "changelog",
+  "json": "https://supercarto.pages.dev/docs/api/docs/pages/changelog/v0-7-0.json",
+  "lastModified": "2026-10-27T07:34:53Z",
+  "locale": "",
+  "markdownUrl": "https://supercarto.pages.dev/docs/changelog/v0-7-0.md",
+  "route": "/changelog/v0-7-0",
+  "title": "0.7.0 — air quality joins the honest decision set",
+  "url": "https://supercarto.pages.dev/docs/changelog/v0-7-0",
+  "markdown": "---\nchangelog:\n  category: Release\n  version: 0.7.0\ndate: '2026-10-27T07:34:53Z'\nseo:\n  description: >-\n    — air quality joins the honest decision set get_air reads the Open-Meteo Air\n    Quality API (CAMS data; keyless, no account) and answers the question\n    weather…\ntitle: 0.7.0 — air quality joins the honest decision set\ntype: changelog\n---\n— air quality joins the honest decision set\n\n`get_air` reads the Open-Meteo Air Quality API (CAMS data; keyless, no\naccount) and answers the question weather cannot: whether the outing costs\nthe person part of their day. European and US AQI with the band named in\nwords, PM2.5 and PM10, an hourly window trimmed to start at \"now\", and the\nworst point in the window. Gases are named only when they clear their own\ngood bound on the European scale, so a clean day costs four tokens instead\nof twelve. Every answer carries its grid offset: CAMS resolves at ~11 km,\nand an agent quoting one reading for a metro that is four districts apart\nshould know the sample was taken upwind of where the person stands.\n\nA missing gas reading renders `unknown`, never 0 - the same rule weather set\nfor precipitation, because a zero invented from a gap is the one way a tool\ncertifies airspace as clean. Deployment toggles: `SUPERCARTO_NO_AIR=1`\nremoves the tool everywhere; the MCP layer stops advertising it rather than\nserving an \"unconfigured\" stub, same as weather's switch. TS and Python\nshare the port with byte-parity tests on both sides.\n\n**Install:** `npm i supercarto@0.7.0` · `pip install supercarto==0.7.0` · one-click [.mcpb](https://github.com/modelcontextprotocol/mcpb) below for Claude Desktop.\n\n**Docs:** [https://supercarto.pages.dev/tools/get-air](/docs/tools/get-air)\n"
+}

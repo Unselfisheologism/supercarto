@@ -1,0 +1,61 @@
+---
+title: get_air
+description: Keyless air quality with the honest-path guarantees - gases named only when elevated, unknown never rendered as zero.
+sidebar:
+  label: get_air
+  order: 6
+---
+
+always advertised
+
+`get_air(lat, lon, hours)` — air quality now and over a forecast window,
+from the Open-Meteo Air Quality API (CAMS data). No key, no account, no
+billing.
+
+## What it reports
+
+- **European AQI** with the band named in words, plus the **US EPA AQI**
+  (prompts quote either scale).
+- **PM2.5 and PM10**, the particulate fractions a person is told about.
+- Gases — NO2, O3, SO2, CO — named only when they clear their own
+  `good` bound on the European scale.
+- An hourly window trimmed to start at "now", plus the worst point in
+  the window.
+- The distance to the sample grid point, always, above 2 km.
+
+## Prose, not fields
+
+Like weather, the MCP tool answers in prose a model can act on directly:
+
+```text
+$ supercarto air --lat 35.6833 --lon 139.762
+now  air poor (AQI 62 EU, 65 US), PM2.5 28.1µg/m³, PM10 29.7µg/m³
+     gases above good range: NO2 63.5µg/m³
+  2026-10-27T08:00:00Z  AQI 74  33.4µg/m³ PM2.5
+```
+
+An advisory line closes every answer, in the cost framing public-health
+agencies use: "poor air - sensitive groups should shorten outdoor
+exertion", never a verdict on an individual.
+
+## Two honest-number rules
+
+:::danger[Unknown is not zero]
+A missing gas reading renders `unknown`, not `0`. A zero invented from a
+source gap is the one way an air tool certifies airspace as clean - a
+model handed `pm25UgM3: 0` will tell a person with asthma it is safe
+outside.
+:::
+
+:::note[Where the sample was taken]
+The source resolves a coordinate onto a ~11 km model grid, not onto a
+station. Every answer states how far the grid point sits from the
+requested coordinate. One reading does not cover four districts of a
+metro, and an agent quoting it should say so.
+:::
+
+## Turned off, not stubbed
+
+`SUPERCARTO_NO_AIR=1` removes the tool everywhere and the MCP layer stops
+advertising it: an agent never calls a tool that can only answer
+"unconfigured for this deployment".
