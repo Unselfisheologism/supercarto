@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Unselfisheologism/supercarto",
-  "description": "Token-budgeted map context for any coordinate: OSM graph, terrain, weather, daylight, GTFS transit",
+  "description": "Token-budgeted map context for any coordinate: OSM graph, terrain, weather, air quality, daylight, GTFS transit",
   "title": "supercarto",
   "repository": {
     "url": "https://github.com/Unselfisheologism/supercarto",
     "source": "github"
   },
-  "version": "0.6.2",
+  "version": "0.7.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "supercarto",
-      "version": "0.6.2",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio"
       },
@@ -38,7 +38,7 @@
     {
       "registryType": "pypi",
       "identifier": "supercarto",
-      "version": "0.6.2",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio"
       }
