@@ -280,6 +280,16 @@ describe('bboxAreaSqm', () => {
     expect(advertisedTools(off.capabilities)).not.toContain('get_weather(lat,lon,hours)');
   });
 
+  it('offers air by default and can be switched off', () => {
+    // Air follows weather's default-on rule: the source is keyless, and the
+    // claim it enables is a health claim, which is exactly the kind a bare
+    // install needs to answer.
+    expect(stubCarto().hasAir).toBe(true);
+    const off = new SuperCarto({ sources: [new StubSource([])], air: false });
+    expect(off.hasAir).toBe(false);
+    expect(advertisedTools(off.capabilities)).not.toContain('get_air(lat,lon,hours)');
+  });
+
   it('never advertises a tool the deployment cannot answer', () => {
     // A maplet must not tell an agent to call get_terrain when there is no
     // elevation source; the agent pays tokens to learn it cannot be helped.
@@ -291,7 +301,7 @@ describe('bboxAreaSqm', () => {
     // Every capability on. `advertisedTools(true)` alone means elevation-only now
     // that there are three independently gated tools, so passing a full
     // capability object is the only way to ask "is the whole catalogue reachable".
-    const lines = advertisedTools({ elevation: true, weather: true, traffic: true, transit: true });
+    const lines = advertisedTools({ elevation: true, weather: true, air: true, traffic: true, transit: true });
     for (const t of TOOL_CATALOG) expect(lines).toContain(t.signature);
     // No stale entries left over from the old hand-written list.
     expect(lines.join(' ')).not.toMatch(/expand_node|get_place/);

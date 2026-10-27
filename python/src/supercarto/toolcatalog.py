@@ -25,6 +25,8 @@ class ToolDescriptor:
     #: a model to call something useless and charges it tokens for the lesson.
     requiresElevation: bool
     requiresWeather: bool
+    #: Only offered when an air-quality source is configured.
+    requiresAir: bool
     requiresTraffic: bool
     #: Same rule as traffic: ``get_transit`` only exists when a GTFS feed is
     #: configured, because a schedule tool with no schedule behind it would
@@ -33,17 +35,18 @@ class ToolDescriptor:
 
 
 TOOL_CATALOG: list[ToolDescriptor] = [
-    ToolDescriptor("get_maplet", "get_maplet(lat,lon,radius,layers,budget)", "what is near this coordinate", False, False, False, False),
-    ToolDescriptor("localize", "localize(scr,lat,lon,radius,layers,budget)", "move within an open map session; returns only what changed", False, False, False, False),
-    ToolDescriptor("route", "route(from,to,mode)", "straight-line distance, direction, and walking feasibility between two points; verify the approach on arrival", False, False, False, False),
-    ToolDescriptor("search_places", "search_places(lat,lon,radius,query,limit)", "find places by name or type", False, False, False, False),
-    ToolDescriptor("expand_feature", "expand_feature(id)", "exact geometry for a feature in this maplet", False, False, False, False),
-    ToolDescriptor("get_terrain", "get_terrain(lat,lon,radiusM,samples)", "ground elevation and slope around a coordinate", True, False, False, False),
-    ToolDescriptor("get_weather", "get_weather(lat,lon,hours)", "current conditions and forecast, for deciding whether to go out", False, True, False, False),
-    ToolDescriptor("get_traffic", "get_traffic(from,to,mode)", "congestion and realistic arrival time for a drive", False, False, True, False),
-    ToolDescriptor("get_daylight", "get_daylight(lat,lon,at)", "sun position, sunrise, sunset, and whether a light is needed", False, False, False, False),
-    ToolDescriptor("get_transit", "get_transit(lat,lon,radiusM,budget)", "transit stops, lines, and service times around a coordinate, from a configured GTFS feed", False, False, False, True),
-    ToolDescriptor("get_transit_route", "get_transit_route(fromLat,fromLon,toLat,toLon,maxWalkM,budget)", "one shared ride line between two coordinates: walk to a stop, ride it, walk it off; certified against the service day, never two-line interchanges", False, False, False, True),
+    ToolDescriptor("get_maplet", "get_maplet(lat,lon,radius,layers,budget)", "what is near this coordinate", False, False, False, False, False),
+    ToolDescriptor("localize", "localize(scr,lat,lon,radius,layers,budget)", "move within an open map session; returns only what changed", False, False, False, False, False),
+    ToolDescriptor("route", "route(from,to,mode)", "straight-line distance, direction, and walking feasibility between two points; verify the approach on arrival", False, False, False, False, False),
+    ToolDescriptor("search_places", "search_places(lat,lon,radius,query,limit)", "find places by name or type", False, False, False, False, False),
+    ToolDescriptor("expand_feature", "expand_feature(id)", "exact geometry for a feature in this maplet", False, False, False, False, False),
+    ToolDescriptor("get_terrain", "get_terrain(lat,lon,radiusM,samples)", "ground elevation and slope around a coordinate", True, False, False, False, False),
+    ToolDescriptor("get_weather", "get_weather(lat,lon,hours)", "current conditions and forecast, for deciding whether to go out", False, True, False, False, False),
+    ToolDescriptor("get_air", "get_air(lat,lon,hours)", "air quality now and over the next hours, for deciding whether the outing is a cost", False, False, True, False, False),
+    ToolDescriptor("get_traffic", "get_traffic(from,to,mode)", "congestion and realistic arrival time for a drive", False, False, False, True, False),
+    ToolDescriptor("get_daylight", "get_daylight(lat,lon,at)", "sun position, sunrise, sunset, and whether a light is needed", False, False, False, False, False),
+    ToolDescriptor("get_transit", "get_transit(lat,lon,radiusM,budget)", "transit stops, lines, and service times around a coordinate, from a configured GTFS feed", False, False, False, False, True),
+    ToolDescriptor("get_transit_route", "get_transit_route(fromLat,fromLon,toLat,toLon,maxWalkM,budget)", "one shared ride line between two coordinates: walk to a stop, ride it, walk it off; certified against the service day, never two-line interchanges", False, False, False, False, True),
 ]
 
 
@@ -92,6 +95,7 @@ def _available(t: ToolDescriptor, c: dict) -> bool:
     return not (
         (t.requiresElevation and not c.get("elevation"))
         or (t.requiresWeather and not c.get("weather"))
+        or (t.requiresAir and not c.get("air"))
         or (t.requiresTraffic and not c.get("traffic"))
         or (t.requiresTransit and not c.get("transit"))
     )

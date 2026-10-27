@@ -34,6 +34,8 @@ export interface ToolDescriptor {
    */
   requiresElevation: boolean;
   requiresWeather: boolean;
+  /** Only offered when an air-quality source is configured. */
+  requiresAir: boolean;
   requiresTraffic: boolean;
   /**
    * Same rule as traffic, one layer earlier: `get_transit` only exists when a
@@ -51,6 +53,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'what is near this coordinate',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -60,6 +63,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'move within an open map session; returns only what changed',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -69,6 +73,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'straight-line distance, direction, and walking feasibility between two points; verify the approach on arrival',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -78,6 +83,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'find places by name or type',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -87,6 +93,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'exact geometry for a feature in this maplet',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -96,6 +103,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'ground elevation and slope around a coordinate',
     requiresElevation: true,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -105,6 +113,17 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'current conditions and forecast, for deciding whether to go out',
     requiresElevation: false,
     requiresWeather: true,
+    requiresAir: false,
+    requiresTraffic: false,
+    requiresTransit: false,
+  },
+  {
+    name: 'get_air',
+    signature: 'get_air(lat,lon,hours)',
+    use: 'air quality now and over the next hours, for deciding whether the outing is a cost',
+    requiresElevation: false,
+    requiresWeather: false,
+    requiresAir: true,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -114,6 +133,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'congestion and realistic arrival time for a drive',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: true,
     requiresTransit: false,
   },
@@ -123,6 +143,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'transit stops, lines, and service times around a coordinate, from a configured GTFS feed',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: true,
   },
@@ -132,6 +153,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'one shared ride line between two coordinates: walk to a stop, ride it, walk it off; certified against the service day, never two-line interchanges',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: true,
   },
@@ -141,6 +163,7 @@ export const TOOL_CATALOG: readonly ToolDescriptor[] = [
     use: 'sun position, sunrise, sunset, and whether a light is needed',
     requiresElevation: false,
     requiresWeather: false,
+    requiresAir: false,
     requiresTraffic: false,
     requiresTransit: false,
   },
@@ -155,6 +178,7 @@ export function allToolNames(): string[] {
 export interface Capabilities {
   elevation?: boolean;
   weather?: boolean;
+  air?: boolean;
   traffic?: boolean;
   transit?: boolean;
 }
@@ -182,6 +206,7 @@ export function offersTool(name: string, caps: Capabilities | boolean = {}): boo
 function available(t: ToolDescriptor, c: Capabilities): boolean {
   if (t.requiresElevation && !c.elevation) return false;
   if (t.requiresWeather && !c.weather) return false;
+  if (t.requiresAir && !c.air) return false;
   if (t.requiresTraffic && !c.traffic) return false;
   if (t.requiresTransit && !c.transit) return false;
   return true;

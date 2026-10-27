@@ -11,6 +11,7 @@ export default defineMeta({
     "search-places",
     "get-terrain",
     "get-weather",
+    "get-air",
     "get-traffic",
     "get-transit",
   ],

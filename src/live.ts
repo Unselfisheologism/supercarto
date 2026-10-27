@@ -26,6 +26,12 @@ import {
   type WeatherSource,
 } from './source/weather.js';
 import {
+  OpenMeteoAir,
+  type AirQualityResult,
+  type AirQualitySource,
+  type OpenMeteoAirOptions,
+} from './source/air.js';
+import {
   HereFlow,
   TomTomFlow,
   TrafficRouter,
@@ -84,6 +90,13 @@ export interface SuperCartoOptions {
    * usage passes a different one.
    */
   weather?: WeatherSource | false;
+  /**
+   * Air-quality source. Same default-on rule as weather: the source needs no
+   * credential, so a bare install answers "can the baby go outside".
+   */
+  air?: AirQualitySource | false;
+  /** Air-quality tuning, used only when building the default air source. */
+  openMeteoAir?: OpenMeteoAirOptions;
   /**
    * Traffic flow providers, tried in order. Empty by default.
    *
@@ -171,6 +184,7 @@ export class SuperCarto {
   private readonly router: RoutingSource;
   private readonly elevation?: ElevationSource;
   private readonly weather?: WeatherSource;
+  private readonly air?: AirQualitySource;
   private readonly traffic: TrafficRouter;
   private readonly transit: TransitSource | undefined;
   private readonly deriveHeat: boolean;
@@ -200,6 +214,11 @@ export class SuperCarto {
       opts.weather === false
         ? undefined
         : (opts.weather ?? new OpenMeteoWeather(opts.openMeteo ?? {}));
+    // Air quality follows weather's rule exactly: keyed off by default is a
+    // cost some users cannot see. Here the cost is a health claim, so the
+    // keyless source ships on.
+    this.air =
+      opts.air === false ? undefined : (opts.air ?? new OpenMeteoAir(opts.openMeteoAir ?? {}));
     // Traffic is never defaulted. A provider without a credential can only
     // report free flow, and presenting that as a live ETA is the single most
     // damaging thing this service could do.
@@ -387,6 +406,23 @@ export class SuperCarto {
   }
 
   /**
+   * Air quality at a point.
+   *
+   * Returns undefined only when air is explicitly disabled. A configured but
+   * unreachable source returns `degraded`, and the tool layer refuses rather
+   * than embed a guess about air someone will breathe.
+   */
+  async airAt(
+    lat: number,
+    lon: number,
+    forecastHours = 12,
+    signal?: AbortSignal,
+  ): Promise<AirQualityResult | undefined> {
+    if (!this.air) return undefined;
+    return this.air.fetch(lat, lon, forecastHours, signal);
+  }
+
+  /**
    * Attach derived heat layers to a document.
    *
    * Copy-on-write, so the cached document is never mutated. Two requests for the
@@ -559,6 +595,11 @@ export class SuperCarto {
     return this.weather !== undefined;
   }
 
+  /** Whether air quality can be answered. Gates advertising `get_air`. */
+  get hasAir(): boolean {
+    return this.air !== undefined;
+  }
+
   /**
    * Whether live traffic can be answered.
    *
@@ -641,6 +682,7 @@ export class SuperCarto {
     return {
       elevation: this.hasElevation,
       weather: this.hasWeather,
+      air: this.hasAir,
       traffic: this.hasTraffic,
       transit: this.hasTransit,
     };

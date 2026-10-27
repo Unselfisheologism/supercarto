@@ -30,6 +30,7 @@ __all__ = [
     "ToolError",
     "TrafficResult",
     "WeatherResult",
+    "AirQualityResult",
     "default_server_command",
 ]
 
@@ -111,6 +112,23 @@ class WeatherResult:
     degraded: bool = False
     """True when the forecast source was unreachable. ``temp_c`` is None then,
     and the advisory says so. Do not read a missing reading as a dry day."""
+
+
+@dataclass
+class AirQualityResult:
+    """Air quality now, in the band a decision hinges on."""
+
+    band: str
+    european_aqi: float | None
+    us_aqi: float | None
+    pm25: float | None
+    pm10: float | None
+    elevated_gases: list[str]
+    worst: str | None
+    advisory: str
+    degraded: bool = False
+    """True when the air source was unreachable. Every number is None then;
+    do not read a missing reading as clean air."""
 
 
 @dataclass
@@ -371,6 +389,15 @@ class SuperCarto:
         text = await self._call("get_weather", {"lat": lat, "lon": lon, "hours": hours})
         return _parse_weather(text)
 
+    async def air(self, lat: float, lon: float, hours: int = 12) -> AirQualityResult:
+        """Air quality now and over a forecast window. Needs no API key.
+
+        Raises :class:`ToolError` if the air source is unreachable, rather than
+        returning a result that reads as clean air.
+        """
+        text = await self._call("get_air", {"lat": lat, "lon": lon, "hours": hours})
+        return _parse_air(text)
+
     async def traffic(
         self, from_lat: float, from_lon: float, to_lat: float, to_lon: float
     ) -> TrafficResult:
@@ -629,6 +656,46 @@ def _parse_weather(text: str) -> WeatherResult:
         feels_like_c=feels,
         precipitation=precipitation,
         wind_kmh=wind,
+        advisory=advisory,
+    )
+
+
+def _parse_air(text: str) -> AirQualityResult:
+    band = "unknown"
+    eu: float | None = None
+    us: float | None = None
+    pm25: float | None = None
+    pm10: float | None = None
+    gases: list[str] = []
+    worst: str | None = None
+    advisory = ""
+
+    for line in text.splitlines():
+        if line.startswith("now: air "):
+            body = line.removeprefix("now: air ")
+            band = body.split(" ")[0]
+            eu = _first_float(body)
+            us = _nth_float(body, 1)
+        elif line.startswith("PM2.5: "):
+            body = line.removeprefix("PM2.5: ")
+            pm25 = _first_float(body)
+            pm10 = _nth_float(body, 1)
+        elif line.startswith("gases above good range: "):
+            body = line.removeprefix("gases above good range: ").removesuffix("µg/m³")
+            gases = [g for g in body.split(", ") if g]
+        elif line.startswith("worst in the window: "):
+            worst = line.removeprefix("worst in the window: ")
+        elif line.startswith("advisory: "):
+            advisory = line.removeprefix("advisory: ")
+
+    return AirQualityResult(
+        band=band,
+        european_aqi=eu,
+        us_aqi=us,
+        pm25=pm25,
+        pm10=pm10,
+        elevated_gases=gases,
+        worst=worst,
         advisory=advisory,
     )
 

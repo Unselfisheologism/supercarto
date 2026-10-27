@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0 — air quality joins the honest decision set
+
+`get_air` reads the Open-Meteo Air Quality API (CAMS data; keyless, no
+account) and answers the question weather cannot: whether the outing costs
+the person part of their day. European and US AQI with the band named in
+words, PM2.5 and PM10, an hourly window trimmed to start at "now", and the
+worst point in the window. Gases are named only when they clear their own
+good bound on the European scale, so a clean day costs four tokens instead
+of twelve. Every answer carries its grid offset: CAMS resolves at ~11 km,
+and an agent quoting one reading for a metro that is four districts apart
+should know the sample was taken upwind of where the person stands.
+
+A missing gas reading renders `unknown`, never 0 - the same rule weather set
+for precipitation, because a zero invented from a gap is the one way a tool
+certifies airspace as clean. Deployment toggles: `SUPERCARTO_NO_AIR=1`
+removes the tool everywhere; the MCP layer stops advertising it rather than
+serving an "unconfigured" stub, same as weather's switch. TS and Python
+share the port with byte-parity tests on both sides.
+
 ## 0.6.2 — one-click install in Claude Desktop
 
 Releases now ship `supercarto-X.Y.Z.mcpb`, an [MCPB \

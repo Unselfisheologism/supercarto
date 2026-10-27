@@ -160,6 +160,33 @@ single most damaging thing this library could do, so it does not.
 Set `TOMTOM_API_KEY` or `HERE_API_KEY` and it becomes live, reporting the worst
 segment rather than an average.
 
+### Air quality
+
+Same keyless contract as weather, one pollutant further:
+
+```ts
+const a = await carto.airAt(35.6833, 139.7620, 12);
+
+a.now.europeanAqi;      // 62 - the raw index
+a.now.pm25UgM3;         // 28.1 - the fraction that sends asthmatics indoors
+a.hourly;               // forward-looking window, trimmed at "now"
+```
+
+```
+$ supercarto air --lat 35.6833 --lon 139.762
+now  air poor (AQI 62 EU, 65 US), PM2.5 28.1µg/m³, PM10 29.7µg/m³
+     gases above good range: NO2 63.5µg/m³
+  2026-10-27T08:00:00Z  AQI 74  33.4µg/m³ PM2.5
+  2026-10-27T09:00:00Z  AQI 55  21.2µg/m³ PM2.5
+```
+
+The MCP answer names a gas only when it clears its own good bound on the
+European scale, so a clean day costs four tokens instead of twelve. Every
+answer carries the distance to the model's sample grid, because a metro with
+one diesel corridor out of four is not one number. A missing gas reading
+renders as `unknown`, never as 0: a zero invented from a gap is how a tool
+certifies airspace as clean.
+
 ### Indoor floors
 
 Nobody else publishes this. Google builds indoor maps for its own users and has
@@ -371,12 +398,14 @@ server, which has zero npm dependencies, so it is half a megabyte.
 }
 ```
 
-Seven tools: `get_maplet`, `route`, `search_places`, `expand_feature`,
-`get_daylight`, `get_terrain`, `get_weather`, plus `get_traffic` when a key is
-present, `get_transit` and `get_transit_route` when a GTFS feed is
-configured. Each maplet lists exactly the tools that deployment can answer,
-so an agent never calls one that cannot work. `get_daylight` is always
-available: sun position is arithmetic, needing no source and no credential.
+Eight tools: `get_maplet`, `route`, `search_places`, `expand_feature`,
+`get_daylight`, `get_terrain`, `get_weather`, `get_air`, plus `get_traffic`
+when a key is present, `get_transit` and `get_transit_route` when a GTFS
+feed is configured. Each maplet lists exactly the tools that deployment can
+answer, so an agent never calls one that cannot work. `get_daylight` is
+always available: sun position is arithmetic, needing no source and no
+credential. `get_weather` and `get_air` are keyless by default: an agent
+never tells someone it is safe to go out without knowing rain or air first.
 
 ### What a maplet says about a place
 

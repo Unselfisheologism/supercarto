@@ -27,6 +27,7 @@ from .session import move_maplet, session_doc, session_envelope_contains
 from .traffic import HereFlow, TomTomFlow, TrafficRouter
 from .types import Feature, ScrDocument, js_round
 from .weather import OpenMeteoWeather
+from .air import OpenMeteoAir
 from .wire import encode_document as _encode_wire
 
 #: Samples per axis for the slope grid.
@@ -54,6 +55,7 @@ class SuperCarto:
         router: Any | None = None,
         elevation: Any | None = None,
         weather: Any | None = None,
+        air: Any | None = None,
         traffic: list | None = None,
         heat: bool = True,
         overpass: dict | None = None,
@@ -82,6 +84,15 @@ class SuperCarto:
             self.weather = OpenMeteoWeather(**(openMeteo or {}))
         else:
             self.weather = weather
+        # Air quality follows weather's rule exactly: keyed off by default is
+        # a cost some users cannot see. Here the cost is a health claim, so
+        # the keyless source ships on.
+        if air is False:
+            self.air: Any | None = None
+        elif air is None:
+            self.air = OpenMeteoAir()
+        else:
+            self.air = air
         # Traffic is never defaulted. A provider without a credential can only
         # report free flow, and presenting that as a live ETA is the single
         # most damaging thing this service could do.
@@ -309,6 +320,17 @@ class SuperCarto:
             return None
         return self.weather.fetch(lat, lon, forecast_hours)
 
+    def air_at(self, lat: float, lon: float, forecast_hours: int = 12) -> dict | None:
+        """Air quality at a point.
+
+        Returns None only when air is explicitly disabled. A configured but
+        unreachable source returns `degraded`, and the tool layer refuses
+        rather than embed a guess about air someone will breathe.
+        """
+        if self.air is None:
+            return None
+        return self.air.fetch(lat, lon, forecast_hours)
+
     # ------------------------------------------------------------------
     # Heat derivation
     # ------------------------------------------------------------------
@@ -480,6 +502,11 @@ class SuperCarto:
         return self.weather is not None
 
     @property
+    def has_air(self) -> bool:
+        """Whether air quality can be answered. Gates advertising `get_air`."""
+        return self.air is not None
+
+    @property
     def has_traffic(self) -> bool:
         """Whether live traffic can be answered.
 
@@ -497,6 +524,7 @@ class SuperCarto:
         return {
             "elevation": self.has_elevation,
             "weather": self.has_weather,
+            "air": self.has_air,
             "traffic": self.has_traffic,
         }
 

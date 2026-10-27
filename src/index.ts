@@ -166,6 +166,17 @@ export {
   type OpenMeteoOptions,
 } from './source/weather.js';
 export {
+  OpenMeteoAir,
+  describeEuropeanAqi,
+  describeUsAqi,
+  elevatedGases,
+  type AirQualitySource,
+  type AirQualityResult,
+  type AirQualityNow,
+  type AirQualityHour,
+  type OpenMeteoAirOptions,
+} from './source/air.js';
+export {
   TomTomFlow,
   HereFlow,
   TrafficRouter,

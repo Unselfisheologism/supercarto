@@ -15,6 +15,8 @@ import {
   isScrBinary,
   mainMcp,
   startApiServer,
+  describeEuropeanAqi,
+  elevatedGases,
   type BboxEnvelope,
   type GeoJsonFeatureCollection,
   type MapSource,
@@ -92,6 +94,7 @@ COMMANDS
            agent-ready graph. No API key needed.
   route    Turn-by-turn directions between two coordinates.
   weather  Current conditions and forecast at a coordinate. No API key needed.
+  air      Air quality now and over a forecast window. No API key needed.
   traffic  Congestion and realistic arrival time. Needs TOMTOM_API_KEY or
            HERE_API_KEY; without one it reports free-flow and says so.
   transit  Transit stops, lines, and service times from a GTFS feed. Needs
@@ -117,6 +120,7 @@ LIVE COMMANDS
          [--layers road,poi] [--format yaml|json] [--out path]
   route --from <lat,lon> --to <lat,lon> [--mode walk|bike|drive]
   weather --lat <n> --lon <n> [--hours 12] [--format json]
+  air     --lat <n> --lon <n> [--hours 12] [--format json]
   traffic --from <lat,lon> --to <lat,lon> [--mode drive]
   transit --feed <dir|zip> --lat <n> --lon <n> [--radiusM 400] [--budget 1024]
           [--now ISO-8601] [--out path]
@@ -131,6 +135,7 @@ DATA SOURCES
                                   Far faster and not rate limited.
   OVERPASS_ENDPOINT              Point at your own Overpass instance.
   TOMTOM_API_KEY / HERE_API_KEY   Enable live traffic conditions.
+  SUPERCARTO_NO_AIR=1             Disable air-quality lookups.
   SUPERCARTO_GTFS                Path to a GTFS feed (directory of .txt/.csv
                                  tables, or a .zip). Enables the transit tool;
                                  the CLI's --feed overrides it.
@@ -278,6 +283,41 @@ async function main(): Promise<void> {
         lines.push(
           `  ${d.date}  ${round1(d.tempMinC)}-${round1(d.tempMaxC)}C  ` +
             `${round1(d.precipitationMm)}mm  ${Math.round(d.precipitationProbPct)}% chance`,
+        );
+      }
+      writeOut(lines.join('\n') + '\n', flags.out);
+      return;
+    }
+
+    case 'air': {
+      const lat = num(flags.lat, NaN);
+      const lon = num(flags.lon, NaN);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        throw new Error('air requires --lat and --lon');
+      }
+      const carto = buildCarto(flags);
+      const a = await carto.airAt(lat, lon, num(flags.hours, 12));
+      if (!a) throw new Error('air quality is not configured');
+      if (a.degraded) {
+        process.stderr.write(`air quality unavailable: ${a.degraded}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      if (flags.format === 'json') {
+        writeOut(JSON.stringify(a, null, 2) + '\n', flags.out);
+        return;
+      }
+      const n = a.now;
+      const lines = [
+        `now  air ${describeEuropeanAqi(n.europeanAqi)} ` +
+          `(AQI ${round1(n.europeanAqi)} EU, ${round1(n.usAqi)} US), ` +
+          `PM2.5 ${round1(n.pm25UgM3)}µg/m³, PM10 ${round1(n.pm10UgM3)}µg/m³`,
+      ];
+      const gases = elevatedGases(n);
+      if (gases.length > 0) lines.push(`     gases above good range: ${gases.join(', ')}µg/m³`);
+      for (const h of a.hourly.slice(0, num(flags.hours, 12))) {
+        lines.push(
+          `  ${h.at}  AQI ${round1(h.europeanAqi)}  ${round1(h.pm25UgM3)}µg/m³ PM2.5`,
         );
       }
       writeOut(lines.join('\n') + '\n', flags.out);

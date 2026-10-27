@@ -1,6 +1,7 @@
 import { SuperCarto, type MapletRequestLive } from '../live.js';
 import { bboxAround, normalizeBbox } from '../source/types.js';
 import { describeCode } from '../source/weather.js';
+import { describeEuropeanAqi, elevatedGases } from '../source/air.js';
 import { sunPosition, needsLight } from '../source/sun.js';
 import { straightLineRoute, type TravelMode } from '../source/routing.js';
 import { estimateTokens } from '../emit/yaml.js';
@@ -323,6 +324,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
 
   if (carto.hasElevation) tools.push(getTerrainTool(carto));
   if (carto.hasWeather) tools.push(getWeatherTool(carto));
+  if (carto.hasAir) tools.push(getAirTool(carto));
   if (carto.hasTraffic) tools.push(getTrafficTool(carto));
   // Transit mirrors traffic: offered only when a GTFS feed is configured, and
   // always absent - never a "no feed" stub - when it is not, so a missing tool
@@ -378,6 +380,7 @@ function capabilitiesOf(carto: SuperCarto | undefined, override?: Partial<Capabi
   const base: Capabilities = {
     elevation: carto?.hasElevation ?? false,
     weather: carto?.hasWeather ?? true,
+    air: carto?.hasAir ?? true,
     traffic: carto?.hasTraffic ?? false,
     transit: carto?.hasTransit ?? false,
   };
@@ -595,6 +598,113 @@ function getWeatherTool(carto: SuperCarto): McpTool {
       return text(lines.join('\n'));
     },
   };
+}
+
+/**
+ * Air quality.
+ *
+ * Same prose discipline as weather: a model reads "air poor, PM2.5 31" and
+ * acts on it reliably; twelve numeric fields it fumbles. The European index
+ * name and band render first because that is what the decision hinges on; the
+ * US scale follows because prompts quote either. Gases are named only when
+ * one clears its good bound, so a clean day costs four tokens, not twelve.
+ */
+function getAirTool(carto: SuperCarto): McpTool {
+  return {
+    name: 'get_air',
+    description:
+      'Air quality at a coordinate: European and US AQI bands, particulate ' +
+      'load, and the forecast window. Use this before sending someone into ' +
+      'prolonged outdoor exertion, or before recommending a walking route to ' +
+      'a person with respiratory sensitivities.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lat: { type: 'number' },
+        lon: { type: 'number' },
+        hours: {
+          type: 'number',
+          default: 12,
+          description: 'Forecast horizon in hours. Default 12, max 48.',
+        },
+      },
+      required: ['lat', 'lon'],
+    },
+    handler: async (args) => {
+      const lat = requireNumber(args, 'lat');
+      const lon = requireNumber(args, 'lon');
+      const hours = Math.max(1, Math.min(48, optionalNumber(args, 'hours', 12)));
+
+      const a = await carto.airAt(lat, lon, hours);
+      if (!a) return error('air quality is not configured for this deployment');
+
+      // An air reading is a health claim. An unreachable source must end in an
+      // unanswered question, never in "the air is fine" defaults.
+      if (a.degraded) {
+        return error(`air quality unavailable: ${a.degraded}`);
+      }
+
+      const n = a.now;
+      const band = describeEuropeanAqi(n.europeanAqi);
+      const lines: string[] = [];
+      lines.push(
+        `now: air ${band} (European AQI ${fmt(n.europeanAqi)}, US AQI ${fmt(n.usAqi)})`
+      );
+      lines.push(`PM2.5: ${fmt(n.pm25UgM3)}µg/m³, PM10: ${fmt(n.pm10UgM3)}µg/m³`);
+
+      const gases = elevatedGases(n);
+      if (gases.length > 0) {
+        lines.push(`gases above good range: ${gases.join(', ')}µg/m³`);
+      }
+
+      // The grid is coarse (CAMS, ~11km), so where the sample was taken is
+      // always stated rather than implied.
+      if (a.gridOffsetM > 2000) {
+        lines.push(
+          `note: sample grid point is ${a.gridOffsetM}m from the requested point ` +
+            '(model grid, not a station reading)'
+        );
+      }
+
+      const worst = a.hourly.reduce<{ h: (typeof a.hourly)[number]; aqi: number } | undefined>(
+        (acc, h) => {
+          const q = Math.max(h.europeanAqi, acc?.aqi ?? Number.NaN);
+          if (!acc || q > acc.aqi) return { h, aqi: Math.max(h.europeanAqi, h.usAqi) };
+          return acc;
+        },
+        undefined,
+      );
+      if (worst && Number.isFinite(worst.h.europeanAqi)) {
+        lines.push(
+          '', 'worst in the window: ' +
+            `air ${describeEuropeanAqi(worst.h.europeanAqi)} ` +
+            `(AQI ${fmt(worst.h.europeanAqi)}) at ${worst.h.at}`
+        );
+      } else {
+        lines.push('', 'no detailed hourly forecast available');
+      }
+
+      lines.push('', airAdvisory(n.europeanAqi));
+      return text(lines.join('\n'));
+    },
+  };
+}
+
+/**
+ * The one line the model will repeat.
+ *
+ * Deliberately medical-grade vagueness: individuals differ far more than a
+ * model can judge, so the advisory speaks in costs, not verdicts, and keeps
+ * the "sensitive" framing that public-health agencies use.
+ */
+function airAdvisory(euAqi: number): string {
+  if (Number.isNaN(euAqi)) return 'advisory: air quality unknown - do not describe conditions';
+  if (euAqi > 100) return 'advisory: extremely poor air - keep outdoor exposure minimal for everyone';
+  if (euAqi > 80) return 'advisory: very poor air - sensitive groups stay in if they can, everyone shortens exertion';
+  if (euAqi > 60) return 'advisory: poor air - sensitive groups should shorten outdoor exertion';
+  if (euAqi > 40) return 'advisory: moderate air - long outdoor exertion has a polluting cost';
+  if (euAqi > 20) return 'advisory: fair air - no constraint for most people';
+  return 'advisory: clean air - no constraint';
 }
 
 /**

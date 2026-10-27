@@ -38,6 +38,7 @@ BASELINE_TOOLS = [
     ("expand_feature", "exact geometry for a feature in this maplet"),
     ("get_terrain", "ground elevation and slope around a coordinate"),
     ("get_weather", "current conditions and forecast, for deciding whether to go out"),
+    ("get_air", "air quality now and over the next hours, for deciding whether the outing is a cost"),
     ("get_daylight", "sun position, sunrise, sunset, and whether a light is needed"),
 ]
 
@@ -78,7 +79,7 @@ def build_manifest() -> dict:
         "name": "supercarto",
         "display_name": "supercarto - maps for AI agents",
         "version": version,
-        "description": "Token-budgeted map context for AI agents: OSM graph, indoor floors, terrain, weather, transit.",
+        "description": "Token-budgeted map context for AI agents: OSM graph, indoor floors, terrain, weather, air quality, transit.",
         "author": {"name": "Jeffrin James"},
         "repository": {"type": "git", "url": "https://github.com/Unselfisheologism/supercarto"},
         "homepage": "https://supercarto.pages.dev",
@@ -101,7 +102,7 @@ def build_manifest() -> dict:
             {"name": name, "description": desc} for name, desc in BASELINE_TOOLS
         ],
         "tools_generated": True,
-        "keywords": ["maps", "geospatial", "openstreetmap", "routing", "transit", "gtfs", "weather", "terrain", "mcp"],
+        "keywords": ["maps", "geospatial", "openstreetmap", "routing", "transit", "gtfs", "weather", "air quality", "terrain", "mcp"],
         "license": "Apache-2.0",
         "privacy_policies": PRIVACY_POLICIES,
         "compatibility": {

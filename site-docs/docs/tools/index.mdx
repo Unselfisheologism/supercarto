@@ -19,6 +19,7 @@ read like a guess.
 | `expand_feature` | nothing | exact geometry for one feature |
 | `get_terrain` | nothing | ground elevation and slope |
 | `get_weather` | nothing | current conditions and forecast |
+| `get_air` | nothing | AQI bands, particulates, and the window forecast |
 | `get_daylight` | nothing | sun position, sunrise, sunset |
 | `get_traffic` | TomTom or HERE key | congestion and realistic arrival time |
 | `get_transit` | GTFS feed | stops, lines, service times, departure boards |
@@ -48,6 +49,9 @@ feed.
   </Card>
   <Card title="get_weather" href="/tools/get-weather" icon="cloud-rain">
     Keyless forecast with a degraded path that refuses to invent readings.
+  </Card>
+  <Card title="get_air" href="/tools/get-air" icon="wind">
+    Keyless air quality; gases named only when elevated.
   </Card>
   <Card title="get_traffic" href="/tools/get-traffic" icon="car">
     Live with a key; labelled free-flow without one.

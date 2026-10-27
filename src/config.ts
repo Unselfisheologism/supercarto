@@ -52,6 +52,8 @@ export interface EnvOverrides {
   overpassFallback?: boolean;
   /** Set to disable weather. */
   noWeather?: boolean;
+  /** Set to disable air quality. */
+  noAir?: boolean;
   /** Path to a GTFS feed directory or .zip. Enables the `get_transit` tool. */
   gtfs?: string;
   /** A GTFS-Realtime TripUpdates URL joined onto the schedule feed. */
@@ -68,6 +70,7 @@ export function cartoFromEnv(overrides: EnvOverrides = {}): SuperCarto {
     hereKey: overrides.hereKey ?? process.env.HERE_API_KEY,
     noTerrain: overrides.noTerrain ?? Boolean(process.env.SUPERCARTO_NO_TERRAIN),
     noWeather: overrides.noWeather ?? Boolean(process.env.SUPERCARTO_NO_WEATHER),
+    noAir: overrides.noAir ?? Boolean(process.env.SUPERCARTO_NO_AIR),
     overpassFallback: overrides.overpassFallback ?? process.env.SUPERCARTO_OVERPASS_FALLBACK !== '0',
     gtfs: overrides.gtfs ?? process.env.SUPERCARTO_GTFS,
     gtfsRt: overrides.gtfsRt ?? process.env.SUPERCARTO_GTFS_RT,
@@ -89,6 +92,12 @@ export function cartoFromEnv(overrides: EnvOverrides = {}): SuperCarto {
   // of the box and an agent gets correct advice about rain by default.
   if (env.noWeather) {
     options.weather = false;
+  }
+
+  // Air is the same story one pollutant further: keyless source, on by
+  // default, and `SUPERCARTO_NO_AIR` turns it off as a unit.
+  if (env.noAir) {
+    options.air = false;
   }
 
   // Traffic is never enabled implicitly. Both providers check for a credential
