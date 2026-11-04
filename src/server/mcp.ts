@@ -22,6 +22,19 @@ import { allToolNames, offersTool, type Capabilities } from '../toolcatalog.js';
  * Served over stdio, which is how MCP clients launch local servers.
  */
 
+/**
+ * Licence terms ride on the answers, not in them.
+ *
+ * The maplet data is OpenStreetMap, and ODbL attribution is a licence term.
+ * Weather and air data is Open-Meteo under CC BY 4.0, which mandates
+ * attribution in its own right. These lines are added at transport level -
+ * the same job the `X-Data-Attribution` header does on the REST surface - so
+ * the compiler's YAML stays byte-identical to the Python port and the token
+ * budget is spent on the map, not the legalese.
+ */
+const MAP_ATTRIBUTION = 'map data © OpenStreetMap contributors (ODbL)';
+const OPEN_METEO_ATTRIBUTION = 'data by Open-Meteo.com (CC BY 4.0)';
+
 export interface McpTool {
   name: string;
   description: string;
@@ -107,6 +120,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
           header.push('# NOTE: source hit its feature cap; this area is denser than the cap allows.');
         }
         for (const w of result.warnings) header.push(`# WARNING: ${w}`);
+        header.push(`# ${MAP_ATTRIBUTION}`);
         const out = text([...header, '', yaml].join('\n'));
         if (args.returnScr === true) {
           out.content.push({
@@ -178,6 +192,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
           header.push('# NOTE: source hit its feature cap; this view is denser than the cap allows.');
         }
         for (const w of move.warnings) header.push(`# WARNING: ${w}`);
+        header.push(`# ${MAP_ATTRIBUTION}`);
         const report = [...header, ...(move.report ? ['', move.report] : [])].join('\n');
         return {
           content: [
@@ -225,6 +240,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
         for (const s of res.route.steps) {
           lines.push(`${s.n}. ${s.instruction}${s.dist !== undefined ? ` (${s.dist}m)` : ''}`);
         }
+        lines.push('', MAP_ATTRIBUTION);
         return text(lines.join('\n'));
       },
     },
@@ -264,7 +280,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
           .slice(0, limit);
 
         if (named.length === 0) {
-          return text('no named places matched in this area');
+          return text(`no named places matched in this area\n\n${MAP_ATTRIBUTION}`);
         }
         const lines = [`${named.length} place(s):`];
         for (const n of named) {
@@ -277,6 +293,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
             .join('; ');
           lines.push('', `note: ${note}`);
         }
+        lines.push('', MAP_ATTRIBUTION);
         return text(lines.join('\n'));
       },
     },
@@ -317,6 +334,7 @@ export function defineTools(carto: SuperCarto, maxTokens: number): McpTool[] {
               : `no features with ids [${ids.join(', ')}]`,
           );
         }
+        out.push('', MAP_ATTRIBUTION);
         return text(out.join('\n'));
       },
     },
@@ -594,7 +612,9 @@ function getWeatherTool(carto: SuperCarto): McpTool {
         );
       }
 
-      lines.push('', advisory(n.precipitation, n.tempC, n.windKmh));
+      const attribution =
+        w.source === 'open-meteo' ? `weather ${OPEN_METEO_ATTRIBUTION}` : `weather data by ${w.source}`;
+      lines.push('', advisory(n.precipitation, n.tempC, n.windKmh), `attribution: ${attribution}`);
       return text(lines.join('\n'));
     },
   };
@@ -684,7 +704,11 @@ function getAirTool(carto: SuperCarto): McpTool {
         lines.push('', 'no detailed hourly forecast available');
       }
 
-      lines.push('', airAdvisory(n.europeanAqi));
+      const attribution =
+        a.source.startsWith('open-meteo')
+          ? `air quality ${OPEN_METEO_ATTRIBUTION}`
+          : `air quality data by ${a.source}`;
+      lines.push('', airAdvisory(n.europeanAqi), `attribution: ${attribution}`);
       return text(lines.join('\n'));
     },
   };

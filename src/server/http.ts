@@ -34,6 +34,15 @@ export interface ApiOptions {
 const MAX_RADIUS_M = 25_000;
 const DEFAULT_BUDGET = 1024;
 
+/**
+ * The maplet data is OpenStreetMap, and ODbL attribution is a licence term,
+ * not a courtesy. Mirrors `cloud/worker/src/worker.ts`: the header rides on
+ * every response - data, health, the 404 route list, even errors - and the
+ * JSON bodies state it in the payload, so an agent reading only the body
+ * still sees who owns the data.
+ */
+export const ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
+
 export class MapApiServer {
   private readonly carto: SuperCarto;
   private readonly maxTokens: number;
@@ -62,6 +71,7 @@ export class MapApiServer {
     res.setHeader('Access-Control-Allow-Origin', this.origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('X-Data-Attribution', ATTRIBUTION);
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -70,7 +80,7 @@ export class MapApiServer {
     }
 
     if (url.pathname === '/health') {
-      this.json(res, 200, { ok: true, cacheSize: this.carto.cacheSize });
+      this.json(res, 200, { ok: true, cacheSize: this.carto.cacheSize, attribution: ATTRIBUTION });
       return;
     }
 
@@ -99,6 +109,7 @@ export class MapApiServer {
 
     this.json(res, 404, {
       error: 'not found',
+      attribution: ATTRIBUTION,
       routes: [
         '/health',
         '/maplet?lat=&lon=&radiusM=&budget=',
@@ -139,6 +150,7 @@ export class MapApiServer {
 
     this.json(res, 200, {
       yaml: result.yaml,
+      attribution: ATTRIBUTION,
       metrics: result.metrics,
       fetchedFrom: result.fetchedFrom,
       fetchMs: result.fetchMs,
@@ -220,6 +232,7 @@ export class MapApiServer {
 
     this.json(res, 200, {
       yaml: result.yaml,
+      attribution: ATTRIBUTION,
       tokens: result.tokens,
       budget: result.budget,
       feedName: result.feedName,
@@ -296,6 +309,7 @@ export class MapApiServer {
       }
       this.json(res, 200, {
         yaml: result.yaml,
+        attribution: ATTRIBUTION,
         tokens: result.tokens,
         budget: result.budget,
         plans: result.plans,

@@ -366,6 +366,39 @@ SUPERCARTO_GTFS         path to a GTFS feed (dir or .zip); enables get_transit
 SUPERCARTO_GTFS_RT      TripUpdates URL; adds live delay lines to get_transit
 ```
 
+### Attribution and the BYO-key contract
+
+**supercarto never ships keys.** You configure every source with your own
+credentials, so every upstream relationship — Open-Meteo, TomTom, HERE, a
+transit agency's feed — is a direct one between you and the provider:
+
+- **Traffic without a key returns free-flow, labelled.** `get_traffic` is
+  absent from `tools/list` until `TOMTOM_API_KEY` or `HERE_API_KEY` is set,
+  and a free-flow estimate always says "free flow" in its own output. A
+  congestion-free answer presented as live is the one failure this library
+  refuses on principle.
+- **Weather and air without a key use the non-commercial Open-Meteo API.**
+  That free tier is explicitly non-commercial: under 10,000 calls/day and not
+  for products, subscriptions, or ad-supported apps. A commercial deployment
+  gives it its own Open-Meteo subscription and endpoints, and the terms stay
+  between you and OpenMeteo GmbH. Attribution is stated either way: weather
+  and air answers name their source, and the Open-Meteo CC BY 4.0 term is
+  spelled out.
+- **Transit answers only what your feed proves.** The feed comes from
+  `SUPERCARTO_GTFS`; the note lines name it, its timezone, and its service
+  date. Some agencies license their feeds with agency-specific terms — check
+  the feed you import before a commercial deployment.
+- **Attribution rides on the answer, not in it.** ODbL is a licence term, so
+  every REST response carries `X-Data-Attribution: © OpenStreetMap
+  contributors (ODbL)` and an `attribution` field in the JSON body, and
+  MCP map answers carry the same line in a comment. The compiled document
+  itself is untouched — the attribution costs tokens at transport level only.
+
+Nothing abhors a key like a self-hosted install, and nothing is attributed
+except what was actually fetched: arithmetic carries no line, and a custom
+weather or air source is named by its own name rather than handed a licence
+it did not grant.
+
 Whole-metro feeds load entirely into memory. Since 0.6.1 the load is
 columnar — stop_times go straight into per-trip arrays, no row objects — so
 a feed the size of Translink SEQ (35 MB zip) fits Node's default heap and
