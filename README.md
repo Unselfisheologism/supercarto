@@ -3,7 +3,6 @@
 mcp-name: io.github.Unselfisheologism/supercarto
 
 [![skills.sh](https://skills.sh/b/Unselfisheologism/supercarto)](https://skills.sh/Unselfisheologism/supercarto)
-[![supercarto on AI Agents Listing](https://aiagentslisting.com/supercarto/badge.svg?claim=df234d8b0a97bb907dd002a21a3a98d6)](https://aiagentslisting.com/mcp/supercarto)
 
 **LLM-native spatial middleware.** Compiles geospatial data into token-budgeted
 topological graphs that an AI agent can reason over directly.
